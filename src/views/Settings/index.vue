@@ -152,22 +152,27 @@ async function handleGenerate() {
   animation: settings-rise var(--dur-page) var(--ease-out) both;
 }
 
-/* 左表单列 + 右满高装饰列；装饰列贴住内容区右边缘，见 meta.flush */
+/* 左表单列 + 右满高装饰列；装饰列右侧留白，见 meta.flush */
 .settings-page {
+  /* 页面两端统一的留白基准：左表单列和右装饰列都从这里起步，见 SettingsAside */
+  --settings-gutter: calc(var(--content-pad-x) + var(--space-10));
+
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(280px, 23vw, 360px);
+  /* 左表单 : 右插画 = 7 : 3；插画列多分一成，整幅插画随之左移 */
+  grid-template-columns: minmax(0, 7fr) minmax(0, 3fr);
   min-height: calc(100dvh - var(--topbar-height));
 }
 
 .settings-main {
   width: 100%;
-  max-width: calc(720px + var(--content-pad-x) + var(--space-10));
-  padding: var(--content-pad-y) var(--space-10) var(--space-16) var(--content-pad-x);
+  /* 上限 1200px 指的是正文宽度，左右内边距要另加，比例在 1920 这类宽屏下仍成立 */
+  max-width: calc(1200px + var(--settings-gutter) + var(--space-10));
+  padding: var(--content-pad-y) var(--space-10) var(--space-12) var(--settings-gutter);
 }
 
 .settings-form {
   min-width: 0;
-  margin-top: var(--space-8);
+  margin-top: var(--space-6);
   animation: settings-rise var(--dur-page) var(--ease-out) 60ms both;
 }
 
@@ -179,8 +184,8 @@ async function handleGenerate() {
 }
 
 .params {
-  margin-top: var(--space-8);
-  padding-top: var(--space-6);
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
   border-top: 1px solid var(--color-line);
 }
 
@@ -204,8 +209,8 @@ async function handleGenerate() {
 .actions {
   display: flex;
   gap: var(--space-3);
-  margin-top: var(--space-10);
-  padding-top: var(--space-6);
+  margin-top: var(--space-8);
+  padding-top: var(--space-5);
   border-top: 1px dashed var(--color-line-strong);
 }
 
@@ -232,7 +237,7 @@ async function handleGenerate() {
   }
 
   .settings-main {
-    max-width: calc(720px + var(--content-pad-x) * 2);
+    max-width: none;
   }
 
   .settings-aside {

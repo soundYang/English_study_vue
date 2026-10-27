@@ -161,9 +161,10 @@ defineExpose({ focusWord })
   flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-6);
-  border: 1px solid var(--color-line);
+  /* 底色比页面底色更深，边框要跟着加一档，否则卡片轮廓会糊进背景 */
+  border: 1px solid var(--color-line-strong);
   border-radius: var(--radius-xl);
-  background: var(--color-surface);
+  background-color: #ede8df;
 }
 
 .word-form.is-compact {
@@ -236,6 +237,7 @@ defineExpose({ focusWord })
 }
 
 .form-art img {
+  opacity: 0.6;
   display: block;
   width: 100%;
   height: auto;

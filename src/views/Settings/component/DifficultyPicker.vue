@@ -23,7 +23,7 @@ const options = [
     value: 'easy',
     image: easyImage,
     width: 367,
-    height: 581,
+    height: 574,
     label: '简单：短句为主，句式重复，适合初学者建立信心',
   },
   {
@@ -136,8 +136,14 @@ function handleKeydown(event) {
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /*
+   * 按三张原图的宽高比分列宽：0.639 / 0.636 / 0.645（367×574、364×572、375×581），
+   * 缩放后三卡高度齐平，宽度也随之保持原有比例
+   */
+  grid-template-columns: minmax(0, 639fr) minmax(0, 636fr) minmax(0, 645fr);
   gap: var(--space-4);
+  /* 宽屏时不再跟着左栏无限放大，整行收到 700px，页面高度随之变矮 */
+  max-width: 700px;
   margin-top: var(--space-4);
 }
 

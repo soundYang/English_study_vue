@@ -15,9 +15,12 @@
 <style scoped>
 .settings-aside {
   /* 网格项默认拉伸，配合页面的 min-height 铺满整列 */
-  background-color: var(--color-bg-deep);
   background-image: url('../../../assets/images/settings-mountain.jpg');
   background-position: center;
+  background-repeat: no-repeat;
+  /* cover 让插画撑满整列高度，窄列下横向裁掉两侧，上下不留空带 */
   background-size: cover;
+  /* 不贴窗口右缘，与左表单列的留白取同一套宽度（--settings-gutter 由设置页定义） */
+  margin-right: var(--settings-gutter, var(--content-pad-x));
 }
 </style>

@@ -125,8 +125,8 @@ function tryAnyway() {
   gap: var(--space-5);
   width: 100%;
   max-width: var(--content-max-wide);
-  /* 设计稿里三张卡紧贴横幅下缘，只留一道窄缝；超宽屏时整组居中 */
-  margin: var(--space-3) auto 0;
+  /* 横幅下缘是整幅实景图，卡片组留一段呼吸空间再起；超宽屏时整组居中 */
+  margin: var(--space-8) auto 0;
   padding: 0 var(--content-pad-x) var(--space-16);
 }
 
@@ -139,7 +139,6 @@ function tryAnyway() {
 @media (max-width: 767px) {
   .entries {
     grid-template-columns: 1fr;
-    margin-top: var(--space-8);
     padding-bottom: var(--space-10);
   }
 }
