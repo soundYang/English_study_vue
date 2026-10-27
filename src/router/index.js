@@ -28,7 +28,7 @@ const routes = [
     path: '/readings/:id',
     name: 'reading',
     component: () => import('../views/Reading/index.vue'),
-    meta: { title: '阅读答题', module: 'reading', hideMobileNav: true },
+    meta: { title: '阅读答题', module: 'reading', hideMobileNav: true, wide: true },
   },
   {
     path: '/readings/:id/result',

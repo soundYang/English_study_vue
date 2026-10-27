@@ -28,6 +28,7 @@ const route = useRoute()
 const mainRef = ref(null)
 const activeModule = computed(() => route.meta.module || '')
 const hideMobileNav = computed(() => route.meta.hideMobileNav === true)
+const isWide = computed(() => route.meta.wide === true)
 
 watch(
   () => route.fullPath,
@@ -86,7 +87,7 @@ watch(
       </header>
 
       <main id="main-content" ref="mainRef" class="main">
-        <div class="main-inner">
+        <div class="main-inner" :class="{ 'is-wide': isWide }">
           <RouterView v-slot="{ Component }">
             <Transition name="page" mode="out-in">
               <component :is="Component" />
@@ -306,6 +307,10 @@ watch(
   max-width: var(--content-max);
   margin: 0 auto;
   padding: var(--content-pad-y) var(--content-pad-x) var(--space-16);
+}
+
+.main-inner.is-wide {
+  max-width: var(--content-max-wide);
 }
 
 /* 移动端底部标签栏（桌面隐藏） */
