@@ -14,6 +14,7 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { BookOpen, Clock, Home, NotebookPen } from 'lucide-vue-next'
+import GenerateOverlay from '../component/GenerateOverlay.vue'
 import ToastHost from '../component/ToastHost.vue'
 
 const navItems = [
@@ -111,6 +112,7 @@ watch(
     </div>
 
     <ToastHost />
+    <GenerateOverlay />
   </div>
 </template>
 
