@@ -6,14 +6,20 @@
  * 用法：<ArticleCard :title="reading.title" :article="reading.article" />
  *
  * props:
- *   title   — 文章标题
- *   article — 英文正文（不含答案与翻译）
+ *   title    — 文章标题
+ *   article  — 英文正文（不含答案与翻译）
+ *   titleTag — 标题标签，默认 h1；结果页已有页面级 h1 时传 h2
  */
 import { computed } from 'vue'
 
 const props = defineProps({
   title: { type: String, default: '' },
   article: { type: String, default: '' },
+  titleTag: {
+    type: String,
+    default: 'h1',
+    validator: (value) => ['h1', 'h2'].includes(value),
+  },
 })
 
 const paragraphs = computed(() =>
@@ -26,7 +32,7 @@ const paragraphs = computed(() =>
 
 <template>
   <article class="article-card">
-    <h1 class="article-title">{{ title }}</h1>
+    <component :is="titleTag" class="article-title">{{ title }}</component>
     <div class="article-body">
       <p v-for="(paragraph, index) in paragraphs" :key="index" class="article-paragraph">
         {{ paragraph }}

@@ -148,6 +148,8 @@ export const useReadingStore = defineStore('reading', () => {
     loadError.value = null
     submitError.value = ''
     reading.value = null
+    // 切换阅读时清掉上一条完整结果，防止结果页在请求返回前短暂渲染旧数据
+    if (result.value?.id !== key) result.value = null
 
     try {
       const data = await fetchReading(key)

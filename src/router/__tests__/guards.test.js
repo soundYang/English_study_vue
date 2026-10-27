@@ -1,6 +1,6 @@
 /**
  * 路由守卫测试
- * 覆盖已提交练习跳转结果页、未提交练习进入答题页、空 id 放行与标题更新。
+ * 覆盖答题页与结果页的双向重定向、加载失败放行、空 id 放行与标题更新。
  */
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -67,5 +67,31 @@ describe('reading route guard', () => {
 
     handlers.after({ meta: {} })
     expect(document.title).toBe('Word Reading')
+  })
+})
+
+describe('result route guard', () => {
+  it('should let a submitted reading open the result page', async () => {
+    const outcome = await handlers.before({ name: 'reading-result', params: { id: 'r2' } })
+    const store = useReadingStore()
+
+    expect(outcome).toBe(true)
+    expect(store.phase).toBe('submitted')
+    expect(store.result.id).toBe('r2')
+  })
+
+  it('should redirect an unsubmitted reading back to the answering page', async () => {
+    const outcome = await handlers.before({ name: 'reading-result', params: { id: 'r5' } })
+
+    expect(outcome).toEqual({
+      name: 'reading',
+      params: { id: 'r5' },
+      replace: true,
+    })
+  })
+
+  it('should pass through a missing reading and an empty id', async () => {
+    expect(await handlers.before({ name: 'reading-result', params: { id: 'r404' } })).toBe(true)
+    expect(await handlers.before({ name: 'reading-result', params: {} })).toBe(true)
   })
 })
