@@ -18,7 +18,7 @@
  * emits:
  *   update:modelValue / focus / blur
  */
-import { computed, useId } from 'vue'
+import { computed, ref, useId } from 'vue'
 
 const props = defineProps({
   modelValue: { type: [String, Number], default: '' },
@@ -38,6 +38,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'focus', 'blur'])
 
+const inputRef = ref(null)
 const autoId = useId()
 const inputId = computed(() => props.id || `input-${autoId}`)
 const describedBy = computed(() => {
@@ -57,12 +58,20 @@ function handleFocus(event) {
 function handleBlur(event) {
   emit('blur', event)
 }
+
+/** 供表单在新增成功或校验失败后把焦点移回输入框 */
+function focus() {
+  inputRef.value?.focus()
+}
+
+defineExpose({ focus })
 </script>
 
 <template>
   <div class="base-input" :class="{ 'has-error': Boolean(error) }">
     <label v-if="label" class="input-label" :for="inputId">{{ label }}</label>
     <input
+      ref="inputRef"
       :id="inputId"
       class="input-control"
       :type="type"

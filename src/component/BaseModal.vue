@@ -15,6 +15,7 @@
  *   maxWidth        — 最大宽度，数字按 px 处理，默认 480
  *   closeOnBackdrop — 点击遮罩是否关闭，默认 true
  *   showClose       — 是否显示右上角关闭按钮，默认 true
+ *   sheetOnMobile   — 小于 768px 时从底部弹出，默认 false
  * emits:
  *   update:open / close
  * slots:
@@ -30,6 +31,7 @@ const props = defineProps({
   maxWidth: { type: [Number, String], default: 480 },
   closeOnBackdrop: { type: Boolean, default: true },
   showClose: { type: Boolean, default: true },
+  sheetOnMobile: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:open', 'close'])
@@ -141,7 +143,12 @@ onBeforeUnmount(unlockScroll)
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="open" class="modal-root" @mousedown.self="handleBackdrop">
+      <div
+        v-if="open"
+        class="modal-root"
+        :class="{ 'is-sheet': sheetOnMobile }"
+        @mousedown.self="handleBackdrop"
+      >
         <div
           ref="dialogRef"
           class="modal-dialog"
@@ -296,6 +303,24 @@ onBeforeUnmount(unlockScroll)
 @media (max-width: 767px) {
   .modal-root {
     padding: var(--space-4);
+  }
+
+  .modal-root.is-sheet {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal-root.is-sheet .modal-dialog {
+    max-width: 100% !important;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  }
+
+  .modal-root.is-sheet .modal-body {
+    padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+  }
+
+  .modal-root.is-sheet.modal-enter-from .modal-dialog {
+    transform: translateY(16px);
   }
 
   .modal-header {
