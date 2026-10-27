@@ -62,8 +62,46 @@ describe('mockWords mutations', () => {
     const result = await mockWords.list({ q: 'orchid' })
     expect(result.total).toBe(1)
 
-    const stored = JSON.parse(localStorage.getItem('wr.mock.db.v1'))
+    const stored = JSON.parse(localStorage.getItem('wr.mock.db.v2'))
     expect(stored.words.some((item) => item.word === 'orchid')).toBe(true)
+  })
+
+  it('should snapshot phonetic and senses when creating from a dictionary entry', async () => {
+    const created = await mockWords.create({
+      word: 'abandon',
+      status: 'learning',
+      source: 'dictionary',
+      dictionaryId: 'dict_abandon',
+      phonetic: { uk: '/əˈbæn.dən/', us: '/əˈbæn.dən/' },
+      senses: [
+        { pos: 'v.', meaning: '放弃；抛弃' },
+        { pos: 'n.', meaning: '放任；放纵' },
+      ],
+    })
+
+    expect(created.source).toBe('dictionary')
+    expect(created.phonetic.uk).toBe('/əˈbæn.dən/')
+    expect(created.senses).toHaveLength(2)
+    // 摘要取前两条义项拼接，列表与搜索复用
+    expect(created.summary).toBe('放弃；抛弃；放任；放纵')
+    // 词库条目不再保留顶层 meaning 字段
+    expect(created.meaning).toBeUndefined()
+  })
+
+  it('should downgrade a dictionary entry when its word changes', async () => {
+    const updated = await mockWords.update('w16', { word: 'memories' })
+
+    expect(updated.word).toBe('memories')
+    expect(updated.source).toBe('manual')
+    expect(updated.dictionaryId).toBeNull()
+    expect(updated.phonetic).toBeNull()
+    expect(updated.senses).toEqual([])
+  })
+
+  it('should reject editing dictionary fields through the update endpoint', async () => {
+    await expect(mockWords.update('w16', { senses: [] })).rejects.toMatchObject({
+      error: { code: 'READONLY_FIELD', field: 'senses' },
+    })
   })
 
   it('should keep reading snapshots after deleting a word', async () => {

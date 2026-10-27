@@ -66,8 +66,10 @@ describe('WordFormPanel', () => {
 
     expect(submitWord).toHaveBeenCalledWith({
       word: 'apple',
-      meaning: '苹果',
       status: 'learning',
+      source: 'manual',
+      meaning: '苹果',
+      senses: [{ pos: '', meaning: '苹果' }],
     })
     expect(inputs[0].element.value).toBe('')
     expect(inputs[1].element.value).toBe('')
@@ -102,11 +104,19 @@ describe('WordFormPanel', () => {
 })
 
 describe('WordEditModal', () => {
-  it('should prefill the word and emit the updated payload', async () => {
-    const word = { id: 'w1', word: 'apple', meaning: '苹果', status: 'mastered' }
+  it('should prefill the word and emit the updated payload for a manual entry', async () => {
+    const word = {
+      id: 'w1',
+      word: 'apple',
+      status: 'mastered',
+      source: 'manual',
+      dictionaryId: null,
+      phonetic: null,
+      senses: [{ pos: '', meaning: '苹果' }],
+    }
     const saveWord = vi.fn().mockResolvedValue({
       ok: true,
-      item: { ...word, meaning: '苹果汁' },
+      item: { ...word, senses: [{ pos: '', meaning: '苹果汁' }] },
     })
 
     const wrapper = mount(WordEditModal, {
@@ -131,5 +141,68 @@ describe('WordEditModal', () => {
     })
     expect(wrapper.emitted('update:open')).toEqual([[false]])
     expect(wrapper.emitted('saved')).toHaveLength(1)
+  })
+
+  it('should render a dictionary entry read-only and omit meaning from the payload', async () => {
+    const word = {
+      id: 'w1',
+      word: 'apple',
+      status: 'mastered',
+      source: 'dictionary',
+      dictionaryId: 'dict_apple',
+      phonetic: { uk: '/ˈæp.əl/', us: '/ˈæp.əl/' },
+      senses: [
+        { pos: 'n.', meaning: '苹果' },
+        { pos: 'n.', meaning: '苹果树' },
+      ],
+    }
+    const saveWord = vi.fn().mockResolvedValue({ ok: true, item: word })
+
+    const wrapper = mount(WordEditModal, {
+      props: { open: true, word, saveWord },
+      global: { stubs: { teleport: true } },
+    })
+    await flushPromises()
+
+    // 只剩单词一个输入框，释义改为只读列表
+    expect(wrapper.findAll('input')).toHaveLength(1)
+    expect(wrapper.text()).toContain('苹果树')
+    expect(wrapper.text()).toContain('/ˈæp.əl/')
+
+    const saveButton = wrapper.findAll('button').find((button) => button.text() === '保存')
+    await saveButton.trigger('click')
+    await flushPromises()
+
+    expect(saveWord).toHaveBeenCalledWith('w1', { word: 'apple', status: 'mastered' })
+  })
+
+  it('should warn before downgrading a dictionary entry when the word changes', async () => {
+    const word = {
+      id: 'w1',
+      word: 'apple',
+      status: 'mastered',
+      source: 'dictionary',
+      dictionaryId: 'dict_apple',
+      phonetic: { uk: '/ˈæp.əl/', us: '/ˈæp.əl/' },
+      senses: [{ pos: 'n.', meaning: '苹果' }],
+    }
+    const saveWord = vi.fn().mockResolvedValue({ ok: true, item: { ...word, source: 'manual' } })
+
+    const wrapper = mount(WordEditModal, {
+      props: { open: true, word, saveWord },
+      global: { stubs: { teleport: true } },
+    })
+    await flushPromises()
+
+    await wrapper.get('input').setValue('apples')
+
+    expect(wrapper.text()).toContain('转为手动录入')
+    const confirmButton = wrapper.findAll('button').find((button) => button.text() === '确认修改')
+    expect(confirmButton).toBeTruthy()
+
+    await confirmButton.trigger('click')
+    await flushPromises()
+
+    expect(saveWord).toHaveBeenCalledWith('w1', { word: 'apples', status: 'mastered' })
   })
 })

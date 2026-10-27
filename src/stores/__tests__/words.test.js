@@ -107,7 +107,7 @@ describe('words store', () => {
     })
 
     expect(result.ok).toBe(true)
-    expect(store.items.find((item) => item.id === target.id).meaning).toBe('新的释义')
+    expect(store.items.find((item) => item.id === target.id).senses[0].meaning).toBe('新的释义')
     expect(store.items.find((item) => item.id === target.id).status).toBe(nextStatus)
   })
 

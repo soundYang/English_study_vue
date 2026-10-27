@@ -108,13 +108,20 @@ export const useWordsStore = defineStore('words', () => {
     return fetchList()
   }
 
-  /** 新增单词；成功后回到第 1 页，新词按创建时间排在最前 */
+  /**
+   * 新增单词；成功后回到第 1 页，新词按创建时间排在最前
+   * 命中词库时透传整条快照，手填时只有 word / status / meaning 有意义
+   */
   async function addWord(payload = {}) {
     try {
       const item = await createWord({
         word: payload.word,
-        meaning: payload.meaning,
         status: payload.status,
+        source: payload.source,
+        dictionaryId: payload.dictionaryId ?? null,
+        phonetic: payload.phonetic ?? null,
+        senses: payload.senses ?? [],
+        meaning: payload.meaning,
       })
 
       page.value = 1
@@ -125,10 +132,17 @@ export const useWordsStore = defineStore('words', () => {
     }
   }
 
-  /** 编辑单词；静默刷新处理“改状态后不再符合当前筛选”的情况 */
+  /**
+   * 编辑单词；静默刷新处理“改状态后不再符合当前筛选”的情况
+   * 只允许改词形、状态与手填释义：音标 / 词性 / 义项由词库维护，接口会拒绝
+   */
   async function updateWord(id, patch = {}) {
     try {
-      const item = await updateWordRequest(id, patch)
+      const item = await updateWordRequest(id, {
+        word: patch.word,
+        status: patch.status,
+        meaning: patch.meaning,
+      })
       await fetchList({ quiet: true })
       return { ok: true, item }
     } catch (caught) {

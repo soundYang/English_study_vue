@@ -85,7 +85,9 @@ export const sessionStore = createStore(() => globalThis.sessionStorage)
 /** 集中维护存储键，避免各页面拼字符串导致读写不一致 */
 export const storageKeys = {
   settings: 'wr.settings.v1',
-  mockDb: 'wr.mock.db.v1',
+  // v2 起单词带 source / phonetic / senses，旧键数据不再读取
+  mockDb: 'wr.mock.db.v2',
+  dictionarySuggest: 'wr.pref.dictionarySuggest',
   answers: (readingId) => `wr.answers:${readingId}`,
   timer: (readingId) => `wr.timer:${readingId}`,
 }

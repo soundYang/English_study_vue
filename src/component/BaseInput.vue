@@ -14,11 +14,16 @@
  *   hint        — 辅助说明
  *   error       — 错误文案，存在时覆盖 hint 并标记 aria-invalid
  *   name / autocomplete / maxlength / inputmode — 原生属性透传
- *   disabled / required
+ *   disabled / required / readonly — readonly 用于“已锁定但需可复制、可朗读”的场景
  * emits:
  *   update:modelValue / focus / blur
+ *
+ * 其余属性与监听（如 role、aria-*、@keydown）透传到原生 input，
+ * 因为 combobox 语义必须挂在输入框本身而不是外层容器上。
  */
 import { computed, ref, useId } from 'vue'
+
+defineOptions({ inheritAttrs: false })
 
 const props = defineProps({
   modelValue: { type: [String, Number], default: '' },
@@ -34,6 +39,7 @@ const props = defineProps({
   inputmode: { type: String, default: undefined },
   disabled: { type: Boolean, default: false },
   required: { type: Boolean, default: false },
+  readonly: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:modelValue', 'focus', 'blur'])
@@ -72,6 +78,7 @@ defineExpose({ focus })
     <label v-if="label" class="input-label" :for="inputId">{{ label }}</label>
     <input
       ref="inputRef"
+      v-bind="$attrs"
       :id="inputId"
       class="input-control"
       :type="type"
@@ -83,6 +90,7 @@ defineExpose({ focus })
       :inputmode="inputmode"
       :disabled="disabled"
       :required="required"
+      :readonly="readonly"
       :aria-invalid="error ? 'true' : undefined"
       :aria-describedby="describedBy"
       @input="handleInput"
@@ -139,6 +147,12 @@ defineExpose({ focus })
 .input-control:disabled {
   background: var(--color-bg-deep);
   cursor: not-allowed;
+}
+
+/* 只读用于“来自词库、不可改但可复制”的字段，底色与禁用区分开 */
+.input-control:read-only {
+  background: var(--color-bg-deep);
+  color: var(--color-ink-2);
 }
 
 .has-error .input-control {

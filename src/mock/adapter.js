@@ -2,7 +2,7 @@
  * Mock 后端适配器
  * 用内存 + localStorage 模拟真实接口：延迟、分页、筛选、CRUD、生成、判分与统计。
  * 错误结构与真实后端一致（{ error: { code, message, field } }），切换后端时视图无需改动。
- * 修改写入 localStorage 的 wr.mock.db.v1；调用 resetMockDb() 可恢复初始数据。
+ * 修改写入 localStorage 的 wr.mock.db.v2；调用 resetMockDb() 可恢复初始数据。
  */
 import { createSeedDatabase, READING_TEMPLATES } from './seed'
 import { localStore, storageKeys } from '../unit/storage'
@@ -15,7 +15,8 @@ import {
   VOCABULARY_THRESHOLD,
 } from '../unit/validators'
 
-const DB_VERSION = 1
+// v2：单词新增 source / dictionaryId / phonetic / senses，旧库会被判为无效并重建
+const DB_VERSION = 2
 const DEFAULT_LATENCY = 300
 const MAX_PAGE_SIZE = 100
 const DEFAULT_PAGE_SIZE = 10
@@ -67,11 +68,21 @@ function wait(ms, signal) {
   })
 }
 
+function isValidWord(item) {
+  return Boolean(
+    item &&
+    typeof item.word === 'string' &&
+    (item.source === 'dictionary' || item.source === 'manual') &&
+    Array.isArray(item.senses),
+  )
+}
+
 function isValidDb(db) {
   return Boolean(
     db &&
     db.version === DB_VERSION &&
     Array.isArray(db.words) &&
+    db.words.every(isValidWord) &&
     Array.isArray(db.readings) &&
     Number.isInteger(db.wordSeq) &&
     Number.isInteger(db.readingSeq),
@@ -116,13 +127,43 @@ function paginate(items, page, pageSize) {
   }
 }
 
+/**
+ * 列表摘要：取前两条释义拼一行，超长截断。
+ * 表格只有一列释义，完整义项留给表单与编辑弹窗。
+ */
+function buildSummary(senses) {
+  const text = (senses || [])
+    .map((sense) => String(sense?.meaning ?? '').trim())
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('；')
+  return text.length > 30 ? `${text.slice(0, 30)}…` : text
+}
+
+function normalizePhonetic(value) {
+  if (!value || typeof value !== 'object') return null
+  return { uk: String(value.uk ?? ''), us: String(value.us ?? '') }
+}
+
+function normalizeSenses(senses) {
+  if (!Array.isArray(senses)) return []
+  return senses.map((sense) => ({
+    pos: String(sense?.pos ?? '').trim(),
+    meaning: String(sense?.meaning ?? '').trim(),
+  }))
+}
+
 function toWordDto(item) {
   return {
     id: item.id,
     word: item.word,
-    meaning: item.meaning,
     status: item.status,
     createdAt: item.createdAt,
+    source: item.source,
+    dictionaryId: item.dictionaryId ?? null,
+    phonetic: item.phonetic ? normalizePhonetic(item.phonetic) : null,
+    senses: normalizeSenses(item.senses),
+    summary: buildSummary(item.senses),
   }
 }
 
@@ -288,7 +329,11 @@ export const mockWords = {
         const matchesKeyword =
           !keyword ||
           item.word.includes(keyword) ||
-          (item.meaning || '').toLowerCase().includes(keyword)
+          (item.senses || []).some((sense) =>
+            String(sense?.meaning ?? '')
+              .toLowerCase()
+              .includes(keyword),
+          )
         return matchesStatus && matchesKeyword
       })
       .sort(byNewest)
@@ -308,7 +353,14 @@ export const mockWords = {
     await wait(latency)
 
     const db = readDb()
-    const { valid, errors, word, meaning } = validateWordInput(payload)
+    const source = payload.source === 'dictionary' ? 'dictionary' : 'manual'
+    const senses = normalizeSenses(payload.senses)
+    const { valid, errors, word, meaning } = validateWordInput({
+      word: payload.word,
+      meaning: payload.meaning,
+      mode: source,
+      senses,
+    })
 
     if (!valid) {
       const { field, message } = firstError(errors)
@@ -322,9 +374,13 @@ export const mockWords = {
     const item = {
       id: `w${db.wordSeq}`,
       word,
-      meaning,
       status,
       createdAt: new Date().toISOString(),
+      source,
+      // 词库快照只对命中条目生效；手填条目一律为 null
+      dictionaryId: source === 'dictionary' ? (payload.dictionaryId ?? null) : null,
+      phonetic: source === 'dictionary' ? normalizePhonetic(payload.phonetic) : null,
+      senses: source === 'dictionary' ? senses : meaning ? [{ pos: '', meaning }] : [],
     }
 
     db.wordSeq += 1
@@ -345,9 +401,27 @@ export const mockWords = {
     }
 
     const current = db.words[index]
+    const isDictionary = current.source === 'dictionary'
+
+    // 词条信息由词库维护：来源、词条 id、音标、义项都不允许经编辑接口改动
+    const readonlyField = ['source', 'dictionaryId', 'phonetic', 'senses'].find((field) =>
+      Object.prototype.hasOwnProperty.call(patch, field),
+    )
+    if (readonlyField) {
+      throw new MockApiError(
+        'READONLY_FIELD',
+        '词条信息由词库维护，不能直接修改',
+        400,
+        readonlyField,
+      )
+    }
+    if (isDictionary && patch.meaning !== undefined) {
+      throw new MockApiError('READONLY_FIELD', '词库词条的释义不能修改', 400, 'meaning')
+    }
+
     const { valid, errors, word, meaning } = validateWordInput({
       word: patch.word ?? current.word,
-      meaning: patch.meaning ?? current.meaning,
+      meaning: patch.meaning ?? current.senses?.[0]?.meaning ?? '',
     })
 
     if (!valid) {
@@ -364,9 +438,20 @@ export const mockWords = {
     const updated = {
       ...current,
       word,
-      meaning,
       status: patch.status ?? current.status,
       updatedAt: new Date().toISOString(),
+    }
+
+    if (word !== current.word && isDictionary) {
+      // 换词等于换词条：旧快照不再对应当前词形，整体丢弃并降级为手填
+      updated.source = 'manual'
+      updated.dictionaryId = null
+      updated.phonetic = null
+      // 与手填空释义的形态保持一致，列表据此显示占位符
+      updated.senses = []
+    } else if (!isDictionary) {
+      // 手填条目允许改释义
+      updated.senses = meaning ? [{ pos: '', meaning }] : []
     }
 
     db.words[index] = updated

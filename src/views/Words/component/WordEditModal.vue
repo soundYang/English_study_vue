@@ -2,7 +2,8 @@
 /**
  * 编辑单词弹窗
  *
- * 用途：预填单词、释义与学习状态；单词重复时在字段下方提示，保存成功后关闭并通知父级高亮
+ * 用途：预填单词、释义与学习状态；单词重复时在字段下方提示，保存成功后关闭并通知父级高亮。
+ *       命中词库的条目音标/词性/释义只读；改动单词会丢弃词库快照并降级为手填，保存前给出提示。
  * 用法：<WordEditModal v-model:open="editOpen" :word="editingWord" :save-word="handleUpdate" />
  *
  * props:
@@ -12,12 +13,12 @@
  * emits:
  *   update:open / saved — 保存成功，参数为更新后的词汇
  */
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import BaseButton from '../../../component/BaseButton.vue'
 import BaseInput from '../../../component/BaseInput.vue'
 import BaseModal from '../../../component/BaseModal.vue'
 import SegmentedControl from '../../../component/SegmentedControl.vue'
-import { isValidWordStatus, validateWordInput } from '../../../unit/validators'
+import { isValidWordStatus, normalizeWord, validateWordInput } from '../../../unit/validators'
 
 const STATUS_OPTIONS = [
   { value: 'new', label: '未学习' },
@@ -43,9 +44,16 @@ const fieldErrors = ref({})
 const generalError = ref('')
 const submitting = ref(false)
 
+// 词条信息只在命中词库的条目上存在，手填条目仍然编辑释义
+const isDictionary = computed(() => props.word?.source === 'dictionary')
+const phonetic = computed(() => props.word?.phonetic || null)
+const senses = computed(() => props.word?.senses || [])
+const wordChanged = computed(() => normalizeWord(form.word) !== (props.word?.word || ''))
+const willDowngrade = computed(() => isDictionary.value && wordChanged.value)
+
 function resetForm() {
   form.word = props.word?.word || ''
-  form.meaning = props.word?.meaning || ''
+  form.meaning = props.word?.senses?.[0]?.meaning || ''
   form.status = props.word?.status || 'learning'
   fieldErrors.value = {}
   generalError.value = ''
@@ -80,11 +88,12 @@ async function handleSubmit() {
   submitting.value = true
 
   try {
-    const result = await props.saveWord(props.word.id, {
-      word,
-      meaning,
-      status: form.status,
-    })
+    // 词库条目不传释义：接口会拒绝；改词由后端统一降级为手填
+    const patch = isDictionary.value
+      ? { word, status: form.status }
+      : { word, meaning, status: form.status }
+
+    const result = await props.saveWord(props.word.id, patch)
 
     if (result?.ok) {
       emit('saved', result.item)
@@ -122,7 +131,27 @@ async function handleSubmit() {
         :error="fieldErrors.word"
       />
 
+      <!-- 命中词库的条目：音标、词性、释义只读 -->
+      <div
+        v-if="isDictionary"
+        class="entry-card"
+        :class="{ 'is-outdated': willDowngrade }"
+        aria-label="来自词库的词条，只读"
+      >
+        <div class="entry-phonetic" lang="en">
+          <span>英 {{ phonetic?.uk || '—' }}</span>
+          <span v-if="phonetic?.us && phonetic.us !== phonetic.uk">美 {{ phonetic.us }}</span>
+        </div>
+        <ul class="entry-senses">
+          <li v-for="(sense, index) in senses" :key="index" class="entry-sense">
+            <span v-if="sense.pos" class="entry-pos">{{ sense.pos }}</span>
+            <span class="entry-meaning">{{ sense.meaning }}</span>
+          </li>
+        </ul>
+      </div>
+
       <BaseInput
+        v-else
         v-model="form.meaning"
         label="中文释义"
         placeholder="中文释义（可选）"
@@ -130,6 +159,10 @@ async function handleSubmit() {
         maxlength="100"
         :error="fieldErrors.meaning"
       />
+
+      <p v-if="willDowngrade" class="downgrade-note" role="alert">
+        修改单词会清除该词的音标与释义，转为手动录入。
+      </p>
 
       <div class="status-field">
         <span class="status-label">学习状态</span>
@@ -147,7 +180,9 @@ async function handleSubmit() {
 
     <template #footer>
       <BaseButton variant="secondary" :disabled="submitting" @click="close">取消</BaseButton>
-      <BaseButton :loading="submitting" @click="handleSubmit">保存</BaseButton>
+      <BaseButton :loading="submitting" @click="handleSubmit">
+        {{ willDowngrade ? '确认修改' : '保存' }}
+      </BaseButton>
     </template>
   </BaseModal>
 </template>
@@ -157,6 +192,65 @@ async function handleSubmit() {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+.entry-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-deep);
+}
+
+/* 单词已改动时这块快照即将作废，压暗以免被当成新词条的信息 */
+.entry-card.is-outdated {
+  opacity: 0.5;
+}
+
+.entry-phonetic {
+  display: flex;
+  gap: var(--space-3);
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+}
+
+.entry-senses {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry-sense {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+}
+
+.entry-pos {
+  flex: none;
+  color: var(--color-accent);
+  font-size: var(--text-caption);
+}
+
+.entry-meaning {
+  color: var(--color-ink-2);
+}
+
+.downgrade-note {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 
 .status-field {

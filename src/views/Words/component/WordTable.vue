@@ -21,6 +21,20 @@ import BaseButton from '../../../component/BaseButton.vue'
 import SkeletonBlock from '../../../component/SkeletonBlock.vue'
 import StatusPill from '../../../component/StatusPill.vue'
 
+/** 列表只展示英式音标；缺失时退回美式，都没有则交给模板显示占位符 */
+function phoneticOf(item) {
+  return item.phonetic?.uk || item.phonetic?.us || ''
+}
+
+function firstSense(item) {
+  return item.senses?.[0] || null
+}
+
+/** 首个义项之外还有几条，用于"+N"提示 */
+function extraSenseCount(item) {
+  return Math.max(0, (item.senses?.length || 0) - 1)
+}
+
 defineProps({
   items: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
@@ -62,6 +76,7 @@ function rowDelay(index) {
         </caption>
         <colgroup>
           <col class="col-word" />
+          <col class="col-phonetic" />
           <col class="col-meaning" />
           <col class="col-status" />
           <col class="col-actions" />
@@ -69,7 +84,8 @@ function rowDelay(index) {
         <thead>
           <tr>
             <th scope="col">英文</th>
-            <th scope="col">中文释义</th>
+            <th scope="col">音标</th>
+            <th scope="col">词性 · 释义</th>
             <th scope="col">学习状态</th>
             <th scope="col" class="actions-head">操作</th>
           </tr>
@@ -78,6 +94,7 @@ function rowDelay(index) {
         <tbody v-if="loading">
           <tr v-for="row in 8" :key="`skeleton-${row}`" class="skeleton-row">
             <td><SkeletonBlock width="58%" height="14px" /></td>
+            <td><SkeletonBlock width="76%" height="12px" /></td>
             <td><SkeletonBlock width="74%" height="14px" /></td>
             <td><SkeletonBlock width="64px" height="22px" radius="var(--radius-pill)" /></td>
             <td><SkeletonBlock width="64px" height="22px" /></td>
@@ -93,8 +110,20 @@ function rowDelay(index) {
             :style="rowDelay(index)"
           >
             <td class="cell-word">{{ item.word }}</td>
-            <td class="cell-meaning" :class="{ 'is-empty': !item.meaning }">
-              {{ item.meaning || '—' }}
+            <td class="cell-phonetic" :class="{ 'is-empty': !phoneticOf(item) }" lang="en">
+              {{ phoneticOf(item) || '—' }}
+            </td>
+            <td class="cell-meaning" :class="{ 'is-empty': !firstSense(item) }">
+              <template v-if="firstSense(item)">
+                <span v-if="firstSense(item).pos" class="sense-pos">
+                  {{ firstSense(item).pos }}
+                </span>
+                <span class="sense-text">{{ firstSense(item).meaning || '—' }}</span>
+                <span v-if="extraSenseCount(item)" class="sense-more">
+                  +{{ extraSenseCount(item) }}
+                </span>
+              </template>
+              <template v-else>—</template>
             </td>
             <td>
               <StatusPill kind="status" :value="item.status" />
@@ -143,9 +172,21 @@ function rowDelay(index) {
         :style="rowDelay(index)"
       >
         <div class="card-text">
-          <span class="card-word">{{ item.word }}</span>
-          <span class="card-meaning" :class="{ 'is-empty': !item.meaning }">
-            {{ item.meaning || '—' }}
+          <span class="card-line">
+            <span class="card-word">{{ item.word }}</span>
+            <span class="card-phonetic" :class="{ 'is-empty': !phoneticOf(item) }" lang="en">
+              {{ phoneticOf(item) || '—' }}
+            </span>
+          </span>
+          <span class="card-meaning" :class="{ 'is-empty': !firstSense(item) }">
+            <template v-if="firstSense(item)">
+              <span v-if="firstSense(item).pos" class="sense-pos">{{ firstSense(item).pos }}</span>
+              {{ firstSense(item).meaning || '—' }}
+              <span v-if="extraSenseCount(item)" class="sense-more">
+                +{{ extraSenseCount(item) }}
+              </span>
+            </template>
+            <template v-else>—</template>
           </span>
         </div>
 
@@ -189,15 +230,19 @@ function rowDelay(index) {
 }
 
 .col-word {
-  width: 28%;
+  width: 20%;
+}
+
+.col-phonetic {
+  width: 20%;
 }
 
 .col-meaning {
-  width: 34%;
+  width: 32%;
 }
 
 .col-status {
-  width: 18%;
+  width: 16%;
 }
 
 .col-actions {
@@ -250,6 +295,17 @@ function rowDelay(index) {
   font-weight: 500;
 }
 
+.cell-phonetic {
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+}
+
+.cell-phonetic.is-empty,
+.card-phonetic.is-empty {
+  color: var(--color-muted);
+}
+
 .cell-meaning {
   color: var(--color-ink-2);
 }
@@ -257,6 +313,19 @@ function rowDelay(index) {
 .cell-meaning.is-empty,
 .card-meaning.is-empty {
   color: var(--color-muted);
+}
+
+/* 词性用强调色区分，释义保持正文色，避免整列像一串标签 */
+.sense-pos {
+  margin-right: 4px;
+  color: var(--color-accent);
+  font-size: var(--text-caption);
+}
+
+.sense-more {
+  margin-left: 4px;
+  color: var(--color-muted);
+  font-size: var(--text-caption);
 }
 
 .row-actions {
@@ -394,11 +463,25 @@ function rowDelay(index) {
     min-width: 0;
   }
 
+  .card-line {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
   .card-word {
     font-size: 15px;
     font-weight: 500;
     line-height: 22px;
     overflow-wrap: anywhere;
+  }
+
+  .card-phonetic {
+    color: var(--color-muted);
+    font-size: var(--text-caption);
+    line-height: var(--leading-caption);
+    white-space: nowrap;
   }
 
   .card-meaning {
