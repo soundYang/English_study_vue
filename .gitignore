@@ -3,6 +3,9 @@ dist
 dist-ssr
 coverage
 *.local
+
+# 词库构建的原始数据，约 5.5MB，按 scripts/build-dictionary.mjs 头部说明重新获取
+scripts/vendor/
 .env
 .env.*
 !.env.example
