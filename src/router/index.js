@@ -1,6 +1,7 @@
 /**
  * 路由表
- * 六页闭环 + 404；meta.module 决定侧栏激活项，meta.hideMobileNav 控制底部标签栏。
+ * 六页闭环 + 404；meta.module 决定侧栏激活项，meta.hideMobileNav 控制底部标签栏，
+ * meta.flush 取消内容区最大宽度与内边距（首页 Hero、设置页装饰栏需要贴住窗口边缘）。
  */
 import { createRouter, createWebHistory } from 'vue-router'
 import { registerGuards } from './guards'
@@ -10,7 +11,7 @@ const routes = [
     path: '/',
     name: 'home',
     component: () => import('../views/Home/index.vue'),
-    meta: { title: '首页', module: 'home' },
+    meta: { title: '首页', module: 'home', flush: true },
   },
   {
     path: '/words',
@@ -22,7 +23,7 @@ const routes = [
     path: '/settings',
     name: 'settings',
     component: () => import('../views/Settings/index.vue'),
-    meta: { title: '阅读设置', module: 'reading' },
+    meta: { title: '阅读设置', module: 'reading', flush: true },
   },
   {
     path: '/readings/:id',

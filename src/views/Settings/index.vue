@@ -98,13 +98,13 @@ async function handleGenerate() {
 
 <template>
   <section class="settings-page">
-    <header class="page-head">
-      <p class="page-eyebrow">Reading Setup</p>
-      <h1 class="page-title">阅读设置</h1>
-      <p class="page-desc">选择你想要的难度和文章参数，让 AI 生成更适合你的阅读材料。</p>
-    </header>
+    <div class="settings-main">
+      <header class="page-head">
+        <p class="page-eyebrow">Reading Setup</p>
+        <h1 class="page-title">阅读设置</h1>
+        <p class="page-desc">选择你想要的难度和文章参数，让 AI 生成更适合你的阅读材料。</p>
+      </header>
 
-    <div class="settings-layout">
       <form class="settings-form" @submit.prevent="handleGenerate">
         <DifficultyPicker v-model="draft.level" :disabled="isGenerating" />
 
@@ -141,9 +141,9 @@ async function handleGenerate() {
           </BaseButton>
         </div>
       </form>
-
-      <SettingsAside class="settings-aside" />
     </div>
+
+    <SettingsAside class="settings-aside" />
   </section>
 </template>
 
@@ -152,16 +152,22 @@ async function handleGenerate() {
   animation: settings-rise var(--dur-page) var(--ease-out) both;
 }
 
-.settings-layout {
+/* 左表单列 + 右满高装饰列；装饰列贴住内容区右边缘，见 meta.flush */
+.settings-page {
   display: grid;
-  grid-template-columns: minmax(0, 720px) 320px;
-  gap: 28px;
-  justify-content: space-between;
-  margin-top: var(--space-8);
+  grid-template-columns: minmax(0, 1fr) clamp(280px, 23vw, 360px);
+  min-height: calc(100dvh - var(--topbar-height));
+}
+
+.settings-main {
+  width: 100%;
+  max-width: calc(720px + var(--content-pad-x) + var(--space-10));
+  padding: var(--content-pad-y) var(--space-10) var(--space-16) var(--content-pad-x);
 }
 
 .settings-form {
   min-width: 0;
+  margin-top: var(--space-8);
   animation: settings-rise var(--dur-page) var(--ease-out) 60ms both;
 }
 
@@ -220,8 +226,13 @@ async function handleGenerate() {
 }
 
 @media (max-width: 1099px) {
-  .settings-layout {
+  .settings-page {
     grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  .settings-main {
+    max-width: calc(720px + var(--content-pad-x) * 2);
   }
 
   .settings-aside {
@@ -230,12 +241,13 @@ async function handleGenerate() {
 }
 
 @media (max-width: 767px) {
-  .settings-layout {
+  .settings-form {
     margin-top: var(--space-6);
   }
 
-  .settings-form {
-    padding-bottom: calc(72px + var(--space-6));
+  .settings-main {
+    max-width: none;
+    padding: var(--content-pad-y) var(--content-pad-x) calc(72px + var(--space-6));
   }
 
   .actions {

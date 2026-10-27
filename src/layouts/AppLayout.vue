@@ -10,6 +10,7 @@
  *   - 768～1023px 侧栏收为 76px 图标栏
  *   - 小于 768px 时侧栏隐藏，改为顶部栏 + 底部四标签
  *   - 答题页通过 meta.hideMobileNav 隐藏底部标签，避免误触离开
+ *   - meta.flush 的页面取消内容区最大宽度与内边距，让图片等装饰面贴到窗口边缘
  */
 import { computed, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
@@ -29,6 +30,7 @@ const mainRef = ref(null)
 const activeModule = computed(() => route.meta.module || '')
 const hideMobileNav = computed(() => route.meta.hideMobileNav === true)
 const isWide = computed(() => route.meta.wide === true)
+const isFlush = computed(() => route.meta.flush === true)
 
 watch(
   () => route.fullPath,
@@ -68,8 +70,6 @@ watch(
           <span class="nav-label">{{ item.label }}</span>
         </RouterLink>
       </nav>
-
-      <p class="sidebar-quote">Little by little,<br />you will get there.</p>
     </aside>
 
     <div class="workspace">
@@ -87,7 +87,7 @@ watch(
       </header>
 
       <main id="main-content" ref="mainRef" class="main" tabindex="-1">
-        <div class="main-inner" :class="{ 'is-wide': isWide }">
+        <div class="main-inner" :class="{ 'is-wide': isWide, 'is-flush': isFlush }">
           <RouterView v-slot="{ Component }">
             <Transition name="page" mode="out-in">
               <component :is="Component" />
@@ -153,7 +153,13 @@ watch(
   width: var(--sidebar-width);
   height: 100dvh;
   padding: 28px 20px 20px;
-  background: var(--color-sidebar);
+  /* 底色取自插画顶部像素，图片上缘不会露出一条色带 */
+  background-color: #232e30;
+  /* 插画本身带竖排引语，图片按宽度铺满并贴底，不做裁切 */
+  background-image: url('../assets/images/sidebar-forest.jpg');
+  background-repeat: no-repeat;
+  background-position: bottom center;
+  background-size: 100% auto;
   color: var(--color-sidebar-text);
 }
 
@@ -235,17 +241,6 @@ watch(
   content: '';
 }
 
-.sidebar-quote {
-  margin-top: auto;
-  padding: 20px 10px 4px;
-  color: var(--color-sidebar-text);
-  font-family: var(--font-display);
-  font-size: 12px;
-  font-style: italic;
-  line-height: 20px;
-  opacity: 0.55;
-}
-
 /* 工作区 */
 .workspace {
   display: flex;
@@ -313,6 +308,12 @@ watch(
   max-width: var(--content-max-wide);
 }
 
+/* 满幅页面自己掌握内边距，内容区不再居中收窄 */
+.main-inner.is-flush {
+  max-width: none;
+  padding: 0;
+}
+
 /* 移动端底部标签栏（桌面隐藏） */
 .mobile-tabs {
   display: none;
@@ -325,6 +326,8 @@ watch(
     align-items: center;
     width: var(--sidebar-width-compact);
     padding: 24px 12px 16px;
+    /* 图标栏太窄，插画只剩一条纹理，不如保留纯色 */
+    background-image: none;
   }
 
   .brand {
@@ -333,8 +336,7 @@ watch(
   }
 
   .brand-text,
-  .nav-label,
-  .sidebar-quote {
+  .nav-label {
     display: none;
   }
 
@@ -381,6 +383,13 @@ watch(
 
   .main-inner {
     padding-bottom: calc(var(--content-pad-y) + var(--mobile-tabbar-height) + var(--space-6));
+  }
+
+  /* 满幅页面已没有内边距，这里只补出固定标签栏的高度 */
+  .main-inner.is-flush {
+    padding-bottom: calc(
+      var(--mobile-tabbar-height) + env(safe-area-inset-bottom) + var(--space-6)
+    );
   }
 
   .mobile-tabs {

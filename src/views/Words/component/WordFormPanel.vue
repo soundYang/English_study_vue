@@ -19,7 +19,7 @@ import { nextTick, reactive, ref } from 'vue'
 import BaseButton from '../../../component/BaseButton.vue'
 import BaseInput from '../../../component/BaseInput.vue'
 import SegmentedControl from '../../../component/SegmentedControl.vue'
-import wordsBook from '../../../assets/images/words-book.png'
+import wordsQuote from '../../../assets/images/words-quote.png'
 import { isValidWordStatus, validateWordInput } from '../../../unit/validators'
 
 const STATUS_OPTIONS = [
@@ -150,8 +150,7 @@ defineExpose({ focusWord })
     <BaseButton type="submit" block :loading="submitting">保存</BaseButton>
 
     <div v-if="!compact" class="form-art">
-      <img :src="wordsBook" alt="" width="1536" height="1024" loading="lazy" />
-      <span class="form-art-text">Small steps make big progress.</span>
+      <img :src="wordsQuote" alt="" width="1418" height="636" loading="lazy" />
     </div>
   </form>
 </template>
@@ -229,38 +228,17 @@ defineExpose({ focusWord })
   line-height: var(--leading-caption);
 }
 
+/* 插画自带引语与纸纹，整张铺满即可，不再叠渐变和文字 */
 .form-art {
-  position: relative;
-  height: 132px;
   overflow: hidden;
   border-radius: var(--radius-md);
   background: var(--color-bg-deep);
 }
 
 .form-art img {
+  display: block;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center 55%;
-}
-
-.form-art::after {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(255, 252, 246, 0) 20%, rgba(255, 252, 246, 0.9) 100%);
-  content: '';
-}
-
-.form-art-text {
-  position: absolute;
-  right: var(--space-3);
-  bottom: var(--space-2);
-  z-index: 1;
-  color: var(--color-ink-2);
-  font-family: var(--font-display);
-  font-size: var(--text-caption);
-  font-style: italic;
-  line-height: var(--leading-caption);
+  height: auto;
 }
 
 @media (max-width: 767px) {

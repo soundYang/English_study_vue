@@ -118,11 +118,16 @@ function tryAnyway() {
 </template>
 
 <style scoped>
+/* 首页走 meta.flush，内容区没有内边距，这里自己补回左右留白 */
 .entries {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--space-5);
-  margin-top: var(--space-10);
+  width: 100%;
+  max-width: var(--content-max-wide);
+  /* 设计稿里三张卡紧贴横幅下缘，只留一道窄缝；超宽屏时整组居中 */
+  margin: var(--space-3) auto 0;
+  padding: 0 var(--content-pad-x) var(--space-16);
 }
 
 @media (max-width: 1023px) {
@@ -135,6 +140,7 @@ function tryAnyway() {
   .entries {
     grid-template-columns: 1fr;
     margin-top: var(--space-8);
+    padding-bottom: var(--space-10);
   }
 }
 </style>

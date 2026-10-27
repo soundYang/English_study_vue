@@ -272,7 +272,8 @@ function rowDelay(index) {
   height: 32px;
   border-radius: var(--radius-sm);
   color: var(--color-ink-2);
-  opacity: 0.45;
+  /* 0.45 时图标对白底仅 2.23:1，低于控件 3:1；0.7 为 3.92:1 仍弱于正文 */
+  opacity: 0.7;
   transition:
     opacity var(--dur-fast) var(--ease-out),
     background-color var(--dur-fast) var(--ease-out),

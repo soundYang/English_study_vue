@@ -197,6 +197,9 @@ function handleEmptyAction() {
 
 <style scoped>
 .history-head {
+  position: relative;
+  /* 入场动画停在 translateY(0) 仍会建立层叠上下文；抬高一层，否则下拉菜单被统计卡盖住 */
+  z-index: 2;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
