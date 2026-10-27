@@ -9,7 +9,8 @@ import { apiGet, apiPost } from '../unit/request'
 /** 生成阅读材料，返回安全 DTO（不含翻译、正确答案与解析） */
 export function generateReading(payload, options = {}) {
   if (config.useMock) return mockReadings.generate(payload, options)
-  return apiPost('/readings/generate', payload, options)
+  // 生成是唯一的长耗时接口：单独放宽超时，signal 仍可随时中断
+  return apiPost('/readings/generate', payload, { timeout: config.generateTimeout, ...options })
 }
 
 /** 获取阅读详情：未提交返回安全 DTO，已提交返回含答案与翻译的完整结果 */

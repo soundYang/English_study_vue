@@ -4,6 +4,8 @@
  */
 const DEFAULT_API_BASE_URL = 'http://localhost:3000/api'
 const REQUEST_TIMEOUT = 15000
+// AI 生成需要 20-60 秒，必须单独放宽；后端上游超时为 60 秒，这里留 30 秒余量
+const GENERATE_TIMEOUT = 90000
 
 const rawBaseUrl = (import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL).trim()
 const useMock = import.meta.env.VITE_USE_MOCK !== 'false'
@@ -13,6 +15,7 @@ export const config = Object.freeze({
   apiBaseUrl,
   useMock,
   requestTimeout: REQUEST_TIMEOUT,
+  generateTimeout: GENERATE_TIMEOUT,
   isDev: import.meta.env.DEV,
   isProd: import.meta.env.PROD,
 })
