@@ -107,6 +107,11 @@ svg {
   background: var(--color-muted-2);
 }
 
+/* 弹窗打开时锁定背景滚动，由 BaseModal 统一维护 */
+body.has-modal-open {
+  overflow: hidden;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

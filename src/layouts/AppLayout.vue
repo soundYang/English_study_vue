@@ -14,6 +14,7 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { BookOpen, Clock, Home, NotebookPen } from 'lucide-vue-next'
+import ToastHost from '../component/ToastHost.vue'
 
 const navItems = [
   { key: 'home', label: '首页', to: '/', icon: Home },
@@ -108,6 +109,8 @@ watch(
         </RouterLink>
       </nav>
     </div>
+
+    <ToastHost />
   </div>
 </template>
 

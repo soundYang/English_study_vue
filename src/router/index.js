@@ -50,6 +50,16 @@ const routes = [
   },
 ]
 
+// 开发期组件预览页：生产构建不注册，避免出现在正式路由表
+if (import.meta.env.DEV) {
+  routes.push({
+    path: '/dev/components',
+    name: 'component-preview',
+    component: () => import('../views/Dev/index.vue'),
+    meta: { title: '组件预览', module: '' },
+  })
+}
+
 const router = createRouter({
   history: createWebHistory(),
   routes,
