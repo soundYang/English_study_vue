@@ -12,7 +12,8 @@ export const TARGET_WORDS_MIN = 50
 export const TARGET_WORDS_MAX = 300
 export const TARGET_WORDS_STEP = 10
 export const WORD_MAX_LENGTH = 45
-export const MEANING_MAX_LENGTH = 100
+// 真实词库有 5 条释义在 101–163 字之间，上限放到 200 才能选中保存
+export const MEANING_MAX_LENGTH = 200
 export const VOCABULARY_THRESHOLD = 20
 
 const WORD_PATTERN = /^[a-z'-]+$/

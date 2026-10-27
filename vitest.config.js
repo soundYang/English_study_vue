@@ -17,5 +17,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     include: ['src/**/*.test.js'],
+    // 单测断言的都是 mock 数据，必须与 .env 的 VITE_USE_MOCK 解耦：
+    // 联调时会把它改成 false，若这里不锁定，整套测试会去打真实后端而全红。
+    env: { VITE_USE_MOCK: 'true' },
   },
 })
