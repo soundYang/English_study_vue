@@ -123,6 +123,25 @@ describe('BaseModal', () => {
     expect(wrapper.emitted('close')).toHaveLength(1)
     wrapper.unmount()
   })
+
+  it('should ignore Escape while closeOnEsc is false', async () => {
+    const wrapper = mount(BaseModal, {
+      props: { open: false, title: '删除中', closeOnEsc: false },
+      attachTo: document.body,
+    })
+
+    await wrapper.setProps({ open: true })
+    await nextTick()
+
+    const dialog = document.querySelector('[role="dialog"]')
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+
+    wrapper.unmount()
+  })
 })
 
 describe('toast store', () => {

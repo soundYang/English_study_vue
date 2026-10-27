@@ -88,6 +88,11 @@ svg {
   outline-offset: 2px;
 }
 
+/* 跳转链接会把焦点移到 main（tabindex="-1"），这层焦点不该再画一圈 */
+main:focus {
+  outline: none;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

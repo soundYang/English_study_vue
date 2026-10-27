@@ -266,6 +266,13 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleOutside))
   left: auto;
 }
 
+@media (max-width: 767px) {
+  /* 触控目标不小于 44×44 */
+  .dropdown-trigger {
+    height: 44px;
+  }
+}
+
 .dropdown-option {
   display: flex;
   align-items: center;

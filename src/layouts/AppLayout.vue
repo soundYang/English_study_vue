@@ -86,7 +86,7 @@ watch(
         </div>
       </header>
 
-      <main id="main-content" ref="mainRef" class="main">
+      <main id="main-content" ref="mainRef" class="main" tabindex="-1">
         <div class="main-inner" :class="{ 'is-wide': isWide }">
           <RouterView v-slot="{ Component }">
             <Transition name="page" mode="out-in">

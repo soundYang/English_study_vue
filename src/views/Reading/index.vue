@@ -202,7 +202,7 @@ function goHome() {
 <template>
   <section class="reading-page">
     <div v-if="store.loadError" class="state-card" role="alert">
-      <p class="state-title">{{ loadTitle }}</p>
+      <h1 class="state-title">{{ loadTitle }}</h1>
       <p class="state-desc">{{ loadDescription }}</p>
       <BaseButton v-if="isNotFound" @click="goHome">返回首页</BaseButton>
       <BaseButton v-else variant="secondary" @click="retryLoad">重新加载</BaseButton>
@@ -236,7 +236,7 @@ function goHome() {
           <ArticleCard :title="reading.title" :article="reading.article" />
         </div>
 
-        <aside ref="questionColumn" class="question-column">
+        <div ref="questionColumn" class="question-column">
           <section class="question-panel" aria-label="阅读理解题目">
             <div class="panel-head">
               <h2 class="panel-title">阅读理解（共 {{ questions.length }} 题）</h2>
@@ -260,7 +260,7 @@ function goHome() {
               @submit="beginSubmit"
             />
           </section>
-        </aside>
+        </div>
       </div>
     </template>
 
@@ -408,8 +408,14 @@ function goHome() {
     gap: 0;
   }
 
-  .reading-layout.show-article .question-column {
+  /* 提交栏固定在底部，切到文章面板时必须保留；只隐藏题头与题目列表 */
+  .reading-layout.show-article .panel-head,
+  .reading-layout.show-article :deep(.question-list) {
     display: none;
+  }
+
+  .reading-layout.show-article .question-panel {
+    padding: 0;
   }
 
   .reading-layout.show-questions .article-column {

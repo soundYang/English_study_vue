@@ -115,10 +115,15 @@ import heroDesk from '../../../assets/images/hero-desk.png'
   }
 }
 
+/* 768–1023 仍为两栏（平板横屏），只收窄间距并降低标题 */
 @media (max-width: 1023px) {
   .hero {
-    grid-template-columns: 1fr;
     gap: var(--space-6);
+  }
+
+  .hero-title {
+    font-size: 44px;
+    line-height: 52px;
   }
 
   .hero-figure {
@@ -126,7 +131,12 @@ import heroDesk from '../../../assets/images/hero-desk.png'
   }
 }
 
+/* 小于 768 才上下堆叠 */
 @media (max-width: 767px) {
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
   .hero-title {
     font-size: 40px;
     line-height: 48px;

@@ -127,7 +127,7 @@ function goHome() {
     </div>
 
     <div v-else-if="loadError || !hasReadingId" class="state-card" role="alert">
-      <p class="state-title">{{ errorTitle }}</p>
+      <h1 class="state-title">{{ errorTitle }}</h1>
       <p class="state-desc">{{ errorDescription }}</p>
       <BaseButton v-if="isNotFound" @click="goHistory">返回历史</BaseButton>
       <BaseButton v-else variant="secondary" :loading="store.loading" @click="retryLoad">

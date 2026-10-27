@@ -87,6 +87,9 @@ describe('History page states', () => {
 
     expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(8)
     expect(wrapper.findAll('.history-card.is-skeleton')).toHaveLength(4)
+    // 骨架对读屏不可见，用 aria-busy + 隐藏文案告知加载状态
+    expect(wrapper.get('.history-list').attributes('aria-busy')).toBe('true')
+    expect(wrapper.get('.history-list').text()).toContain('正在加载历史记录')
   })
 
   it('should show an error card and recover after retry', async () => {

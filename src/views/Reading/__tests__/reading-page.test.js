@@ -129,6 +129,8 @@ describe('Reading page', () => {
 
     expect(page.get('[role="alert"]').text()).toContain('这篇练习不存在或已被删除')
     expect(page.find('[data-question-id]').exists()).toBe(false)
+    // 错误态也必须有唯一 h1
+    expect(page.findAll('h1')).toHaveLength(1)
 
     await findButton(page, '返回首页').trigger('click')
     expect(routerMocks.push).toHaveBeenCalledWith('/')

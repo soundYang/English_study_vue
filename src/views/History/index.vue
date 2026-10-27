@@ -150,7 +150,13 @@ function handleEmptyAction() {
 
     <StatsGrid class="history-stats" :stats="stats" :loading="loading && !stats" />
 
-    <section class="history-list" aria-labelledby="history-list-title">
+    <section
+      class="history-list"
+      aria-labelledby="history-list-title"
+      :aria-busy="loading ? 'true' : 'false'"
+    >
+      <span v-if="loading" class="sr-only" role="status">正在加载历史记录</span>
+
       <div class="list-head">
         <h2 id="history-list-title" class="list-title">练习记录</h2>
         <span v-if="!loading && !error && total > 0" class="list-count">共 {{ total }} 条</span>

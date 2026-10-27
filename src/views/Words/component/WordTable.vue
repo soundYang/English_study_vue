@@ -408,6 +408,8 @@ function rowDelay(index) {
   }
 
   .row-actions.is-on-card .row-action {
+    width: 44px;
+    height: 44px;
     opacity: 1;
   }
 }

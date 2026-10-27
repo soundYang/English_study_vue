@@ -146,7 +146,7 @@ function select(optionIndex) {
 
 .option.is-selected {
   border-color: var(--color-primary);
-  background: #f5f0e4;
+  background: var(--color-selected-bg);
 }
 
 .option-input {

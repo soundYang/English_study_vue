@@ -28,6 +28,7 @@ const iconMap = {
           class="toast"
           :class="`is-${item.type}`"
           :role="item.type === 'error' ? 'alert' : 'status'"
+          :aria-live="item.type === 'error' ? 'assertive' : 'polite'"
           @mouseenter="toastStore.pause(item.id)"
           @mouseleave="toastStore.resume(item.id)"
         >
@@ -107,6 +108,7 @@ const iconMap = {
 }
 
 .toast-close {
+  position: relative;
   display: grid;
   flex: 0 0 22px;
   place-items: center;
@@ -114,7 +116,7 @@ const iconMap = {
   height: 22px;
   margin: -2px -4px 0 0;
   border-radius: var(--radius-sm);
-  color: var(--color-muted-2);
+  color: var(--color-muted);
   transition:
     background-color var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out);
@@ -123,6 +125,13 @@ const iconMap = {
 .toast-close:hover {
   background: var(--color-bg-deep);
   color: var(--color-ink-2);
+}
+
+/* 视觉保持 22px，触控热区扩到 44×44 */
+.toast-close::after {
+  position: absolute;
+  inset: -11px;
+  content: '';
 }
 
 .toast-enter-active,

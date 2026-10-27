@@ -183,7 +183,7 @@ function isAnswered(id) {
   height: 4px;
   border-radius: var(--radius-pill);
   background: var(--color-line);
-  transition: background-color var(--dur-slow) var(--ease-out);
+  transition: background-color var(--dur-progress) var(--ease-out);
 }
 
 .progress-segment.is-answered .segment-bar {
@@ -239,7 +239,8 @@ function isAnswered(id) {
   .progress-segment {
     flex: 1;
     width: auto;
-    height: 32px;
+    /* 触控目标不小于 44×44，进度条本身仍保持 4px 细线 */
+    height: 44px;
   }
 }
 

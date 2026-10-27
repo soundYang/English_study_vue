@@ -9,12 +9,14 @@
   --color-bg-deep: #efe8da;
   --color-surface: #fffcf6;
   --color-surface-2: #fbf7ee;
+  --color-selected-bg: #f5f0e4;
+  --color-overlay: rgba(30, 42, 36, 0.32);
 
-  /* 文字 */
+  /* 文字：muted 与 muted-2 均在米杏底上达到 4.5:1 / 3:1 */
   --color-ink: #26261f;
   --color-ink-2: #4a4a40;
-  --color-muted: #7a7568;
-  --color-muted-2: #a29c8d;
+  --color-muted: #6b6659;
+  --color-muted-2: #7a7568;
 
   /* 边框 */
   --color-line: #e4dccb;
@@ -30,18 +32,18 @@
   --color-primary: #2c4a3b;
   --color-primary-hover: #375b48;
   --color-primary-ink: #f7f4ea;
-  --color-accent: #a97a4b;
+  --color-accent: #8f6236;
 
-  /* 状态色 */
-  --color-success: #4f7a5c;
+  /* 状态色：正文与胶囊文字均需 ≥ 4.5:1 */
+  --color-success: #3f6b4c;
   --color-success-bg: #e7efe5;
-  --color-warning: #b37c3f;
+  --color-warning: #8a5d2a;
   --color-warning-bg: #f6ebd9;
-  --color-danger: #b05b52;
-  --color-danger-hover: #9a4c44;
+  --color-danger: #96473f;
+  --color-danger-hover: #7d3a33;
   --color-danger-ink: #ffffff;
   --color-danger-bg: #f5e3df;
-  --color-info: #5b7487;
+  --color-info: #4a6274;
   --color-info-bg: #e7edf1;
 
   /* 焦点 */
@@ -108,6 +110,7 @@
   --dur-base: 200ms;
   --dur-slow: 280ms;
   --dur-page: 240ms;
+  --dur-progress: 300ms;
 
   /* 布局 */
   --sidebar-width: 232px;

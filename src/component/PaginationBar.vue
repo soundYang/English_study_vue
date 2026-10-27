@@ -161,5 +161,11 @@ function goTo(page) {
   .pagination-summary {
     display: inline;
   }
+
+  /* 触控目标不小于 44×44 */
+  .page-button {
+    min-width: 44px;
+    height: 44px;
+  }
 }
 </style>

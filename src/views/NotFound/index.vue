@@ -43,7 +43,7 @@ import { BookOpen } from 'lucide-vue-next'
 
 .not-found-code {
   margin-top: var(--space-5);
-  color: var(--color-muted-2);
+  color: var(--color-muted);
   font-family: var(--font-display);
   font-size: var(--text-caption);
   letter-spacing: 0.28em;

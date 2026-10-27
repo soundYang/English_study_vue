@@ -14,6 +14,7 @@
  *   description     — 标题下方说明
  *   maxWidth        — 最大宽度，数字按 px 处理，默认 480
  *   closeOnBackdrop — 点击遮罩是否关闭，默认 true
+ *   closeOnEsc      — 按 Esc 是否关闭，默认 true；提交中传 false
  *   showClose       — 是否显示右上角关闭按钮，默认 true
  *   sheetOnMobile   — 小于 768px 时从底部弹出，默认 false
  * emits:
@@ -30,6 +31,7 @@ const props = defineProps({
   description: { type: String, default: '' },
   maxWidth: { type: [Number, String], default: 480 },
   closeOnBackdrop: { type: Boolean, default: true },
+  closeOnEsc: { type: Boolean, default: true },
   showClose: { type: Boolean, default: true },
   sheetOnMobile: { type: Boolean, default: false },
 })
@@ -90,6 +92,8 @@ function handleBackdrop() {
 
 function handleKeydown(event) {
   if (event.key === 'Escape') {
+    // 提交中禁止 Esc 关闭：请求仍在进行，弹窗消失会让用户以为操作已取消
+    if (!props.closeOnEsc) return
     event.stopPropagation()
     close()
     return
@@ -198,7 +202,7 @@ onBeforeUnmount(unlockScroll)
   align-items: center;
   justify-content: center;
   padding: var(--space-6);
-  background: rgba(30, 42, 36, 0.32);
+  background: var(--color-overlay);
   backdrop-filter: blur(2px);
 }
 

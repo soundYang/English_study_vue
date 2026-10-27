@@ -210,7 +210,9 @@ function reload() {
     </header>
 
     <div class="words-layout">
-      <div class="words-main">
+      <div class="words-main" :aria-busy="store.loading ? 'true' : 'false'">
+        <span v-if="store.loading" class="sr-only" role="status">正在加载生词本</span>
+
         <WordToolbar :value="store.query" @search="handleSearch" @add="openAddPanel" />
 
         <WordStatusTabs v-model="statusModel" :counts="store.counts" />

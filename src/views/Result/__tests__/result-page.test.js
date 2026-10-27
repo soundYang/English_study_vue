@@ -131,6 +131,8 @@ describe('Result page', () => {
 
     expect(wrapper.get('.state-card').attributes('role')).toBe('alert')
     expect(wrapper.text()).toContain('这篇练习不存在或已被删除')
+    // 错误态也必须有唯一 h1，否则读屏无法判断页面主题
+    expect(wrapper.findAll('h1')).toHaveLength(1)
 
     const back = wrapper.findAll('button').find((button) => button.text().includes('返回历史'))
     await back.trigger('click')

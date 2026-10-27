@@ -158,12 +158,19 @@ function handleKeydown(event) {
 }
 
 .segment-count {
-  color: var(--color-muted-2);
+  color: var(--color-muted);
   font-size: var(--text-caption);
   font-weight: 400;
 }
 
 .segmented-item.is-active .segment-count {
   color: var(--color-accent);
+}
+
+@media (max-width: 767px) {
+  /* 触控目标不小于 44×44 */
+  .segmented-item {
+    height: 44px;
+  }
 }
 </style>

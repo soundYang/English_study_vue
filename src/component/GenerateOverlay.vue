@@ -373,6 +373,14 @@ onBeforeUnmount(() => {
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  /* 全局规则会把时长压到 0.01ms，但终态仍会位移，这里直接不播 */
+  .illustration.is-floating,
+  .progress-bar {
+    animation: none;
+  }
+}
+
 @media (max-width: 767px) {
   .generate-overlay {
     padding: var(--space-4);

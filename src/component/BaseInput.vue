@@ -124,7 +124,8 @@ defineExpose({ focus })
 }
 
 .input-control::placeholder {
-  color: var(--color-muted-2);
+  /* 占位符属于文字内容，需与正文同样满足 4.5:1 */
+  color: var(--color-muted);
 }
 
 .input-control:hover:not(:disabled) {

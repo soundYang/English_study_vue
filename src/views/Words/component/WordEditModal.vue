@@ -108,6 +108,7 @@ async function handleSubmit() {
     description="修改后只影响词汇库，历史阅读中的词汇快照保持不变。"
     :max-width="480"
     :close-on-backdrop="!submitting"
+    :close-on-esc="!submitting"
     :show-close="!submitting"
     @update:open="emit('update:open', $event)"
   >

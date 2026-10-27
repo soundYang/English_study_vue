@@ -54,6 +54,7 @@ function confirm() {
     :description="description"
     :max-width="440"
     :close-on-backdrop="!loading"
+    :close-on-esc="!loading"
     :show-close="false"
     @update:open="emit('update:open', $event)"
     @close="cancel"
