@@ -121,6 +121,10 @@ describe('reading store generation task', () => {
     await vi.advanceTimersByTimeAsync(1000)
 
     expect(fetchReading).toHaveBeenCalledWith('r9')
+    // 取正文成功后还要站住 900ms，让「正在整理页面」真的看得见
+    expect(store.phase).toBe('fetching')
+
+    await vi.advanceTimersByTimeAsync(900)
     expect(store.phase).toBe('answering')
     expect(store.reading).toEqual(READING)
     expect(store.taskId).toBe('')
@@ -147,6 +151,9 @@ describe('reading store generation task', () => {
     // 任务已经成功，重试只重取正文：不重新建任务
     expect(createGenerationTask).toHaveBeenCalledTimes(1)
     expect(fetchReading).toHaveBeenCalledTimes(2)
+    expect(store.phase).toBe('fetching')
+
+    await vi.advanceTimersByTimeAsync(900)
     expect(store.phase).toBe('answering')
   })
 
@@ -249,6 +256,9 @@ describe('reading store generation task', () => {
     expect(store.phase).toBe('generating')
 
     await vi.advanceTimersByTimeAsync(0)
+    expect(store.phase).toBe('fetching')
+
+    await vi.advanceTimersByTimeAsync(900)
     expect(store.phase).toBe('answering')
   })
 

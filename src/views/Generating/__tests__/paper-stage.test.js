@@ -74,6 +74,49 @@ describe('PaperStage', () => {
     expect(wrapper.find('.paper-progress').exists()).toBe(false)
   })
 
+  it('should lay out a full page of lines for the target length', () => {
+    mountStage({ summary: { targetWords: 600 }, progress: { done: 0, total: 10 } })
+
+    // 一段 = 一页里的一段；600 词约 22 行，铺成整页而不是中间一小块
+    expect(wrapper.findAll('.ink-paragraph')).toHaveLength(10)
+    expect(wrapper.findAll('.ink-line')).toHaveLength(20)
+  })
+
+  it('should rotate the secondary tip while keeping the main hint fixed', async () => {
+    vi.useFakeTimers()
+    mountStage({ progress: { done: 0, total: 4 } })
+
+    const first = wrapper.get('.paper-tip').text()
+
+    await vi.advanceTimersByTimeAsync(5000)
+    await nextTick()
+
+    expect(wrapper.get('.paper-tip').text()).not.toBe(first)
+    expect(wrapper.get('.paper-hint').text()).toContain('正在为你写下一段新的阅读')
+
+    await wrapper.setProps({ stage: 'reviewing' })
+    await nextTick()
+    expect(wrapper.find('.paper-tip').exists()).toBe(false)
+  })
+
+  it('should fill the page as the backend confirms more segments', async () => {
+    vi.useFakeTimers()
+    mountStage({ progress: { done: 0, total: 4 } })
+
+    // 后端并发写段，4 段会同时报完；页面仍然逐段亮起，且不超过真实完成数
+    await wrapper.setProps({ progress: { done: 4, total: 4 } })
+    await nextTick()
+    expect(wrapper.findAll('.ink-paragraph.is-written')).toHaveLength(0)
+
+    await vi.advanceTimersByTimeAsync(200)
+    const written = wrapper.findAll('.ink-paragraph.is-written').length
+    expect(written).toBeGreaterThan(0)
+    expect(written).toBeLessThan(4)
+
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(wrapper.findAll('.ink-paragraph.is-written')).toHaveLength(4)
+  })
+
   it('should show the planned words as chips and drop them when done', async () => {
     mountStage({ selectedWords: [{ word: 'garden' }, { word: 'lantern' }] })
 

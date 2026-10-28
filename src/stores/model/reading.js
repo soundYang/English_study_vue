@@ -37,6 +37,14 @@ const POLL_FAST_WINDOW_MS = 10 * 1000
 const POLL_BACKOFF_AFTER = 3
 const POLL_BACKOFF_MAX_MS = 5000
 
+// 取正文通常只有几十毫秒，不停一下的话「正在整理页面」一帧都看不到就跳走了。
+// 只约束最短停留时间，不改变真实失败 / 成功的判定。
+const FETCH_MIN_MS = 900
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 /** 原样重试只会再失败一次的错误码：覆盖层据此不显示「重试」（后端 md/32 §9） */
 const NON_RETRYABLE_CODES = ['INSUFFICIENT_VOCABULARY', 'VOCABULARY_TOO_SMALL', 'INVALID_REQUEST']
 
@@ -537,9 +545,15 @@ export const useReadingStore = defineStore('reading', () => {
     }
 
     phase.value = 'fetching'
+    const startedAt = Date.now()
 
     try {
       const data = await fetchReading(readingId)
+      if (current !== activeId) return
+
+      // 让「正在整理页面」至少站住 FETCH_MIN_MS；等待期间同样要防过期请求回写
+      const elapsed = Date.now() - startedAt
+      if (elapsed < FETCH_MIN_MS) await delay(FETCH_MIN_MS - elapsed)
       if (current !== activeId) return
 
       pendingReadingId.value = ''
