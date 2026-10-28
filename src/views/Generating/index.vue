@@ -169,8 +169,9 @@ onBeforeUnmount(() => {
   padding: var(--space-10) var(--content-pad-x) var(--space-12);
 }
 
+/* 双栏纸页：正文 58 / 题目 42，宽度对齐答题页的双栏上限 */
 .generating-paper {
-  max-width: 760px;
+  max-width: 1080px;
 }
 
 @media (max-width: 767px) {

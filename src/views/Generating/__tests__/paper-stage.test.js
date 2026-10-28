@@ -82,6 +82,31 @@ describe('PaperStage', () => {
     expect(wrapper.findAll('.ink-line')).toHaveLength(20)
   })
 
+  it('should lay out question cards beside the article by the question count', () => {
+    mountStage({
+      summary: { targetWords: 600, questionCount: 3 },
+      progress: { done: 0, total: 10 },
+    })
+
+    // 右栏 = 答题页的题目列：几张卡、每题四个选项，题号从 1 开始
+    expect(wrapper.findAll('.question-card')).toHaveLength(3)
+    expect(wrapper.findAll('.question-number').map((item) => item.text())).toEqual(['1', '2', '3'])
+    expect(wrapper.findAll('.question-card')[0].findAll('.question-option')).toHaveLength(4)
+    // 题目卡不占用正文的行数：正文仍是 10 段 × 2 行
+    expect(wrapper.findAll('.ink-line')).toHaveLength(20)
+  })
+
+  it('should cap the question column at five cards and fall back to three', () => {
+    mountStage({ summary: { questionCount: 8 } })
+    expect(wrapper.findAll('.question-card')).toHaveLength(5)
+
+    wrapper.unmount()
+    wrapper = null
+
+    mountStage({})
+    expect(wrapper.findAll('.question-card')).toHaveLength(3)
+  })
+
   it('should rotate the secondary tip while keeping the main hint fixed', async () => {
     vi.useFakeTimers()
     mountStage({ progress: { done: 0, total: 4 } })

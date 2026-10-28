@@ -63,6 +63,16 @@ const LINE_WIDTHS = {
 // 抽到的词一次全展示，词多时截在 30 个，避免纸页下面铺得太长
 const MAX_WORD_CHIPS = 30
 
+// 右栏按题目数画卡片，对齐答题页的双栏结构；题目内容还没生成，
+// 只画题号、题干和四个选项的排线，不写任何假题目
+const FALLBACK_QUESTION_CARDS = 3
+const MAX_QUESTION_CARDS = 5
+const OPTION_WIDTHS = [
+  [84, 62, 72, 56],
+  [68, 86, 58, 74],
+  [76, 58, 82, 64],
+]
+
 const COPY = {
   waiting: {
     eyebrow: 'YOUR NEXT READING',
@@ -117,7 +127,9 @@ const paper = ref(null)
 const light = ref(null)
 const leaf = ref(null)
 const heading = ref(null)
+const body = ref(null)
 const skeleton = ref(null)
+const questions = ref(null)
 const tipIndex = ref(0)
 
 const copy = computed(() => COPY[props.stage] || COPY.waiting)
@@ -172,6 +184,21 @@ const paragraphs = computed(() => {
       index: line + 1,
       // 每段最后一行短一截，段与段之间才像真的换行
       width: line === widths.length - 1 ? width - (index % 3) * 4 : width,
+    })),
+  }))
+})
+
+// 题目数来自交接单；卡片数量跟着走，缺省 3 张，最多 5 张，不把右栏撑破
+const questionCards = computed(() => {
+  const raw = Math.floor(Number(props.summary?.questionCount) || 0)
+  const total = Math.min(MAX_QUESTION_CARDS, Math.max(1, raw || FALLBACK_QUESTION_CARDS))
+
+  return Array.from({ length: total }, (_, index) => ({
+    index: index + 1,
+    stemWidth: [90, 76, 84, 70, 88][index % 5],
+    options: OPTION_WIDTHS[index % OPTION_WIDTHS.length].map((width, option) => ({
+      index: option + 1,
+      width,
     })),
   }))
 })
@@ -266,6 +293,8 @@ function playWaiting() {
   if (reduceMotion || !paper.value) return
 
   stopWaiting()
+  // 正文与题目两栏一起轻轻呼吸，避免只有左栏在动
+  const breathing = [skeleton.value, questions.value].filter(Boolean)
   loops = [
     gsap.to(light.value, {
       xPercent: 5,
@@ -275,7 +304,7 @@ function playWaiting() {
       repeat: -1,
       yoyo: true,
     }),
-    gsap.to(skeleton.value, {
+    gsap.to(breathing, {
       opacity: 0.68,
       duration: 2.8,
       ease: 'sine.inOut',
@@ -302,7 +331,7 @@ function playEntrance() {
   stopWaiting()
 
   if (reduceMotion) {
-    gsap.set([paper.value, heading.value, skeleton.value], { autoAlpha: 1, y: 0, scale: 1 })
+    gsap.set([paper.value, heading.value, body.value], { autoAlpha: 1, y: 0, scale: 1 })
     return
   }
 
@@ -320,7 +349,7 @@ function playEntrance() {
       '-=0.2',
     )
     .fromTo(
-      skeleton.value,
+      body.value,
       { autoAlpha: 0 },
       { autoAlpha: 1, duration: 0.35, ease: 'power1.out' },
       '-=0.1',
@@ -336,7 +365,8 @@ function playResumed() {
   gsap.set(paper.value, { autoAlpha: 1, y: 0, scale: 1 })
   gsap.set(heading.value, { autoAlpha: 1, y: 0 })
   gsap.set(light.value, { opacity: 1 })
-  gsap.set(skeleton.value, { autoAlpha: 1, opacity: 1 })
+  gsap.set(body.value, { autoAlpha: 1 })
+  gsap.set([skeleton.value, questions.value].filter(Boolean), { opacity: 1 })
   playWaiting()
 }
 
@@ -354,8 +384,10 @@ function playDone() {
 
   gsap.set(paper.value, { autoAlpha: 1, y: 0, scale: 1 })
   gsap.set(light.value, { opacity: 0.55 })
+  gsap.set(body.value, { autoAlpha: 1 })
   // 成功时整页已经写满，保留纸页让「落页」看得见，不要瞬间抽空
-  gsap.set(skeleton.value, { autoAlpha: 1, opacity: 0.9 })
+  gsap.set(skeleton.value, { opacity: 0.9 })
+  gsap.set(questions.value, { opacity: 1 })
 
   if (reduceMotion) {
     gsap.set(heading.value, { autoAlpha: 1, y: 0 })
@@ -377,7 +409,9 @@ function playFailed() {
   stopTransition()
 
   gsap.set(paper.value, { autoAlpha: 1, y: 0, scale: 1 })
-  gsap.set(skeleton.value, { autoAlpha: 1, opacity: 0.5 })
+  gsap.set(body.value, { autoAlpha: 1 })
+  gsap.set(skeleton.value, { opacity: 0.5 })
+  gsap.set(questions.value, { opacity: 0.5 })
 
   if (reduceMotion) {
     gsap.set(heading.value, { autoAlpha: 1, y: 0 })
@@ -403,7 +437,9 @@ function playCancelled() {
   stopTransition()
 
   gsap.set(paper.value, { autoAlpha: 1, y: 0, scale: 1 })
-  gsap.set(skeleton.value, { autoAlpha: 1, opacity: 0.4 })
+  gsap.set(body.value, { autoAlpha: 1 })
+  gsap.set(skeleton.value, { opacity: 0.4 })
+  gsap.set(questions.value, { opacity: 0.4 })
 
   if (reduceMotion) {
     gsap.set(heading.value, { autoAlpha: 1, y: 0 })
@@ -467,7 +503,7 @@ onMounted(() => {
   ctx = gsap.context(() => {
     // 入场前先藏起来；减少动态效果时直接显示静态纸页
     const hidden = reduceMotion || skipNext ? 1 : 0
-    gsap.set([paper.value, heading.value, skeleton.value], { autoAlpha: hidden })
+    gsap.set([paper.value, heading.value, body.value], { autoAlpha: hidden })
 
     // flush: 'post' 让标题文案先随 stage 更新，再播这一段过渡
     stageWatcher = watch(() => props.stage, applyStage, { immediate: true, flush: 'post' })
@@ -501,40 +537,55 @@ onBeforeUnmount(() => {
       <p v-if="metaText" class="paper-meta">{{ metaText }}</p>
     </header>
 
-    <!-- 整页正文骨架：一段 = 后端一段，写完一段就有一段落墨 -->
-    <div class="paper-sheet">
-      <div ref="skeleton" class="ink-skeleton" aria-hidden="true">
-        <div
-          v-for="paragraph in paragraphs"
-          :key="paragraph.index"
-          class="ink-paragraph"
-          :class="{ 'is-written': paragraph.index <= shownDone }"
-        >
-          <span
-            v-for="line in paragraph.lines"
-            :key="line.index"
-            class="ink-line"
-            :style="{ width: `${line.width}%` }"
-          />
+    <!-- 双栏对齐答题页：左边正文按段落墨，右边按题目数画题干与选项 -->
+    <div ref="body" class="paper-body">
+      <div class="paper-sheet">
+        <div ref="skeleton" class="ink-skeleton" aria-hidden="true">
+          <div
+            v-for="paragraph in paragraphs"
+            :key="paragraph.index"
+            class="ink-paragraph"
+            :class="{ 'is-written': paragraph.index <= shownDone }"
+          >
+            <span
+              v-for="line in paragraph.lines"
+              :key="line.index"
+              class="ink-line hatch-line"
+              :style="{ width: `${line.width}%` }"
+            />
+          </div>
         </div>
+
+        <!-- 进度只用段数：不换算百分比，total 为 0 时一个格子都不画 -->
+        <footer v-if="showProgress" class="paper-foot paper-progress">
+          <span class="paper-brand">ENGLISH READER</span>
+          <span class="paper-progress-meta">
+            <span class="segment-track" role="img" :aria-label="progressText">
+              <span
+                v-for="index in segmentTotal"
+                :key="index"
+                class="segment-cell"
+                :class="{ 'is-filled': index <= shownDone }"
+                :style="{ '--i': index }"
+              />
+            </span>
+            <span class="segment-text">{{ progressText }}</span>
+          </span>
+        </footer>
       </div>
 
-      <!-- 进度只用段数：不换算百分比，total 为 0 时一个格子都不画 -->
-      <footer v-if="showProgress" class="paper-foot paper-progress">
-        <span class="paper-brand">ENGLISH READER</span>
-        <span class="paper-progress-meta">
-          <span class="segment-track" role="img" :aria-label="progressText">
-            <span
-              v-for="index in segmentTotal"
-              :key="index"
-              class="segment-cell"
-              :class="{ 'is-filled': index <= shownDone }"
-              :style="{ '--i': index }"
-            />
+      <aside ref="questions" class="paper-questions" aria-hidden="true">
+        <div v-for="card in questionCards" :key="card.index" class="question-card">
+          <span class="question-number">{{ card.index }}</span>
+          <span class="question-stem hatch-line" :style="{ width: `${card.stemWidth}%` }" />
+          <span class="question-options">
+            <span v-for="option in card.options" :key="option.index" class="question-option">
+              <span class="option-dot" />
+              <span class="option-line hatch-line" :style="{ width: `${option.width}%` }" />
+            </span>
           </span>
-          <span class="segment-text">{{ progressText }}</span>
-        </span>
-      </footer>
+        </div>
+      </aside>
     </div>
 
     <div v-if="wordChips.length && stage !== 'done'" class="paper-words">
@@ -671,13 +722,29 @@ onBeforeUnmount(() => {
   font-variant-numeric: tabular-nums;
 }
 
-/* 标题下面就是正文：纸页本身铺满整张卡，骨架占满剩余高度 */
+/* 标题下面分两栏：正文占 58，题目占 42，和答题页的阅读布局同比例 */
+.paper-body {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 58fr) minmax(0, 42fr);
+  gap: clamp(20px, 2.6vw, 32px);
+  margin-top: var(--space-6);
+}
+
+/* 左栏：正文从页首往下排，页脚留在这一页的最下面 */
 .paper-sheet {
   display: flex;
-  flex: 1;
   flex-direction: column;
   gap: var(--space-5);
-  margin-top: var(--space-6);
+  min-width: 0;
+}
+
+/* 右栏：每道题一张小纸，题目内容还没生成，只画题号、题干和选项排线 */
+.paper-questions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
 }
 
 /* 正文从页首往下排，和稿纸一样：写到哪里算哪里，页脚留在最下面 */
@@ -695,9 +762,9 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 
-.ink-line {
+/* 排线占位：正文与题目共用，像铅笔在纸上先排好行距 */
+.hatch-line {
   display: block;
-  height: 10px;
   border-radius: var(--radius-pill);
   background-color: rgb(122 108 82 / 20%);
   background-image: repeating-linear-gradient(
@@ -705,6 +772,10 @@ onBeforeUnmount(() => {
     rgb(90 78 56 / 10%) 0 1px,
     transparent 1px 5px
   );
+}
+
+.ink-line {
+  height: 10px;
   transition:
     background-color 480ms var(--ease-out),
     opacity 480ms var(--ease-out);
@@ -715,6 +786,106 @@ onBeforeUnmount(() => {
   background-color: var(--color-ink-2);
   background-image: none;
   opacity: 0.38;
+}
+
+/* 题目卡：一张小纸，边缘做成毛边，和正文页的质感分开 */
+.question-card {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px 8px;
+  padding: 12px 14px;
+  background: rgb(255 252 244 / 62%);
+  /* 上下边缘的细微起伏，远看像手撕的纸边 */
+  clip-path: polygon(
+    0% 1.6%,
+    4% 0.3%,
+    9% 1.7%,
+    15% 0.4%,
+    21% 1.9%,
+    28% 0.3%,
+    35% 1.5%,
+    43% 0.2%,
+    51% 1.8%,
+    59% 0.4%,
+    67% 1.6%,
+    75% 0.3%,
+    83% 1.8%,
+    91% 0.5%,
+    100% 1.4%,
+    99.4% 10%,
+    100% 22%,
+    99.5% 35%,
+    100% 49%,
+    99.4% 63%,
+    100% 77%,
+    99.6% 89%,
+    100% 98.4%,
+    93% 99.5%,
+    85% 98.3%,
+    77% 99.7%,
+    69% 98.4%,
+    61% 99.6%,
+    53% 98.2%,
+    45% 99.5%,
+    37% 98.4%,
+    29% 99.7%,
+    21% 98.3%,
+    13% 99.5%,
+    6% 98.5%,
+    0% 99.4%,
+    0.6% 90%,
+    0% 77%,
+    0.5% 63%,
+    0% 49%,
+    0.6% 35%,
+    0% 21%,
+    0.4% 9%
+  );
+  filter: drop-shadow(0 1px 2px rgb(92 72 42 / 8%));
+}
+
+.question-number {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid rgb(122 108 82 / 38%);
+  border-radius: 50%;
+  color: var(--color-muted-2);
+  font-size: 10px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.question-stem {
+  height: 8px;
+}
+
+.question-options {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 2px;
+}
+
+.question-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.option-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border: 1px solid rgb(122 108 82 / 36%);
+  border-radius: 50%;
+}
+
+.option-line {
+  height: 7px;
 }
 
 .paper-foot {
@@ -845,6 +1016,13 @@ onBeforeUnmount(() => {
   }
 }
 
+/* 平板及以下收成单栏，和答题页一致 */
+@media (max-width: 1023px) {
+  .paper-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 767px) {
   .paper-stage {
     min-height: max(
@@ -852,6 +1030,11 @@ onBeforeUnmount(() => {
       calc(100dvh - var(--mobile-topbar-height) - var(--mobile-tabbar-height) - 96px)
     );
     padding: var(--space-6) var(--space-5);
+  }
+
+  /* 手机上正文也要占满屏，题目卡等进到答题页再出现 */
+  .paper-questions {
+    display: none;
   }
 
   .paper-leaf {
