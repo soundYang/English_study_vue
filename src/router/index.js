@@ -20,6 +20,12 @@ const routes = [
     meta: { title: '我的单词', module: 'words' },
   },
   {
+    path: '/basic-words',
+    name: 'basic-words',
+    component: () => import('../views/BasicWords/index.vue'),
+    meta: { title: '基础词汇库', module: 'basic-words' },
+  },
+  {
     path: '/settings',
     name: 'settings',
     component: () => import('../views/Settings/index.vue'),
