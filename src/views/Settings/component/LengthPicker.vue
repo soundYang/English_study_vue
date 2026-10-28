@@ -2,9 +2,9 @@
 /**
  * 文章长度选择器
  *
- * 用途：三个预设胶囊（约 100 / 150 / 200 词）+ 选中胶囊内的 10 词步进器；
- *       选中胶囊里的词数可直接输入，失焦或回车时取整到 10 并夹在
- *       100～当前难度上限之间；范围与步长同后端 targetWordsRules。
+ * 用途：横向滑杆 + 可输入的词数 + 10 词步进按钮；
+ *       滑杆与步进实时更新，手动输入在回车 / 失焦时取整到 10，
+ *       范围 100～当前难度上限，与后端 targetWordsRules 一致。
  * 用法：<LengthPicker v-model="draft.targetWords" :max="lengthMax" :disabled="isGenerating" />
  *
  * props:
@@ -12,13 +12,12 @@
  *   disabled   — 生成中禁用
  *   max        — 当前难度的篇幅上限，缺省时用全局上限
  * emits:
- *   update:modelValue — 词数变化（只在回车 / 失焦 / 点步进或预设时发出）
+ *   update:modelValue — 词数变化（输入框只在回车 / 失焦时发出）
  */
 import { computed, ref, watch } from 'vue'
 import { Minus, Plus } from 'lucide-vue-next'
 import { TARGET_WORDS_MAX, TARGET_WORDS_MIN, TARGET_WORDS_STEP } from '../../../unit/validators'
 
-const PRESETS = [100, 150, 200]
 // 四位足够覆盖 1000 词的最终模式；超出的按键直接丢掉
 const INPUT_MAX_LENGTH = 4
 
@@ -31,25 +30,22 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 
-function nearestPresetIndex(value) {
-  return PRESETS.reduce(
-    (best, preset, index) => {
-      const distance = Math.abs(preset - value)
-      return distance < best.distance ? { index, distance } : best
-    },
-    { index: 0, distance: Number.POSITIVE_INFINITY },
-  ).index
-}
-
-const activeIndex = ref(nearestPresetIndex(props.modelValue))
 // 组件内部以 currentValue 为准：输入框刚提交、父组件还没回传新 props 时，
-// 紧接着点「+」也要基于新值计算，不能拿旧的 props.modelValue 加 10
+// 紧接着点「+」或拖滑杆也要基于新值计算，不能拿旧的 props.modelValue 加 10
 const currentValue = ref(props.modelValue)
 const inputText = ref(String(props.modelValue))
 const isEditing = ref(false)
 
 const canDecrease = computed(() => currentValue.value > TARGET_WORDS_MIN)
 const canIncrease = computed(() => currentValue.value < props.max)
+// 滑杆已走过的一段用主题色填充；纯 CSS 做不到动态进度，只能按当前值算百分比
+const fillPercent = computed(() => {
+  const span = props.max - TARGET_WORDS_MIN
+  if (span <= 0) return 0
+
+  const percent = ((currentValue.value - TARGET_WORDS_MIN) / span) * 100
+  return Math.min(100, Math.max(0, percent))
+})
 
 watch(
   () => props.modelValue,
@@ -57,9 +53,6 @@ watch(
     currentValue.value = value
 
     if (!isEditing.value) inputText.value = String(value)
-
-    const index = PRESETS.indexOf(value)
-    if (index >= 0) activeIndex.value = index
   },
 )
 
@@ -80,20 +73,6 @@ function emitValue(next) {
   emit('update:modelValue', next)
 }
 
-// 预设始终渲染，超出当前难度上限的置灰而不是过滤掉：
-// activeIndex 是 PRESETS 的下标，过滤后的数组下标会和它对不上
-function isPresetDisabled(preset) {
-  return props.disabled || preset > props.max
-}
-
-function choosePreset(value, index) {
-  if (props.disabled) return
-
-  activeIndex.value = index
-  inputText.value = String(value)
-  emitValue(value)
-}
-
 function step(delta) {
   if (props.disabled) return
 
@@ -101,6 +80,16 @@ function step(delta) {
   emitValue(next)
 
   if (isEditing.value) inputText.value = String(next)
+}
+
+function handleSlide(event) {
+  if (props.disabled) return
+
+  const next = clamp(Number(event.target.value))
+  if (!Number.isFinite(next)) return
+
+  inputText.value = String(next)
+  emitValue(next)
 }
 
 function startEditing(event) {
@@ -168,65 +157,65 @@ function handleSpinKeydown(event) {
   <div class="length-row">
     <span id="length-label" class="row-label">文章长度</span>
 
-    <div class="pills" role="group" aria-labelledby="length-label">
-      <div
-        v-for="(preset, index) in PRESETS"
-        :key="preset"
-        class="pill"
-        :class="{ 'is-active': index === activeIndex }"
-      >
-        <template v-if="index === activeIndex">
-          <button
-            type="button"
-            class="step"
-            aria-label="减少 10 词"
-            :disabled="disabled || !canDecrease"
-            @click="step(-TARGET_WORDS_STEP)"
-          >
-            <Minus :size="14" :stroke-width="2" aria-hidden="true" />
-          </button>
+    <div class="length-control">
+      <div class="stepper">
+        <button
+          type="button"
+          class="step"
+          aria-label="减少 10 词"
+          :disabled="disabled || !canDecrease"
+          @click="step(-TARGET_WORDS_STEP)"
+        >
+          <Minus :size="14" :stroke-width="2" aria-hidden="true" />
+        </button>
 
-          <span class="value">
-            <span class="value-affix" aria-hidden="true">约</span>
-            <input
-              class="value-input"
-              type="text"
-              inputmode="numeric"
-              autocomplete="off"
-              :maxlength="INPUT_MAX_LENGTH"
-              :value="inputText"
-              :disabled="disabled"
-              :aria-label="`文章长度（词），可手动输入，${TARGET_WORDS_MIN} 到 ${max}`"
-              title="可直接输入，按 10 词取整"
-              @focus="startEditing"
-              @input="handleInput"
-              @keydown="handleSpinKeydown"
-              @blur="commitInput"
-            />
-            <span class="value-affix" aria-hidden="true">词</span>
-          </span>
-
-          <button
-            type="button"
-            class="step"
-            aria-label="增加 10 词"
-            :disabled="disabled || !canIncrease"
-            @click="step(TARGET_WORDS_STEP)"
-          >
-            <Plus :size="14" :stroke-width="2" aria-hidden="true" />
-          </button>
-        </template>
+        <span class="value">
+          <span class="value-affix" aria-hidden="true">约</span>
+          <input
+            class="value-input"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            :maxlength="INPUT_MAX_LENGTH"
+            :value="inputText"
+            :disabled="disabled"
+            :aria-label="`文章长度（词），可手动输入，${TARGET_WORDS_MIN} 到 ${max}`"
+            title="可直接输入，按 10 词取整"
+            @focus="startEditing"
+            @input="handleInput"
+            @keydown="handleSpinKeydown"
+            @blur="commitInput"
+          />
+          <span class="value-affix" aria-hidden="true">词</span>
+        </span>
 
         <button
-          v-else
           type="button"
-          class="preset"
-          :aria-label="`选择约 ${preset} 词`"
-          :disabled="isPresetDisabled(preset)"
-          @click="choosePreset(preset, index)"
+          class="step"
+          aria-label="增加 10 词"
+          :disabled="disabled || !canIncrease"
+          @click="step(TARGET_WORDS_STEP)"
         >
-          约 {{ preset }} 词
+          <Plus :size="14" :stroke-width="2" aria-hidden="true" />
         </button>
+      </div>
+
+      <div class="slider">
+        <span class="slider-bound" aria-hidden="true">{{ TARGET_WORDS_MIN }}</span>
+        <input
+          class="slider-input"
+          type="range"
+          :min="TARGET_WORDS_MIN"
+          :max="max"
+          :step="TARGET_WORDS_STEP"
+          :value="currentValue"
+          :disabled="disabled"
+          :style="{ '--fill': `${fillPercent}%` }"
+          :aria-valuetext="`约 ${currentValue} 词`"
+          aria-labelledby="length-label"
+          @input="handleSlide"
+        />
+        <span class="slider-bound" aria-hidden="true">{{ max }}</span>
       </div>
     </div>
   </div>
@@ -246,41 +235,22 @@ function handleSpinKeydown(event) {
   line-height: var(--leading-small);
 }
 
-.pills {
+.length-control {
   display: flex;
+  flex: 1;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  min-width: 0;
 }
 
-.pill {
+.stepper {
   display: flex;
   align-items: center;
   min-height: 36px;
   border: 1px solid var(--color-line);
   border-radius: var(--radius-pill);
   background: var(--color-surface);
-  transition:
-    border-color var(--dur-fast) var(--ease-out),
-    box-shadow var(--dur-fast) var(--ease-out);
-}
-
-.pill.is-active {
-  border-color: var(--color-primary);
-  box-shadow: var(--shadow-sm);
-}
-
-.preset {
-  height: 34px;
-  padding: 0 var(--space-4);
-  border-radius: var(--radius-pill);
-  color: var(--color-muted);
-  font-size: var(--text-small);
-  line-height: var(--leading-small);
-  transition: color var(--dur-fast) var(--ease-out);
-}
-
-.preset:hover:not(:disabled) {
-  color: var(--color-ink);
 }
 
 .step {
@@ -345,9 +315,80 @@ function handleSpinKeydown(event) {
   cursor: not-allowed;
 }
 
-.preset:disabled {
+.slider {
+  display: flex;
+  flex: 1 1 180px;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.slider-bound {
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.slider-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+}
+
+.slider-input::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(
+    to right,
+    var(--color-primary) var(--fill, 0%),
+    var(--color-line-strong) var(--fill, 0%)
+  );
+}
+
+.slider-input::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  border: 2px solid var(--color-surface);
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: var(--shadow-sm);
+  appearance: none;
+}
+
+.slider-input::-moz-range-track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(
+    to right,
+    var(--color-primary) var(--fill, 0%),
+    var(--color-line-strong) var(--fill, 0%)
+  );
+}
+
+.slider-input::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--color-surface);
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.slider-input:focus-visible {
+  border-radius: var(--radius-pill);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.slider-input:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
 @media (max-width: 767px) {
@@ -357,6 +398,11 @@ function handleSpinKeydown(event) {
 
   .row-label {
     flex-basis: 88px;
+    padding-top: 8px;
+  }
+
+  .slider {
+    flex-basis: 100%;
   }
 }
 </style>

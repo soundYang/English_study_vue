@@ -136,12 +136,27 @@ describe('LengthPicker', () => {
     wrapper.unmount()
   })
 
-  it('should apply a preset when an inactive pill is clicked', async () => {
-    const wrapper = mount(LengthPicker, { props: { modelValue: 100 } })
+  it('should update the value from the horizontal slider', async () => {
+    const wrapper = mount(LengthPicker, { props: { modelValue: 100, max: 300 } })
+    const slider = wrapper.get('.slider-input')
 
-    await wrapper.get('[aria-label="选择约 200 词"]').trigger('click')
+    await slider.setValue('250')
 
-    expect(wrapper.emitted('update:modelValue')[0]).toEqual([200])
+    expect(wrapper.emitted('update:modelValue')).toEqual([[250]])
+    expect(wrapper.get('.value-input').element.value).toBe('250')
+    expect(slider.attributes('max')).toBe('300')
+  })
+
+  it('should fill the slider track proportionally', () => {
+    const wrapper = mount(LengthPicker, { props: { modelValue: 350, max: 600 } })
+
+    expect(wrapper.get('.slider-input').attributes('style')).toContain('--fill: 50%')
+  })
+
+  it('should disable the slider while generating', () => {
+    const wrapper = mount(LengthPicker, { props: { modelValue: 150, disabled: true } })
+
+    expect(wrapper.get('.slider-input').attributes('disabled')).toBeDefined()
   })
 
   it('should clamp the stepper at the backend minimum', () => {
@@ -162,13 +177,6 @@ describe('LengthPicker', () => {
     const wrapper = mount(LengthPicker, { props: { modelValue: 300, max: 300 } })
 
     expect(wrapper.get('[aria-label="增加 10 词"]').attributes('disabled')).toBeDefined()
-  })
-
-  it('should grey out presets above the per-level max', () => {
-    const wrapper = mount(LengthPicker, { props: { modelValue: 100, max: 150 } })
-
-    expect(wrapper.get('[aria-label="选择约 200 词"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('[aria-label="选择约 150 词"]').attributes('disabled')).toBeUndefined()
   })
 })
 
