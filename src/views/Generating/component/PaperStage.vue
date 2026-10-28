@@ -51,7 +51,7 @@ const FILL_RAMP_MS = 800
 // 骨架按「一整页文章」来画：段数用后端真实值，每段的行数按目标篇长估。
 // 一篇 600 词的阅读约 22 行，100 词约 10 行；夹住上下限，
 // 短篇也有整页的感觉，长篇也不会把纸页撑出视口。
-const MIN_PAGE_LINES = 10
+const MIN_PAGE_LINES = 14
 const MAX_PAGE_LINES = 22
 const FALLBACK_PARAGRAPHS = 3
 const LINE_WIDTHS = {
@@ -488,6 +488,7 @@ onBeforeUnmount(() => {
 <template>
   <section ref="paper" class="paper-stage" :aria-busy="isWorking ? 'true' : undefined">
     <div ref="light" class="botanical-light" aria-hidden="true" />
+    <div class="paper-ink" aria-hidden="true" />
 
     <span ref="leaf" class="paper-leaf" aria-hidden="true">
       <Leaf :size="26" :stroke-width="1.1" />
@@ -574,14 +575,42 @@ onBeforeUnmount(() => {
 .paper-stage {
   position: relative;
   isolation: isolate;
+  display: flex;
   overflow: hidden;
+  flex-direction: column;
   width: 100%;
+  /* 铺满内容区：顶栏与上下留白之外的整页高度都留给这张纸 */
+  min-height: max(520px, calc(100dvh - var(--topbar-height) - 88px));
   padding: clamp(24px, 4vw, 44px);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-xl);
-  background: var(--color-surface);
+  background-color: var(--color-surface);
+  /* 纸纹铺满整张纸；上层是窗外叶影，multiply 压出一点暖光 */
+  background-image:
+    url('../../../assets/paper/paper-shadow.jpg'), url('../../../assets/paper/paper-texture.jpg');
+  background-blend-mode: multiply, normal;
+  background-position: center, center;
+  background-repeat: no-repeat, repeat;
+  background-size:
+    cover,
+    512px 512px;
   box-shadow: var(--shadow-md);
   color: var(--color-ink);
+}
+
+/* 纸页右下的淡墨，取素材中心的墨团裁进来，避免露出素材里的棋盘格 */
+.paper-ink {
+  position: absolute;
+  z-index: -1;
+  right: -8%;
+  bottom: -14%;
+  width: min(460px, 66%);
+  height: 320px;
+  background: url('../../../assets/paper/ink-wash.jpg') center / 280% no-repeat;
+  opacity: 0.07;
+  mix-blend-mode: multiply;
+  mask-image: radial-gradient(closest-side, #000 28%, transparent 72%);
+  pointer-events: none;
 }
 
 /* 一层暖光，等待时缓慢平移；只是装饰，不代表进度 */
@@ -642,40 +671,40 @@ onBeforeUnmount(() => {
   font-variant-numeric: tabular-nums;
 }
 
-/* 标题下面是一整页纸：骨架铺满整页，等待时像一篇文章正在写出来 */
+/* 标题下面就是正文：纸页本身铺满整张卡，骨架占满剩余高度 */
 .paper-sheet {
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: var(--space-5);
-  min-height: clamp(280px, 36vh, 440px);
   margin-top: var(--space-6);
-  padding: clamp(18px, 3vw, 28px);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-lg);
-  background: linear-gradient(180deg, var(--color-surface-2), var(--color-surface));
 }
 
+/* 正文从页首往下排，和稿纸一样：写到哪里算哪里，页脚留在最下面 */
 .ink-skeleton {
   display: flex;
   flex: 1;
   flex-direction: column;
-  justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-5);
   width: 100%;
 }
 
 .ink-paragraph {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 10px;
 }
 
 .ink-line {
   display: block;
-  height: 7px;
+  height: 10px;
   border-radius: var(--radius-pill);
-  background: var(--color-line);
+  background-color: rgb(122 108 82 / 20%);
+  background-image: repeating-linear-gradient(
+    115deg,
+    rgb(90 78 56 / 10%) 0 1px,
+    transparent 1px 5px
+  );
   transition:
     background-color 480ms var(--ease-out),
     opacity 480ms var(--ease-out);
@@ -683,8 +712,9 @@ onBeforeUnmount(() => {
 
 /* 写完的那一段：占位线落成更深的墨色，像真的写在了纸上 */
 .ink-paragraph.is-written .ink-line {
-  background: var(--color-ink-2);
-  opacity: 0.4;
+  background-color: var(--color-ink-2);
+  background-image: none;
+  opacity: 0.38;
 }
 
 .paper-foot {
@@ -694,7 +724,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: var(--space-3);
   padding-top: var(--space-4);
-  border-top: 1px solid var(--color-line);
+  border-top: 1px solid rgb(122 108 82 / 18%);
 }
 
 .paper-brand {
@@ -817,6 +847,10 @@ onBeforeUnmount(() => {
 
 @media (max-width: 767px) {
   .paper-stage {
+    min-height: max(
+      480px,
+      calc(100dvh - var(--mobile-topbar-height) - var(--mobile-tabbar-height) - 96px)
+    );
     padding: var(--space-6) var(--space-5);
   }
 

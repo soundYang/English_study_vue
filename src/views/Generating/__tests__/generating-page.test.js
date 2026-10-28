@@ -157,6 +157,25 @@ describe('GeneratingPage', () => {
     expect(router.currentRoute.value.name).toBe('home')
   })
 
+  it('should keep the last real segment count after the task snapshot is cleared', async () => {
+    setGenerationHandoff({ level: 'easy', targetWords: 100, questionCount: 3 }, { from: '/' })
+
+    const { store } = await mountPage((reading) => {
+      reading.generate = vi.fn().mockResolvedValue(null)
+    })
+    await flushPromises()
+
+    store.task = { progress: { done: 3, total: 4 }, selectedWords: [] }
+    await nextTick()
+    await nextTick()
+
+    // 成功后 store 会清掉任务；纸页要用最后一次真实进度把整页写完
+    store.task = null
+    await nextTick()
+
+    expect(wrapper.findComponent(PaperStage).props('progress')).toEqual({ done: 3, total: 4 })
+  })
+
   it('should let the paper announce success before entering the reading page', async () => {
     vi.useFakeTimers()
     setGenerationHandoff({ level: 'easy', targetWords: 100, questionCount: 3 }, { from: '/' })

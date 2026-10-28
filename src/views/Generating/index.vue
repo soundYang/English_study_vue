@@ -37,6 +37,8 @@ const finishing = ref(false)
 const skipEntrance = ref(false)
 // 进入页面时是否真的接上了一次生成：只有接上了才根据 cancelled / idle 往回跳
 const armed = ref(false)
+// 成功后 store 会清掉任务快照；纸页还要靠最后一次真实进度把整页写完
+const lastProgress = ref({ done: 0, total: 0 })
 
 let exitTimer = null
 
@@ -50,10 +52,19 @@ const stage = computed(() => {
   return 'waiting'
 })
 
-const progress = computed(() => ({
-  done: Number(task.value?.progress?.done) || 0,
-  total: Number(task.value?.progress?.total) || 0,
-}))
+const progress = computed(() => {
+  const total = Number(task.value?.progress?.total) || 0
+  if (total > 0) return { done: Number(task.value?.progress?.done) || 0, total }
+  return lastProgress.value
+})
+
+watch(
+  () => [Number(task.value?.progress?.done) || 0, Number(task.value?.progress?.total) || 0],
+  ([done, total]) => {
+    // 只记住出现过真实段数的那一版，0 / 0 不覆盖
+    if (total > 0) lastProgress.value = { done, total }
+  },
+)
 
 const selectedWords = computed(() => task.value?.selectedWords || [])
 
@@ -154,7 +165,8 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   min-height: calc(100dvh - var(--topbar-height));
-  padding: var(--space-10) var(--content-pad-x) var(--space-16);
+  /* 纸页按视口高度铺满，这里只留一点呼吸位；底部留太多会多出几像素滚动条 */
+  padding: var(--space-10) var(--content-pad-x) var(--space-12);
 }
 
 .generating-paper {
