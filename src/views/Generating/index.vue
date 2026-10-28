@@ -166,12 +166,13 @@ onBeforeUnmount(() => {
   place-items: center;
   min-height: calc(100dvh - var(--topbar-height));
   /* 纸页按视口高度铺满，这里只留一点呼吸位；底部留太多会多出几像素滚动条 */
-  padding: var(--space-10) var(--content-pad-x) var(--space-12);
+  /* 左右比常规页面收窄，把这张纸尽量让给正文和题目两栏 */
+  padding: var(--space-10) clamp(var(--space-5), 2.5vw, var(--space-8)) var(--space-12);
 }
 
-/* 双栏纸页：正文 58 / 题目 42，宽度对齐答题页的双栏上限 */
+/* 双栏纸页：正文 58 / 题目 42，宽度上限放到 1280，常规桌面下铺满内容区 */
 .generating-paper {
-  max-width: 1080px;
+  max-width: 1280px;
 }
 
 @media (max-width: 767px) {
