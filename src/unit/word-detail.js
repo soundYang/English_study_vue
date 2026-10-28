@@ -1,7 +1,7 @@
 /**
  * 单词详情（浮层）的展示数据
- * 两个页面共用一套结构：单词 + 音标 + 全部义项 + 若干「标签 / 值」事实行。
- * 数据全部来自列表接口的快照，这里只做映射，不发请求（见 md/17 §2）。
+ * 基础词汇、我的单词、文章里的未学词共用一套结构：单词 + 音标 + 全部义项 + 若干「标签 / 值」事实行。
+ * 数据全部来自接口快照，这里只做映射，不发请求（见 md/17 §2、md/18 §3）。
  */
 import { meaningOf, statusOf } from './basic-words'
 import { formatDate } from './format'
@@ -9,6 +9,8 @@ import { frequencyTierOf } from './word-tiers'
 
 const KIND_LABELS = { basic: '基础词', calendar: '日历词', abbreviation: '缩写' }
 const SOURCE_LABELS = { dictionary: '词库', manual: '手填', 'basic-removed': '从基础词表移除' }
+// 文章 newWords 的 source 只有两种：词库词与缩写
+const NEW_WORD_SOURCE_LABELS = { dictionary: '词库', abbreviation: '缩写' }
 
 function kindsOf(item) {
   const labels = (item.kinds || []).map((kind) => KIND_LABELS[kind]).filter(Boolean)
@@ -93,5 +95,15 @@ export function myWordDetail(item) {
     phonetic: item.phonetic,
     senses: senseListOf(item.senses),
     facts,
+  }
+}
+
+/** 文章里的未学词：只有一个来源标签（词库 / 缩写），释义是词表里的快照 */
+export function newWordDetail(item) {
+  return {
+    word: item.word,
+    phonetic: item.phonetic,
+    senses: senseListOf(item.senses),
+    facts: [{ label: '来源', value: NEW_WORD_SOURCE_LABELS[item.source] || '—' }],
   }
 }

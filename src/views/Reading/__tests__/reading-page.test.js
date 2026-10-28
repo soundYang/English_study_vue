@@ -33,6 +33,7 @@ beforeEach(() => {
 afterEach(() => {
   wrapper?.unmount()
   wrapper = null
+  document.body.innerHTML = ''
 })
 
 afterAll(() => {
@@ -42,7 +43,9 @@ afterAll(() => {
 async function mountPage() {
   const pinia = createPinia()
   setActivePinia(pinia)
+  // 详情浮层靠 isConnected 判断锚点还在不在，页面必须挂到真实文档上
   wrapper = mount(ReadingView, {
+    attachTo: document.body,
     global: {
       plugins: [pinia],
       stubs: { teleport: true },
@@ -73,15 +76,50 @@ describe('Reading page', () => {
     expect(page.html()).not.toContain('explanation')
   })
 
-  it('should show the actual word count and the new-words panel', async () => {
+  it('should show the word count and the new-words entry in the title row', async () => {
     const page = await mountPage()
     const store = useReadingStore()
 
     // 词数以 DTO 给的 actualWords 为准，不在视图里重新数一遍
     expect(page.get('.article-meta').text()).toBe(`${store.reading.actualWords} 词`)
-    expect(page.text()).toContain('本文含 2 个未学单词')
-    // 生词面板是原生 details，默认折叠
-    expect(page.get('.new-words').attributes('open')).toBeUndefined()
+    // 入口在标题行里，文章正文之前就能看到
+    expect(page.get('.article-head').text()).toContain('本文含 2 个未学单词')
+    expect(page.get('.new-words-toggle').attributes('aria-expanded')).toBe('false')
+    expect(page.find('.new-words-list').exists()).toBe(false)
+  })
+
+  it('should expand the new-words list from the entry', async () => {
+    const page = await mountPage()
+
+    await page.get('.new-words-toggle').trigger('click')
+
+    expect(page.get('.new-words-toggle').attributes('aria-expanded')).toBe('true')
+    const items = page.findAll('.new-word')
+    expect(items).toHaveLength(2)
+    expect(items[0].text()).toContain('dramatic')
+    expect(items[0].text()).toContain('戏剧性的')
+    expect(items[1].text()).toContain('uncertain')
+  })
+
+  it('should mark new words inside the article and open their detail on click', async () => {
+    const page = await mountPage()
+    const words = page.findAll('.article-new-word')
+
+    // 正文里各出现一次，按原文词形显示，顺序跟着文章走
+    expect(words.map((word) => word.text())).toEqual(['uncertain', 'dramatic'])
+
+    await words[0].trigger('click')
+    await flushPromises()
+
+    const panel = page.get('.detail-popover')
+    expect(panel.get('.detail-word').text()).toBe('uncertain')
+    expect(panel.text()).toContain('不确定的')
+    expect(panel.text()).toContain('来源')
+
+    await words[0].trigger('click')
+    await flushPromises()
+
+    expect(page.find('.detail-popover').exists()).toBe(false)
   })
 
   it('should store a selection in the store and sessionStorage', async () => {

@@ -2,19 +2,32 @@
 /**
  * 未学单词面板
  *
- * 用途：折叠展示本文出现、但不在用户词库里的词，供阅读前扫一眼
- * 用法：<NewWordsPanel :words="reading.newWords" />
+ * 用途：列出本文出现、但不在用户词库里的词，供阅读前扫一眼或读中查证
+ * 用法：<NewWordsPanel v-model:open="newWordsOpen" :words="reading.newWords" inline />
  *
- * 用原生 <details>：键盘可达、读屏正常、零 JS 状态，不需要自研折叠动画。
+ * 阅读页把它放在文章标题下方（`inline`，收起来只是一个胶囊），
+ * 结果页沿用原来的卡片样式放在文章底部（默认折叠）。
+ * 不用 `<details>`：展开状态归页面管，才能和「正文标注」等入口联动。
  *
  * props:
- *   words — 后端 newWords 数组（word / phonetic / senses / source），为空时不渲染
+ *   words  — 后端 newWords 数组（word / phonetic / senses / source），为空时不渲染
+ *   open   — 是否展开，配合 v-model:open 使用
+ *   inline — 标题行内的胶囊样式，不画边框背景
+ * emits:
+ *   update:open — 点标题切换展开状态
  */
-import { computed } from 'vue'
+import { computed, useId } from 'vue'
 
 const props = defineProps({
   words: { type: Array, default: () => [] },
+  open: { type: Boolean, default: false },
+  inline: { type: Boolean, default: false },
 })
+
+const emit = defineEmits(['update:open'])
+
+// 同一页可能挂两个面板（未来结果页也开入口），id 用 useId 保唯一
+const listId = `new-words-${useId()}`
 
 const items = computed(() =>
   props.words.map((item) => ({
@@ -28,13 +41,26 @@ const items = computed(() =>
     plain: item.source === 'abbreviation',
   })),
 )
+
+function toggle() {
+  emit('update:open', !props.open)
+}
 </script>
 
 <template>
-  <details v-if="items.length" class="new-words">
-    <summary class="new-words-summary">本文含 {{ items.length }} 个未学单词</summary>
+  <section v-if="items.length" class="new-words" :class="{ 'is-inline': inline }">
+    <button
+      type="button"
+      class="new-words-toggle"
+      :aria-controls="listId"
+      :aria-expanded="open ? 'true' : 'false'"
+      @click="toggle"
+    >
+      <span class="new-words-title">本文含 {{ items.length }} 个未学单词</span>
+      <span class="new-words-caret" aria-hidden="true">▾</span>
+    </button>
 
-    <ul class="new-words-list">
+    <ul v-if="open" :id="listId" class="new-words-list">
       <li v-for="item in items" :key="item.word" class="new-word">
         <span class="new-word-text" lang="en">{{ item.word }}</span>
         <span v-if="item.phonetic && !item.plain" class="new-word-phonetic" lang="en">
@@ -43,7 +69,7 @@ const items = computed(() =>
         <span v-if="!item.plain && item.meaning" class="new-word-meaning">{{ item.meaning }}</span>
       </li>
     </ul>
-  </details>
+  </section>
 </template>
 
 <style scoped>
@@ -54,22 +80,68 @@ const items = computed(() =>
   background: var(--color-surface);
 }
 
-.new-words-summary {
+/* 标题行里的胶囊：不占一整块，和词数排在同一行 */
+.new-words.is-inline {
+  margin-top: 0;
+  border: 0;
+  background: none;
+}
+
+.new-words-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
   padding: var(--space-3) var(--space-4);
+  border: 0;
+  background: none;
   color: var(--color-muted);
+  font: inherit;
   font-size: var(--text-small);
   line-height: var(--leading-small);
+  text-align: left;
   cursor: pointer;
 }
 
-.new-words-summary:hover {
+.new-words-toggle:hover {
   color: var(--color-ink-2);
+}
+
+.new-words.is-inline .new-words-toggle {
+  width: auto;
+  padding: 0;
+  color: var(--color-accent);
+}
+
+.new-words-caret {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.new-words-toggle[aria-expanded='true'] .new-words-caret {
+  transform: rotate(180deg);
+}
+
+.new-words-toggle:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
 .new-words-list {
   margin: 0;
   padding: 0 var(--space-4) var(--space-4);
   list-style: none;
+}
+
+/* 展开后的清单在标题行里要自己收成一个盒子，否则会和正文混在一起 */
+.new-words.is-inline .new-words-list {
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
 }
 
 .new-word {
@@ -79,6 +151,11 @@ const items = computed(() =>
   align-items: baseline;
   padding: var(--space-2) 0;
   border-top: 1px solid var(--color-line);
+}
+
+.new-word:first-child {
+  border-top: 0;
+  padding-top: 0;
 }
 
 .new-word-text {

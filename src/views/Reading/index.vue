@@ -11,6 +11,7 @@ import BaseButton from '../../component/BaseButton.vue'
 import BaseModal from '../../component/BaseModal.vue'
 import ConfirmDialog from '../../component/ConfirmDialog.vue'
 import SegmentedControl from '../../component/SegmentedControl.vue'
+import WordDetailPopover from '../../component/WordDetailPopover.vue'
 import ArticleCard from './component/ArticleCard.vue'
 import NewWordsPanel from './component/NewWordsPanel.vue'
 import QuestionList from './component/QuestionList.vue'
@@ -22,6 +23,7 @@ import { useReadingTimer } from '../../composables/useReadingTimer'
 import { useScrollSpy } from '../../composables/useScrollSpy'
 import { useToast } from '../../composables/useToast'
 import { useReadingStore } from '../../stores/model/reading'
+import { newWordDetail } from '../../unit/word-detail'
 
 const PANEL_OPTIONS = [
   { value: 'article', label: '文章' },
@@ -38,6 +40,10 @@ const activePanel = ref('article')
 const unansweredOpen = ref(false)
 const exitOpen = ref(false)
 const questionColumn = ref(null)
+// 未学词清单默认收起，标题行只留一个胶囊入口
+const newWordsOpen = ref(false)
+// 正文里点开的未学词：{ entry, anchor }，为空即关闭
+const detailTarget = ref(null)
 
 const { activeId, observe } = useScrollSpy()
 const {
@@ -80,6 +86,11 @@ const answeredIds = computed(() =>
 
 const unansweredTitle = computed(() => `还有 ${unansweredCount.value} 道题未作答`)
 
+const newWords = computed(() => store.reading?.newWords || [])
+const detailData = computed(() =>
+  detailTarget.value ? newWordDetail(detailTarget.value.entry) : null,
+)
+
 function activateReading() {
   const id = store.reading?.id
   if (!id || activatedId === id) return
@@ -89,10 +100,30 @@ function activateReading() {
   nextTick(() => observe(questionColumn.value))
 }
 
+// 换一篇练习：上篇打开的生词清单与浮层都收起来
+function resetWordOverlays() {
+  newWordsOpen.value = false
+  detailTarget.value = null
+}
+
+function handleWordClick({ entry, anchor }) {
+  if (detailTarget.value?.entry.word === entry.word) {
+    detailTarget.value = null
+    return
+  }
+
+  detailTarget.value = { entry, anchor }
+}
+
+function handleDetailOpen(value) {
+  if (!value) detailTarget.value = null
+}
+
 watch(
   () => store.reading?.id,
   () => {
     activateReading()
+    resetWordOverlays()
   },
   { flush: 'post' },
 )
@@ -241,8 +272,13 @@ function goHome() {
             :title="reading.title"
             :article="reading.article"
             :word-count="reading.actualWords"
-          />
-          <NewWordsPanel :words="reading.newWords" />
+            :highlight-words="newWords"
+            @word-click="handleWordClick"
+          >
+            <template #meta>
+              <NewWordsPanel v-model:open="newWordsOpen" :words="newWords" inline />
+            </template>
+          </ArticleCard>
         </div>
 
         <div ref="questionColumn" class="question-column">
@@ -272,6 +308,16 @@ function goHome() {
         </div>
       </div>
     </template>
+
+    <WordDetailPopover
+      :open="Boolean(detailTarget)"
+      :anchor="detailTarget?.anchor || null"
+      :word="detailData?.word || ''"
+      :phonetic="detailData?.phonetic || null"
+      :senses="detailData?.senses || []"
+      :facts="detailData?.facts || []"
+      @update:open="handleDetailOpen"
+    />
 
     <BaseModal
       v-model:open="unansweredOpen"

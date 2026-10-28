@@ -4,6 +4,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
+import ArticleCard from '../component/ArticleCard.vue'
+import NewWordsPanel from '../component/NewWordsPanel.vue'
 import ReadingHeader from '../component/ReadingHeader.vue'
 import QuestionCard from '../component/QuestionCard.vue'
 
@@ -69,6 +71,82 @@ describe('ReadingHeader', () => {
     expect(segment.attributes('disabled')).toBeDefined()
     await segment.trigger('click')
     expect(wrapper.emitted('jump')).toBeUndefined()
+  })
+})
+
+describe('ArticleCard', () => {
+  const ARTICLE = 'A quiet start.\n\nNothing dramatic happened.'
+  const DRAMATIC = { word: 'dramatic', senses: [{ pos: 'adj.', meaning: '戏剧性的' }] }
+
+  it('should render plain text when no new words are passed', () => {
+    const wrapper = mount(ArticleCard, { props: { title: 'Story', article: ARTICLE } })
+
+    expect(wrapper.findAll('.article-paragraph')).toHaveLength(2)
+    expect(wrapper.find('.article-new-word').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Nothing dramatic happened.')
+  })
+
+  it('should mark the new word and emit it with the button as the anchor', async () => {
+    const wrapper = mount(ArticleCard, {
+      props: { title: 'Story', article: ARTICLE, highlightWords: [DRAMATIC] },
+    })
+    const trigger = wrapper.get('.article-new-word')
+
+    expect(trigger.text()).toBe('dramatic')
+    expect(wrapper.text()).toContain('Nothing dramatic happened.')
+
+    await trigger.trigger('click')
+
+    const [[payload]] = wrapper.emitted('word-click')
+    expect(payload.entry).toEqual(DRAMATIC)
+    expect(payload.anchor).toBe(trigger.element)
+  })
+
+  it('should keep the meta slot in the title row and hide the row without content', () => {
+    const withSlot = mount(ArticleCard, {
+      props: { title: 'Story', article: ARTICLE, wordCount: 40 },
+      slots: { meta: '<span class="test-meta">本文含 1 个未学单词</span>' },
+    })
+    const bare = mount(ArticleCard, { props: { title: 'Story', article: ARTICLE } })
+
+    expect(withSlot.get('.article-head').text()).toContain('40 词')
+    expect(withSlot.get('.article-head').text()).toContain('本文含 1 个未学单词')
+    expect(bare.find('.article-meta-row').exists()).toBe(false)
+  })
+})
+
+describe('NewWordsPanel', () => {
+  const WORDS = [
+    { word: 'dramatic', phonetic: { uk: '/drəˈmæt.ɪk/' }, senses: [{ meaning: '戏剧性的' }] },
+    { word: 'USA', phonetic: { uk: '/ˌjuː.esˈeɪ/' }, senses: [], source: 'abbreviation' },
+  ]
+
+  it('should stay collapsed and emit the toggled state', async () => {
+    const wrapper = mount(NewWordsPanel, { props: { words: WORDS } })
+
+    expect(wrapper.get('.new-words-toggle').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('.new-words-list').exists()).toBe(false)
+
+    await wrapper.get('.new-words-toggle').trigger('click')
+
+    expect(wrapper.emitted('update:open')).toEqual([[true]])
+  })
+
+  it('should list the words when open and hide the abbreviation fragments', () => {
+    const wrapper = mount(NewWordsPanel, { props: { words: WORDS, open: true } })
+    const items = wrapper.findAll('.new-word')
+
+    expect(items).toHaveLength(2)
+    expect(items[0].text()).toContain('/drəˈmæt.ɪk/')
+    expect(items[0].text()).toContain('戏剧性的')
+    // 缩写只留原词，不显示音标与碎片释义
+    expect(items[1].text()).toBe('USA')
+  })
+
+  it('should not render anything without words', () => {
+    const wrapper = mount(NewWordsPanel, { props: { words: [] } })
+
+    expect(wrapper.find('.new-words').exists()).toBe(false)
   })
 })
 
