@@ -10,6 +10,7 @@ import BaseButton from '../../component/BaseButton.vue'
 import DifficultyPicker from './component/DifficultyPicker.vue'
 import LengthPicker from './component/LengthPicker.vue'
 import QuestionCountPicker from './component/QuestionCountPicker.vue'
+import ScopePicker from './component/ScopePicker.vue'
 import SettingsAside from './component/SettingsAside.vue'
 import { useCapacity } from '../../composables/useCapacity'
 import { useGenerateReading } from '../../composables/useGenerateReading'
@@ -37,15 +38,22 @@ const draft = reactive({
   level: settings.level,
   targetWords: settings.targetWords,
   questionCount: settings.questionCount,
+  vocabScope: [...settings.vocabScope],
 })
 
 const saving = ref(false)
+
+/** 数组逐项比较：词源是两个以上值时，引用比较会把「没改」误判成改动 */
+function sameScope(left, right) {
+  return [...left].sort().join(',') === [...right].sort().join(',')
+}
 
 const isDirty = computed(
   () =>
     draft.level !== settings.level ||
     draft.targetWords !== settings.targetWords ||
-    draft.questionCount !== settings.questionCount,
+    draft.questionCount !== settings.questionCount ||
+    !sameScope(draft.vocabScope, settings.vocabScope),
 )
 
 // 首次进入时允许直接保存默认值；之后有改动才可再次保存
@@ -66,11 +74,12 @@ const lengthMax = computed(
 // 生成失败覆盖层里的“降低难度 / 缩短文章”会改写已保存设置（路由仍是本页），
 // 这里同步回草稿，避免再次生成时把调整覆盖回去
 watch(
-  () => [settings.level, settings.targetWords, settings.questionCount],
-  ([level, targetWords, questionCount]) => {
+  () => [settings.level, settings.targetWords, settings.questionCount, settings.vocabScope],
+  ([level, targetWords, questionCount, vocabScope]) => {
     draft.level = level
     draft.targetWords = targetWords
     draft.questionCount = questionCount
+    draft.vocabScope = [...vocabScope]
   },
 )
 
@@ -79,10 +88,11 @@ watch(lengthMax, (max) => {
   if (draft.targetWords > max) draft.targetWords = max
 })
 
-// 难度或篇幅一变就重预检：一个接口同时回答「这个难度认识词够不够」和「这个篇幅凑不凑得齐」
+// 难度、篇幅或词源一变就重预检：一个接口同时回答「这个难度认识词够不够」「这个篇幅凑不凑得齐」
+// 词源收窄后候选池跟着变小，不重新预检的话，界面上还挂着上一个范围的成功结论
 watch(
-  () => [draft.level, draft.targetWords],
-  ([, targetWords]) => loadCapacity({ targetWords }),
+  () => [draft.level, draft.targetWords, draft.vocabScope.join(',')],
+  ([, targetWords]) => loadCapacity({ targetWords, vocabScope: [...draft.vocabScope] }),
   { immediate: true },
 )
 
@@ -123,7 +133,7 @@ async function handleGenerate() {
       <header class="page-head">
         <p class="page-eyebrow">Reading Setup</p>
         <h1 class="page-title">阅读设置</h1>
-        <p class="page-desc">选择你想要的难度和文章参数，让 AI 生成更适合你的阅读材料。</p>
+        <p class="page-desc">选择难度、词源和文章参数，让 AI 生成更适合你的阅读材料。</p>
       </header>
 
       <form class="settings-form" @submit.prevent="handleGenerate">
@@ -133,8 +143,13 @@ async function handleGenerate() {
           :disabled="isGenerating"
         />
 
+        <section class="scope">
+          <h2 class="section-title">2. 选择词源</h2>
+          <ScopePicker v-model="draft.vocabScope" class="scope-picker" :disabled="isGenerating" />
+        </section>
+
         <section class="params">
-          <h2 class="section-title">2. 设置文章参数</h2>
+          <h2 class="section-title">3. 设置文章参数</h2>
 
           <div class="params-table">
             <LengthPicker v-model="draft.targetWords" :max="lengthMax" :disabled="isGenerating" />
@@ -228,10 +243,15 @@ async function handleGenerate() {
   letter-spacing: 0.02em;
 }
 
+.scope,
 .params {
   margin-top: var(--space-6);
   padding-top: var(--space-5);
   border-top: 1px solid var(--color-line);
+}
+
+.scope-picker {
+  margin-top: var(--space-4);
 }
 
 .params-table {

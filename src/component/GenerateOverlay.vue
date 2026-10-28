@@ -151,8 +151,11 @@ function backToSettings() {
 }
 
 async function retry() {
-  const { level, targetWords, questionCount, availableWords } = summary.value
-  const generated = await start({ level, targetWords, questionCount }, { availableWords })
+  // 直接重放已保存的设置：手挑三个字段的话，vocabScope 之类的后续字段会在重试时丢掉
+  const generated = await start(
+    { ...settings.payload },
+    { availableWords: summary.value.availableWords },
+  )
   if (generated) router.push(`/readings/${generated.id}`)
 }
 

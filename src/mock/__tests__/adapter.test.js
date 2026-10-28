@@ -216,6 +216,53 @@ describe('mockReadings', () => {
   })
 })
 
+describe('mockReadings vocabScope', () => {
+  it('should shrink the pool to the chosen scope', async () => {
+    const all = await mockReadings.capacity({ targetWords: 100 })
+    const today = await mockReadings.capacity({ targetWords: 100, vocabScope: ['today_new'] })
+
+    expect(all.available).toBe(20)
+    // 种子词的创建日期都是旧的，「今天新学」一个也选不出来
+    expect(today.available).toBe(0)
+    expect(today.levels.easy.knownWords).toBeLessThan(all.levels.easy.knownWords)
+  })
+
+  it('should treat all as the default and normalize dirty scopes', async () => {
+    const full = await mockReadings.capacity({ targetWords: 100 })
+    const dirty = await mockReadings.capacity({
+      targetWords: 100,
+      vocabScope: ['all', 'today_new'],
+    })
+
+    expect(dirty.available).toBe(full.available)
+  })
+
+  it('should reject generation when the chosen scope has too few words', async () => {
+    await expect(
+      mockReadings.generate({
+        level: 'easy',
+        targetWords: 100,
+        questionCount: 3,
+        vocabScope: ['today_new'],
+      }),
+    ).rejects.toMatchObject({ error: { code: 'INSUFFICIENT_VOCABULARY' } })
+  })
+
+  it('should report the normalized scope in the failure details', async () => {
+    // 600 词要 90 个目标词，全量池子只有 20 个：落进 A 门的 details
+    await expect(
+      mockReadings.generate({
+        level: 'easy',
+        targetWords: 600,
+        questionCount: 3,
+        vocabScope: ['all', 'today_new'],
+      }),
+    ).rejects.toMatchObject({
+      error: { code: 'VOCABULARY_TOO_SMALL', details: { scope: ['all'] } },
+    })
+  })
+})
+
 describe('mockReadings.history', () => {
   it('should compute stats from submitted readings only', async () => {
     const history = await mockReadings.history({ pageSize: 10 })

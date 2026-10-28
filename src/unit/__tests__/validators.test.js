@@ -6,10 +6,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   LEVEL_MAX_TARGET_WORDS,
+  normalizeVocabScope,
   TARGET_WORDS_MAX,
   TARGET_WORDS_MIN,
   TARGET_WORDS_STEP,
   validateSettings,
+  VOCAB_SCOPES,
 } from '../validators'
 
 const VALID_SETTINGS = { level: 'easy', targetWords: 200, questionCount: 5 }
@@ -34,6 +36,44 @@ describe('validateSettings', () => {
 
   it('should reject a length that is not a multiple of 10', () => {
     expect(validateSettings({ ...VALID_SETTINGS, targetWords: 205 }).valid).toBe(false)
+  })
+
+  // 老数据没有这个字段，缺省必须放行，否则升级后整份设置会被判无效
+  it('should accept settings without vocabScope', () => {
+    expect(validateSettings(VALID_SETTINGS).valid).toBe(true)
+  })
+
+  it('should reject an empty or unknown vocabScope', () => {
+    expect(validateSettings({ ...VALID_SETTINGS, vocabScope: [] }).errors.vocabScope).toBeTruthy()
+    expect(
+      validateSettings({ ...VALID_SETTINGS, vocabScope: ['yesterday'] }).errors.vocabScope,
+    ).toBeTruthy()
+  })
+
+  it('should accept every documented scope on its own', () => {
+    VOCAB_SCOPES.forEach((scope) => {
+      expect(validateSettings({ ...VALID_SETTINGS, vocabScope: [scope] }).valid).toBe(true)
+    })
+  })
+})
+
+describe('normalizeVocabScope', () => {
+  it('should fall back to all for empty input', () => {
+    expect(normalizeVocabScope([])).toEqual(['all'])
+    expect(normalizeVocabScope(undefined)).toEqual(['all'])
+    expect(normalizeVocabScope(['nonsense'])).toEqual(['all'])
+  })
+
+  // 后端 normalizeScope 同口径：混进 'all' 就按全量算，不留半全量半具体
+  it('should collapse to all when all is present', () => {
+    expect(normalizeVocabScope(['all', 'today_new'])).toEqual(['all'])
+  })
+
+  it('should keep a deduplicated union of concrete scopes', () => {
+    expect(normalizeVocabScope(['today_new', 'today_new', 'today_reviewed'])).toEqual([
+      'today_new',
+      'today_reviewed',
+    ])
   })
 })
 

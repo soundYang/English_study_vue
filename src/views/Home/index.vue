@@ -42,7 +42,11 @@ onMounted(async () => {
 
   // 预检失败不影响首页：拿不到就沿用词库口径的数字，生成时以后端为准
   try {
-    const capacity = await fetchCapacity({ targetWords: settings.targetWords })
+    // 词源要跟生成时一致，否则首页的「基于你的 N 个单词」是全量口径
+    const capacity = await fetchCapacity({
+      targetWords: settings.targetWords,
+      vocabScope: [...settings.vocabScope],
+    })
     if (capacity?.available != null) availableWords.value = capacity.available
   } catch {
     // 静默失败：首页只需要一个提示数字，弹错反而挡住「开始阅读」

@@ -11,6 +11,7 @@ import {
   firstError,
   isValidWordStatus,
   LEVELS,
+  normalizeVocabScope,
   TARGET_WORDS_MAX,
   TARGET_WORDS_MIN,
   TARGET_WORDS_STEP,
@@ -191,6 +192,27 @@ function emptyTokenUsage() {
 /** 可用于生成的词：学习中 / 已掌握；预检与生成共用，避免两处口径漂移 */
 function usableWords(words) {
   return words.filter((item) => item.status === 'learning' || item.status === 'mastered')
+}
+
+function isSameLocalDay(value, now) {
+  if (!value) return false
+
+  const date = new Date(value)
+  return !Number.isNaN(date.getTime()) && date.toDateString() === now.toDateString()
+}
+
+/**
+ * 按词源过滤：多来源取并集，'all' 直接全量（同后端 vocabulary-pool.js filterByScope）。
+ * 「今天复习」依赖 lastReviewedAt，而它只在提交练习时回写，所以刚加的词只能被「今天新学」选中。
+ */
+function filterByScope(words, scopes, now = new Date()) {
+  if (scopes.includes('all')) return words
+
+  return words.filter(
+    (item) =>
+      (scopes.includes('today_new') && isSameLocalDay(item.createdAt, now)) ||
+      (scopes.includes('today_reviewed') && isSameLocalDay(item.lastReviewedAt, now)),
+  )
 }
 
 function countWordsByStatus(words) {
@@ -541,7 +563,9 @@ export const mockReadings = {
     }
 
     const db = readDb()
-    const available = usableWords(db.words).length
+    // 预检也要过词源：范围收窄后池子会变小，否则界面说「够」、点下去 422
+    const scope = normalizeVocabScope(payload.vocabScope)
+    const available = filterByScope(usableWords(db.words), scope).length
     // 与后端同口径：目标词数 ≈ 篇幅的 15%，至少 1 个
     const required = Math.max(1, Math.round(targetWords * 0.15))
     const levels = {}
@@ -592,7 +616,8 @@ export const mockReadings = {
 
     const { level, targetWords, questionCount } = payload
     const db = readDb()
-    const available = usableWords(db.words)
+    const scope = normalizeVocabScope(payload.vocabScope)
+    const available = filterByScope(usableWords(db.words), scope)
 
     if (available.length < VOCABULARY_THRESHOLD) {
       throw new MockApiError(
@@ -617,7 +642,7 @@ export const mockReadings = {
           required,
           available: available.length,
           targetWords,
-          scope: ['all'],
+          scope,
           level,
         },
       )

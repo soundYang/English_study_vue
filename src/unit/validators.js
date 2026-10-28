@@ -8,6 +8,13 @@ export const WORD_STATUSES = ['new', 'learning', 'mastered']
 export const WORD_SOURCES = ['dictionary', 'manual']
 export const LEVELS = ['easy', 'medium', 'hard']
 export const QUESTION_COUNTS = [3, 5, 8]
+// 词源多选；'all' 与具体项互斥，语义同后端 vocabulary-pool.js 的 normalizeScope
+export const VOCAB_SCOPES = ['today_new', 'today_reviewed', 'all']
+export const VOCAB_SCOPE_LABELS = Object.freeze({
+  today_new: '今天新学',
+  today_reviewed: '今天复习',
+  all: '全部词汇',
+})
 // 与后端 reading.schema.js 的 targetWordsRules 对齐：100–600，10 的倍数
 export const TARGET_WORDS_MIN = 100
 export const TARGET_WORDS_MAX = 600
@@ -82,8 +89,25 @@ export function validateWordInput({ word, meaning, mode = 'manual', senses } = {
   }
 }
 
-/** 校验阅读设置；文章长度必须是 10 的倍数且在 100～600 之间 */
-export function validateSettings({ level, targetWords, questionCount } = {}) {
+/**
+ * 归一化词源
+ * 空数组或含 'all' 都按全量处理，其余去重；与后端 normalizeScope 一一对应，
+ * 保证「界面看到的选择」和「真正发给后端的 scope」是同一个值。
+ */
+export function normalizeVocabScope(scope) {
+  const list = Array.isArray(scope) ? scope.filter((item) => VOCAB_SCOPES.includes(item)) : []
+
+  if (!list.length || list.includes('all')) return ['all']
+
+  return [...new Set(list)]
+}
+
+/**
+ * 校验阅读设置；文章长度必须是 10 的倍数且在 100～600 之间
+ * vocabScope 缺省视为合法（老数据没有这个字段），显式传空数组或未知值算错——
+ * 后端对空数组回 400，前端不该把它发出去。
+ */
+export function validateSettings({ level, targetWords, questionCount, vocabScope } = {}) {
   const errors = {}
   const words = Number(targetWords)
 
@@ -97,6 +121,14 @@ export function validateSettings({ level, targetWords, questionCount } = {}) {
     errors.targetWords = `文章长度需在 ${TARGET_WORDS_MIN}～${TARGET_WORDS_MAX} 词之间，且为 ${TARGET_WORDS_STEP} 的倍数`
   }
   if (!QUESTION_COUNTS.includes(questionCount)) errors.questionCount = '题目数量只能是 3、5 或 8'
+
+  if (vocabScope !== undefined) {
+    const scopes = Array.isArray(vocabScope) ? vocabScope : []
+
+    if (!scopes.length || scopes.some((scope) => !VOCAB_SCOPES.includes(scope))) {
+      errors.vocabScope = '请至少选择一个词源'
+    }
+  }
 
   return { valid: Object.keys(errors).length === 0, errors }
 }

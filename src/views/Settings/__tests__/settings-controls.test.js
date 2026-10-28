@@ -7,6 +7,7 @@ import { mount } from '@vue/test-utils'
 import DifficultyPicker from '../component/DifficultyPicker.vue'
 import LengthPicker from '../component/LengthPicker.vue'
 import QuestionCountPicker from '../component/QuestionCountPicker.vue'
+import ScopePicker from '../component/ScopePicker.vue'
 
 describe('DifficultyPicker', () => {
   it('should mark the current level and emit the clicked one', async () => {
@@ -86,6 +87,51 @@ describe('LengthPicker', () => {
 
     expect(wrapper.get('[aria-label="选择约 200 词"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[aria-label="选择约 150 词"]').attributes('disabled')).toBeUndefined()
+  })
+})
+
+describe('ScopePicker', () => {
+  it('should render the three scopes with all selected by default', () => {
+    const wrapper = mount(ScopePicker, { props: { modelValue: ['all'] } })
+    const chips = wrapper.findAll('[role="checkbox"]')
+
+    expect(chips).toHaveLength(3)
+    expect(chips.map((chip) => chip.text())).toEqual(['今天新学', '今天复习', '全部词汇'])
+    expect(chips[0].attributes('aria-checked')).toBe('false')
+    expect(chips[2].attributes('aria-checked')).toBe('true')
+  })
+
+  it('should pick a concrete scope without the all option', async () => {
+    const wrapper = mount(ScopePicker, { props: { modelValue: ['all'] } })
+
+    await wrapper.findAll('[role="checkbox"]')[0].trigger('click')
+
+    expect(wrapper.emitted('update:modelValue')[0]).toEqual([['today_new']])
+  })
+
+  it('should add a second concrete scope to the union', async () => {
+    const wrapper = mount(ScopePicker, { props: { modelValue: ['today_new'] } })
+
+    await wrapper.findAll('[role="checkbox"]')[1].trigger('click')
+
+    expect(wrapper.emitted('update:modelValue')[0]).toEqual([['today_new', 'today_reviewed']])
+  })
+
+  it('should fall back to all when the last concrete scope is removed', async () => {
+    const wrapper = mount(ScopePicker, { props: { modelValue: ['today_new'] } })
+
+    await wrapper.findAll('[role="checkbox"]')[0].trigger('click')
+
+    // 后端不接受空数组，前端干脆不让出现这种情况
+    expect(wrapper.emitted('update:modelValue')[0]).toEqual([['all']])
+  })
+
+  it('should not emit when disabled', async () => {
+    const wrapper = mount(ScopePicker, { props: { modelValue: ['all'], disabled: true } })
+
+    await wrapper.findAll('[role="checkbox"]')[0].trigger('click')
+
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
   })
 })
 

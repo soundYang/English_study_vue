@@ -69,6 +69,35 @@ describe('settings page capacity note', () => {
     expect(wrapper.findAll('[role="radio"]:disabled')).toHaveLength(0)
   })
 
+  it('should narrow the precheck when the scope is limited', async () => {
+    const wrapper = await mountSettings()
+    expect(wrapper.get('.capacity-note').text()).toContain('还差 380 个')
+
+    // 种子词的 createdAt 都是过去的日子，「今天新学」的池子是空的
+    await wrapper.findAll('[role="checkbox"]')[0].trigger('click')
+    await settle()
+
+    expect(wrapper.get('.scope-chip.is-active').text()).toBe('今天新学')
+    expect(wrapper.get('.capacity-note').text()).toContain('还差 400 个')
+  })
+
+  it('should save the chosen scope with the other settings', async () => {
+    const wrapper = await mountSettings()
+
+    await wrapper.findAll('[role="checkbox"]')[1].trigger('click')
+    await settle()
+
+    const saveButton = wrapper.findAll('button').find((button) => button.text() === '保存设置')
+    expect(saveButton.attributes('disabled')).toBeUndefined()
+
+    await saveButton.trigger('click')
+    await settle()
+
+    expect(JSON.parse(localStorage.getItem(storageKeys.settings)).vocabScope).toEqual([
+      'today_reviewed',
+    ])
+  })
+
   it('should clamp the length when the level max shrinks', async () => {
     // 先落一份 hard / 600 的设置，让页面从一个超出现有难度上限的篇幅起步
     localStorage.setItem(

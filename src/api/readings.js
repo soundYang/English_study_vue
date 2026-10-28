@@ -17,7 +17,9 @@ export function generateReading(payload, options = {}) {
 export function fetchCapacity(params = {}, options = {}) {
   if (config.useMock) return mockReadings.capacity(params, options)
 
-  return apiGet('/readings/capacity', params, options)
+  // vocabScope 是数组，axios 默认会拼成 vocabScope[]=…，后端 zod 只认 vocabScope，
+  // 会静默按默认值当成全量；indexes: null 输出重复键，Express 才能解析成数组
+  return apiGet('/readings/capacity', params, { paramsSerializer: { indexes: null }, ...options })
 }
 
 /** 获取阅读详情：未提交返回安全 DTO，已提交返回含答案与翻译的完整结果 */
