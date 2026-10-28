@@ -3,12 +3,13 @@
  * 文章长度选择器
  *
  * 用途：三个预设胶囊（约 100 / 150 / 200 词）+ 选中胶囊内的 10 词步进器；
- *       范围 50～300，手动调整后胶囊文案实时显示当前值。
- * 用法：<LengthPicker v-model="draft.targetWords" :disabled="isGenerating" />
+ *       范围 100～当前难度上限，手动调整后胶囊文案实时显示当前值。
+ * 用法：<LengthPicker v-model="draft.targetWords" :max="lengthMax" :disabled="isGenerating" />
  *
  * props:
  *   modelValue — 当前目标词数（10 的倍数）
  *   disabled   — 生成中禁用
+ *   max        — 当前难度的篇幅上限，缺省时用全局上限
  * emits:
  *   update:modelValue — 词数变化
  */
@@ -21,6 +22,8 @@ const PRESETS = [100, 150, 200]
 const props = defineProps({
   modelValue: { type: Number, required: true },
   disabled: { type: Boolean, default: false },
+  // 难度上限，由设置页从 /capacity 传入；未传时用全局上限
+  max: { type: Number, default: TARGET_WORDS_MAX },
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -38,7 +41,7 @@ function nearestPresetIndex(value) {
 const activeIndex = ref(nearestPresetIndex(props.modelValue))
 
 const canDecrease = computed(() => props.modelValue > TARGET_WORDS_MIN)
-const canIncrease = computed(() => props.modelValue < TARGET_WORDS_MAX)
+const canIncrease = computed(() => props.modelValue < props.max)
 
 watch(
   () => props.modelValue,
@@ -49,7 +52,13 @@ watch(
 )
 
 function clamp(value) {
-  return Math.min(TARGET_WORDS_MAX, Math.max(TARGET_WORDS_MIN, value))
+  return Math.min(props.max, Math.max(TARGET_WORDS_MIN, value))
+}
+
+// 预设始终渲染，超出当前难度上限的置灰而不是过滤掉：
+// activeIndex 是 PRESETS 的下标，过滤后的数组下标会和它对不上
+function isPresetDisabled(preset) {
+  return props.disabled || preset > props.max
 }
 
 function choosePreset(value, index) {
@@ -77,7 +86,7 @@ function handleSpinKeydown(event) {
     emit('update:modelValue', TARGET_WORDS_MIN)
   } else if (event.key === 'End') {
     event.preventDefault()
-    emit('update:modelValue', TARGET_WORDS_MAX)
+    emit('update:modelValue', props.max)
   }
 }
 </script>
@@ -108,7 +117,7 @@ function handleSpinKeydown(event) {
             class="value"
             role="spinbutton"
             :aria-valuemin="TARGET_WORDS_MIN"
-            :aria-valuemax="TARGET_WORDS_MAX"
+            :aria-valuemax="max"
             :aria-valuenow="modelValue"
             :aria-valuetext="`约 ${modelValue} 词`"
             aria-label="文章长度"
@@ -134,7 +143,7 @@ function handleSpinKeydown(event) {
           type="button"
           class="preset"
           :aria-label="`选择约 ${preset} 词`"
-          :disabled="disabled"
+          :disabled="isPresetDisabled(preset)"
           @click="choosePreset(preset, index)"
         >
           约 {{ preset }} 词

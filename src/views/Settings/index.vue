@@ -15,7 +15,12 @@ import { fetchWords } from '../../api/words'
 import { useGenerateReading } from '../../composables/useGenerateReading'
 import { useToast } from '../../composables/useToast'
 import { useSettingsStore } from '../../stores/model/settings'
-import { firstError, VOCABULARY_THRESHOLD } from '../../unit/validators'
+import {
+  firstError,
+  LEVEL_MAX_TARGET_WORDS,
+  TARGET_WORDS_MAX,
+  VOCABULARY_THRESHOLD,
+} from '../../unit/validators'
 
 const router = useRouter()
 const toast = useToast()
@@ -47,6 +52,9 @@ const showVocabHint = computed(
   () => availableWords.value !== null && availableWords.value < VOCABULARY_THRESHOLD,
 )
 
+// 篇幅上限跟难度走：批次 3 接入 /capacity 后改由预检结果覆盖，这里先用后端常量的副本兜底
+const lengthMax = computed(() => LEVEL_MAX_TARGET_WORDS[draft.level] || TARGET_WORDS_MAX)
+
 // 生成失败覆盖层里的“降低难度 / 缩短文章”会改写已保存设置（路由仍是本页），
 // 这里同步回草稿，避免再次生成时把调整覆盖回去
 watch(
@@ -57,6 +65,11 @@ watch(
     draft.questionCount = questionCount
   },
 )
+
+// 切换难度后篇幅可能超出新上限：向下夹住，而不是等用户点生成才 400
+watch(lengthMax, (max) => {
+  if (draft.targetWords > max) draft.targetWords = max
+})
 
 onMounted(async () => {
   try {
@@ -112,7 +125,7 @@ async function handleGenerate() {
           <h2 class="section-title">2. 设置文章参数</h2>
 
           <div class="params-table">
-            <LengthPicker v-model="draft.targetWords" :disabled="isGenerating" />
+            <LengthPicker v-model="draft.targetWords" :max="lengthMax" :disabled="isGenerating" />
             <QuestionCountPicker v-model="draft.questionCount" :disabled="isGenerating" />
           </div>
 

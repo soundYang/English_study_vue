@@ -8,7 +8,8 @@
  *
  * 行为：
  *   - 生成中：浮动书本图标、不定长进度条、每 2.5s 轮换提示、可取消
- *   - INSUFFICIENT_VOCABULARY：去添加单词 / 降低难度 / 缩短文章
+ *   - 词汇不够（INSUFFICIENT_VOCABULARY / VOCABULARY_TOO_SMALL）：
+ *     去添加单词 / 降低难度 / 缩短文章，按当前处境只显示有效的那个
  *   - 其他错误：重试 / 返回修改
  *   - 打开时锁定背景滚动，焦点落到首个按钮，Esc 取消或关闭
  */
@@ -36,9 +37,16 @@ const tipIndex = ref(0)
 let tipTimer = null
 let lastActiveElement = null
 
+// 两道「词不够」的码：20 词兜底 + 主闸门（A 门 target_words / B 门 known_words）
+const INSUFFICIENT_CODES = ['INSUFFICIENT_VOCABULARY', 'VOCABULARY_TOO_SMALL']
+
 const isOpen = computed(() => phase.value === 'generating' || Boolean(error.value))
 const errorCode = computed(() => error.value?.code || '')
-const isInsufficient = computed(() => errorCode.value === 'INSUFFICIENT_VOCABULARY')
+const isInsufficient = computed(() => INSUFFICIENT_CODES.includes(errorCode.value))
+// easy 已经是最低档，降低难度点了也不会有反应
+const canLower = computed(() => summary.value.level !== 'easy')
+// 到下限就没有可缩的了，再缩后端会 400
+const canShorten = computed(() => Number(summary.value.targetWords) > TARGET_WORDS_MIN)
 const levelLabel = computed(() => LEVEL_LABELS[summary.value.level] || '简单')
 const basisText = computed(() =>
   summary.value.availableWords == null
@@ -118,8 +126,13 @@ function lowerDifficulty() {
 }
 
 function shortenArticle() {
-  const current = Number(summary.value.targetWords) || 100
-  settings.save({ targetWords: Math.max(TARGET_WORDS_MIN, current - 50) })
+  const current = Number(summary.value.targetWords) || TARGET_WORDS_MIN
+  const next = Math.max(TARGET_WORDS_MIN, current - 50)
+
+  // 已经到下限就不再写设置：写了也是同一个值，还会让用户白跑一趟设置页
+  if (next === current) return
+
+  settings.save({ targetWords: next })
   dismiss()
   router.push('/settings')
 }
@@ -209,8 +222,12 @@ onBeforeUnmount(() => {
             <p class="generate-hint">{{ errorHint }}</p>
 
             <div v-if="isInsufficient" class="generate-actions">
-              <BaseButton variant="secondary" @click="shortenArticle">缩短文章</BaseButton>
-              <BaseButton variant="secondary" @click="lowerDifficulty">降低难度</BaseButton>
+              <BaseButton v-if="canShorten" variant="secondary" @click="shortenArticle">
+                缩短文章
+              </BaseButton>
+              <BaseButton v-if="canLower" variant="secondary" @click="lowerDifficulty">
+                降低难度
+              </BaseButton>
               <BaseButton @click="goAddWords">去添加单词</BaseButton>
             </div>
             <div v-else class="generate-actions">

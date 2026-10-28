@@ -43,14 +43,14 @@ describe('DifficultyPicker', () => {
 
 describe('LengthPicker', () => {
   it('should step by 10 words inside the active pill', async () => {
-    const wrapper = mount(LengthPicker, { props: { modelValue: 100 } })
+    const wrapper = mount(LengthPicker, { props: { modelValue: 120 } })
 
     await wrapper.get('[aria-label="增加 10 词"]').trigger('click')
     await wrapper.get('[aria-label="减少 10 词"]').trigger('click')
 
     const events = wrapper.emitted('update:modelValue')
-    expect(events[0]).toEqual([110])
-    expect(events[1]).toEqual([90])
+    expect(events[0]).toEqual([130])
+    expect(events[1]).toEqual([110])
   })
 
   it('should apply a preset when an inactive pill is clicked', async () => {
@@ -61,11 +61,31 @@ describe('LengthPicker', () => {
     expect(wrapper.emitted('update:modelValue')[0]).toEqual([200])
   })
 
+  it('should clamp the stepper at the backend minimum', () => {
+    const wrapper = mount(LengthPicker, { props: { modelValue: 100 } })
+
+    expect(wrapper.get('[aria-label="减少 10 词"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[aria-label="增加 10 词"]').attributes('disabled')).toBeUndefined()
+  })
+
   it('should disable the increase button at the upper bound', () => {
-    const wrapper = mount(LengthPicker, { props: { modelValue: 300 } })
+    const wrapper = mount(LengthPicker, { props: { modelValue: 600 } })
 
     expect(wrapper.get('[aria-label="增加 10 词"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[aria-label="减少 10 词"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('should respect the per-level max', () => {
+    const wrapper = mount(LengthPicker, { props: { modelValue: 300, max: 300 } })
+
+    expect(wrapper.get('[aria-label="增加 10 词"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('should grey out presets above the per-level max', () => {
+    const wrapper = mount(LengthPicker, { props: { modelValue: 100, max: 150 } })
+
+    expect(wrapper.get('[aria-label="选择约 200 词"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[aria-label="选择约 150 词"]').attributes('disabled')).toBeUndefined()
   })
 })
 

@@ -8,9 +8,17 @@ export const WORD_STATUSES = ['new', 'learning', 'mastered']
 export const WORD_SOURCES = ['dictionary', 'manual']
 export const LEVELS = ['easy', 'medium', 'hard']
 export const QUESTION_COUNTS = [3, 5, 8]
-export const TARGET_WORDS_MIN = 50
-export const TARGET_WORDS_MAX = 300
+// 与后端 reading.schema.js 的 targetWordsRules 对齐：100–600，10 的倍数
+export const TARGET_WORDS_MIN = 100
+export const TARGET_WORDS_MAX = 600
 export const TARGET_WORDS_STEP = 10
+
+/**
+ * 各难度允许的篇幅上限（默认值）。
+ * 唯一来源是后端 level-limits.js；真正生效的值由 /capacity 的
+ * levels[level].maxTargetWords 覆盖，这里只是预检回来之前的兜底。
+ */
+export const LEVEL_MAX_TARGET_WORDS = Object.freeze({ easy: 300, medium: 450, hard: 600 })
 export const WORD_MAX_LENGTH = 45
 // 真实词库有 5 条释义在 101–163 字之间，上限放到 200 才能选中保存
 export const MEANING_MAX_LENGTH = 200
@@ -74,7 +82,7 @@ export function validateWordInput({ word, meaning, mode = 'manual', senses } = {
   }
 }
 
-/** 校验阅读设置；文章长度必须是 10 的倍数且在 50～300 之间 */
+/** 校验阅读设置；文章长度必须是 10 的倍数且在 100～600 之间 */
 export function validateSettings({ level, targetWords, questionCount } = {}) {
   const errors = {}
   const words = Number(targetWords)
