@@ -3,6 +3,7 @@
  * 覆盖难度整卡的单选与方向键、长度步进器的边界、题目数量分段控件的取值。
  */
 import { describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import DifficultyPicker from '../component/DifficultyPicker.vue'
 import LengthPicker from '../component/LengthPicker.vue'
@@ -49,9 +50,90 @@ describe('LengthPicker', () => {
     await wrapper.get('[aria-label="增加 10 词"]').trigger('click')
     await wrapper.get('[aria-label="减少 10 词"]').trigger('click')
 
+    // 组件内部记住上一次的结果：先加后减回到 120，而不是拿未更新的 props 再减一次
     const events = wrapper.emitted('update:modelValue')
     expect(events[0]).toEqual([130])
-    expect(events[1]).toEqual([110])
+    expect(events[1]).toEqual([120])
+  })
+
+  it('should accept a typed word count and round it to the nearest ten', async () => {
+    const wrapper = mount(LengthPicker, { props: { modelValue: 100 } })
+    const input = wrapper.get('.value-input')
+
+    await input.setValue('235')
+    await input.trigger('keydown', { key: 'Enter' })
+
+    expect(wrapper.emitted('update:modelValue')).toEqual([[240]])
+    expect(input.element.value).toBe('240')
+  })
+
+  it('should clamp a typed value to the current level max', async () => {
+    const wrapper = mount(LengthPicker, { props: { modelValue: 100, max: 300 } })
+    const input = wrapper.get('.value-input')
+
+    await input.setValue('999')
+    await input.trigger('blur')
+
+    expect(wrapper.emitted('update:modelValue')).toEqual([[300]])
+    expect(input.element.value).toBe('300')
+  })
+
+  it('should fall back to the current value when the input is empty', async () => {
+    const wrapper = mount(LengthPicker, { props: { modelValue: 150 } })
+    const input = wrapper.get('.value-input')
+
+    await input.setValue('')
+    await input.trigger('blur')
+    await nextTick()
+
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(input.element.value).toBe('150')
+  })
+
+  it('should keep only digits while typing', async () => {
+    const wrapper = mount(LengthPicker, { props: { modelValue: 100 } })
+    const input = wrapper.get('.value-input')
+
+    await input.setValue('12a0')
+
+    expect(input.element.value).toBe('120')
+  })
+
+  it('should step with arrow keys and keep the input in sync', async () => {
+    const wrapper = mount(LengthPicker, { props: { modelValue: 100 } })
+
+    await wrapper.get('.value-input').trigger('focus')
+    await wrapper.get('.value-input').trigger('keydown', { key: 'ArrowUp' })
+
+    expect(wrapper.emitted('update:modelValue')).toEqual([[110]])
+    expect(wrapper.get('.value-input').element.value).toBe('110')
+  })
+
+  it('should cancel the typed value on Escape', async () => {
+    const wrapper = mount(LengthPicker, { props: { modelValue: 100 } })
+    const input = wrapper.get('.value-input')
+
+    await input.setValue('320')
+    await input.trigger('keydown', { key: 'Escape' })
+    await nextTick()
+
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(input.element.value).toBe('100')
+  })
+
+  it('should prevent Enter from submitting the surrounding form', async () => {
+    const wrapper = mount(LengthPicker, { props: { modelValue: 100 }, attachTo: document.body })
+    const input = wrapper.get('.value-input')
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+
+    await input.setValue('180')
+    input.element.dispatchEvent(event)
+    await nextTick()
+
+    // 设置页用 <form @submit.prevent> 触发生成，不拦回车会直接开始生成
+    expect(event.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('update:modelValue')).toEqual([[180]])
+    wrapper.unmount()
   })
 
   it('should apply a preset when an inactive pill is clicked', async () => {
