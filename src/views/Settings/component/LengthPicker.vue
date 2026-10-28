@@ -317,10 +317,12 @@ function handleSpinKeydown(event) {
 
 .slider {
   display: flex;
-  flex: 1 1 180px;
+  /* 不占满整行：滑杆与步进器连在一起看是一个控件，剩下的留白让它更像
+     「长度调节」而不是整页的进度条 */
+  flex: 0 1 200px;
   align-items: center;
   gap: var(--space-2);
-  min-width: 0;
+  min-width: 140px;
 }
 
 .slider-bound {
