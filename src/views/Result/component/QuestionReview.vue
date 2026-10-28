@@ -2,13 +2,15 @@
 /**
  * 单题解析卡
  * 展示题号、题干、用户答案、对错状态；答错时补充正确答案与解析。
+ * 解析下方再展示原文依据（evidence）：后端只从正文原样复制一句，
+ * 老文档为空串，此时整块不渲染。
  * 状态同时使用图标、文字与颜色，避免只靠颜色传达。
  *
  * 用法：<ol><QuestionReview v-for="..." :question="question" :result="result" :index="0" /></ol>
  *
  * props:
  *   question — { id, question, options }
- *   result   — { questionId, selectedOption, correctAnswer, isCorrect, explanation }
+ *   result   — { questionId, selectedOption, correctAnswer, isCorrect, explanation, evidence? }
  *   index    — 从 0 开始的题序，用于编号与 stagger
  */
 import { computed } from 'vue'
@@ -49,6 +51,7 @@ const selectedText = computed(() =>
 )
 const correctText = computed(() => formatOption(props.result.correctAnswer, props.question.options))
 const explanation = computed(() => String(props.result.explanation || '').trim())
+const evidence = computed(() => String(props.result.evidence || '').trim())
 const staggerStyle = computed(() => ({ animationDelay: `${Math.min(props.index, 7) * 40}ms` }))
 </script>
 
@@ -77,6 +80,11 @@ const staggerStyle = computed(() => ({ animationDelay: `${Math.min(props.index, 
     </div>
 
     <p v-if="explanation" class="review-explanation">{{ explanation }}</p>
+
+    <div v-if="evidence" class="review-evidence">
+      <p class="review-evidence-label">原文依据</p>
+      <blockquote class="review-evidence-text">{{ evidence }}</blockquote>
+    </div>
   </li>
 </template>
 
@@ -171,6 +179,27 @@ const staggerStyle = computed(() => ({ animationDelay: `${Math.min(props.index, 
   padding-left: var(--space-3);
   border-left: 2px solid var(--color-line-strong);
   color: var(--color-muted);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  overflow-wrap: anywhere;
+}
+
+.review-evidence {
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+}
+
+.review-evidence-label {
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+}
+
+.review-evidence-text {
+  margin: 2px 0 0;
+  color: var(--color-ink-2);
   font-size: var(--text-small);
   line-height: var(--leading-small);
   overflow-wrap: anywhere;

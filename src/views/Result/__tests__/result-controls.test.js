@@ -81,6 +81,32 @@ describe('QuestionReview', () => {
     expect(wrapper.text()).not.toContain('正确答案：')
     expect(wrapper.get('.review-explanation').text()).toBe('Sometimes a friend joins him.')
     expect(wrapper.classes()).not.toContain('is-wrong')
+    expect(wrapper.find('.review-evidence').exists()).toBe(false)
+  })
+
+  it('should show the evidence under the explanation', () => {
+    const wrapper = mount(QuestionReview, {
+      props: {
+        question: QUESTION,
+        result: { ...correctResult, evidence: 'Tom is a good boy.' },
+        index: 0,
+      },
+    })
+
+    expect(wrapper.get('.review-evidence-label').text()).toBe('原文依据')
+    expect(wrapper.get('.review-evidence-text').text()).toBe('Tom is a good boy.')
+  })
+
+  it('should skip an empty evidence block', () => {
+    const wrapper = mount(QuestionReview, {
+      props: {
+        question: QUESTION,
+        result: { ...correctResult, evidence: '   ' },
+        index: 0,
+      },
+    })
+
+    expect(wrapper.find('.review-evidence').exists()).toBe(false)
   })
 
   it('should show the selected and correct answers for a wrong response', () => {

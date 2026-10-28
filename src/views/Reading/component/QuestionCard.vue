@@ -7,13 +7,16 @@
  *          @select="choose" />
  *
  * props:
- *   question — { id, question, options }
+ *   question — { id, question, options, type? }；type 缺失（老文档）时不显示题型标签
  *   index    — 题目序号（0 起）
  *   selected — 当前选中项下标；未作答为 null
  *   disabled — 提交中禁用全部选项
  * emits:
  *   select — 选项下标
  */
+import { computed } from 'vue'
+import { questionTypeLabel } from '../../../unit/question-types'
+
 const props = defineProps({
   question: { type: Object, required: true },
   index: { type: Number, default: 0 },
@@ -22,6 +25,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['select'])
+
+const typeLabel = computed(() => questionTypeLabel(props.question?.type))
 
 function select(optionIndex) {
   if (props.disabled) return
@@ -33,7 +38,10 @@ function select(optionIndex) {
   <li class="question-card" :data-question-id="question.id" :id="`question-${question.id}`">
     <div class="question-head">
       <span class="question-number" aria-hidden="true">{{ index + 1 }}</span>
-      <h3 class="question-text">{{ question.question }}</h3>
+      <h3 class="question-text">
+        <span v-if="typeLabel" class="question-type">{{ typeLabel }}</span>
+        {{ question.question }}
+      </h3>
       <span v-if="selected != null" class="answered-dot">
         <span class="sr-only">已作答</span>
       </span>
@@ -105,6 +113,20 @@ function select(optionIndex) {
   font-weight: 500;
   line-height: 24px;
   overflow-wrap: anywhere;
+}
+
+.question-type {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-deep);
+  color: var(--color-ink-2);
+  font-size: var(--text-caption);
+  font-weight: 400;
+  line-height: 18px;
+  vertical-align: 1px;
+  white-space: nowrap;
 }
 
 .answered-dot {

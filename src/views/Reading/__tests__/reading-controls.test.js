@@ -196,6 +196,22 @@ describe('QuestionCard', () => {
     expect(wrapper.get('.question-number').text()).toBe('2')
   })
 
+  it('should show the type label when the reading provides one', () => {
+    const wrapper = mount(QuestionCard, {
+      props: { question: { ...question, type: 'inference' }, index: 0, selected: null },
+    })
+
+    expect(wrapper.get('.question-type').text()).toBe('推断题')
+  })
+
+  it('should hide the type label for old readings without a type', () => {
+    const wrapper = mount(QuestionCard, {
+      props: { question, index: 0, selected: null },
+    })
+
+    expect(wrapper.find('.question-type').exists()).toBe(false)
+  })
+
   it('should not emit when disabled', async () => {
     const wrapper = mount(QuestionCard, {
       props: { question, index: 0, selected: null, disabled: true },
