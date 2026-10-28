@@ -12,6 +12,7 @@
  */
 import { computed } from 'vue'
 import { Pencil } from 'lucide-vue-next'
+import mountains from '../../../assets/images/profile-mountains.png'
 
 const props = defineProps({
   user: { type: Object, required: true },
@@ -30,27 +31,11 @@ const username = computed(() => String(props.user?.username || '').trim())
   <header class="profile-hero">
     <!-- 山景与飞鸟是装饰，不承载信息：头像与昵称各自可读，读屏跳过这一层 -->
     <div class="hero-scenery" aria-hidden="true">
-      <svg viewBox="0 0 520 180" preserveAspectRatio="xMaxYMid slice" focusable="false">
-        <path d="M0 152 92 74l62 48 76-72 74 72 66-44 150 74v28H0z" fill="#cfd8c8" opacity="0.55" />
-        <path d="M116 162 220 86l70 56 70-44 100 64h60v18H116z" fill="#a9b8a4" opacity="0.5" />
-        <path
-          d="M298 54q6-6 12 0M318 46q6-6 12 0"
-          fill="none"
-          stroke="#8a9a88"
-          stroke-linecap="round"
-          stroke-width="1.6"
-        />
-      </svg>
+      <img :src="mountains" alt="" />
     </div>
 
     <span class="hero-avatar" aria-hidden="true">
-      <svg viewBox="0 0 72 72" focusable="false">
-        <rect width="72" height="72" fill="#efe8da" />
-        <circle cx="52" cy="20" r="7" fill="#d9c7a3" />
-        <path d="M0 52 18 30l14 16 12-12 14 16 14-10v32H0z" fill="#b9c4b3" />
-        <path d="M0 60 14 44l14 14 14-10 14 12 16-8v20H0z" fill="#8fa08c" />
-        <path d="M0 68 20 56l14 10 16-8 22 10v4H0z" fill="#5f7768" />
-      </svg>
+      <img :src="mountains" alt="" />
     </span>
 
     <div class="hero-info">
@@ -97,9 +82,11 @@ const username = computed(() => String(props.user?.username || '').trim())
   -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 45%);
 }
 
-.hero-scenery svg {
+.hero-scenery img {
   width: 100%;
   height: 100%;
+  object-fit: cover;
+  object-position: 85% 58%;
 }
 
 .hero-avatar {
@@ -116,9 +103,12 @@ const username = computed(() => String(props.user?.username || '').trim())
   box-shadow: var(--shadow-md);
 }
 
-.hero-avatar svg {
+.hero-avatar img {
   width: 100%;
   height: 100%;
+  object-fit: cover;
+  /* 从同一张山景里裁出主峰，头像和右侧装饰保持同一套画 */
+  object-position: 82% 62%;
 }
 
 .hero-info {
