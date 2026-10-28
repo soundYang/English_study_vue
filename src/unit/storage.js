@@ -90,6 +90,8 @@ export const storageKeys = {
   dictionarySuggest: 'wr.pref.dictionarySuggest',
   // 生成任务 id 必须在刷新后还能读到：回来直接 GET 续上轮询（后端 md/32 §5）
   generationTask: 'wr.generation.task.v1',
+  // 个人资料与 Mock 阅读库分开存：改昵称不需要让整套种子数据重建（md/33 §6）
+  mockProfile: 'wr.mock.profile.v1',
   answers: (readingId) => `wr.answers:${readingId}`,
   timer: (readingId) => `wr.timer:${readingId}`,
 }

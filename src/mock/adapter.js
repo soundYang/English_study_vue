@@ -216,6 +216,8 @@ function writeDb(db) {
 export function resetMockDb() {
   generationTasks.clear()
   generationTaskSeq = 0
+  // 资料与阅读库分开存，重置种子数据时也要一起回到默认昵称
+  localStore.remove(storageKeys.mockProfile)
   const fresh = createSeedDatabase()
   localStore.set(storageKeys.mockDb, fresh)
   return fresh
@@ -467,6 +469,206 @@ function normalizeAnswers(reading, answers) {
   })
 
   return Object.fromEntries(answerMap)
+}
+
+const NICKNAME_MAX = 20
+const SIGNATURE_MAX = 60
+const PASSWORD_MIN = 8
+const PASSWORD_MAX = 64
+const WEEKLY_BUCKETS = 12
+
+// 未注册时的本地用户：昵称对应设计稿的 Sound，username 保留历史 dataKey 的展示值。
+// 真实后端在 AUTH_ENFORCED=false 时也应以同一形状回一个默认用户（md/33 §7.3）
+const DEFAULT_PROFILE = Object.freeze({
+  id: 'local-user',
+  username: 'local-user',
+  nickname: 'Sound',
+  signature: '少年，大胆走，怎么都是路。',
+  phone: null,
+  createdAt: '2026-09-01T08:00:00.000Z',
+})
+
+function readProfile() {
+  const stored = localStore.get(storageKeys.mockProfile, null)
+  if (!stored || typeof stored !== 'object') return { ...DEFAULT_PROFILE }
+
+  return {
+    ...DEFAULT_PROFILE,
+    ...stored,
+    nickname: String(stored.nickname ?? DEFAULT_PROFILE.nickname),
+    signature: String(stored.signature ?? ''),
+  }
+}
+
+function writeProfile(profile) {
+  localStore.set(storageKeys.mockProfile, profile)
+}
+
+/** 与后端同形状：不返回 dataKey / passwordHash / usernameLower（md/33 §6.2） */
+function toProfileUser(profile) {
+  return {
+    id: profile.id,
+    username: profile.username,
+    nickname: profile.nickname,
+    signature: profile.signature,
+    phone: profile.phone,
+    createdAt: profile.createdAt,
+  }
+}
+
+/** 周一作为一周起点，与后端 weekly.weekStart 的口径一致 */
+function startOfWeek(value) {
+  const date = value instanceof Date ? new Date(value) : new Date(value ?? Date.now())
+  if (Number.isNaN(date.getTime())) return null
+
+  date.setHours(0, 0, 0, 0)
+  // getDay() 周日为 0；换算成周一为 0 的偏移
+  date.setDate(date.getDate() - ((date.getDay() + 6) % 7))
+  return date
+}
+
+function formatLocalDate(date) {
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
+/** 近 12 周：无数据的周补 0，数组长度固定，前端柱状图才能画出固定格子（md/33 §9.3） */
+function buildWeeklyBuckets(readings, now = new Date()) {
+  const currentWeek = startOfWeek(now)
+  const buckets = []
+
+  for (let offset = WEEKLY_BUCKETS - 1; offset >= 0; offset -= 1) {
+    const start = new Date(currentWeek)
+    start.setDate(start.getDate() - offset * 7)
+    buckets.push({ start, count: 0 })
+  }
+
+  readings
+    .filter((item) => item.status === 'submitted')
+    .forEach((item) => {
+      const week = startOfWeek(item.submittedAt || item.createdAt)
+      if (!week) return
+
+      const bucket = buckets.find((entry) => entry.start.getTime() === week.getTime())
+      if (bucket) bucket.count += 1
+    })
+
+  return buckets.map((bucket) => ({
+    weekStart: formatLocalDate(bucket.start),
+    count: bucket.count,
+  }))
+}
+
+/**
+ * 个人中心统计（md/33 §9）
+ * 准确率按题算，不是各篇得分的平均；token 包含未提交的稿子——钱花在生成上。
+ */
+function buildProfileStats(readings, now = new Date()) {
+  const submitted = readings.filter((item) => item.status === 'submitted')
+  let answered = 0
+  let correct = 0
+  let totalTokens = 0
+
+  readings.forEach((reading) => {
+    totalTokens += Number(reading.tokenUsage?.totalTokens) || 0
+  })
+
+  submitted.forEach((reading) => {
+    answered += reading.questions.length
+    correct += scoreReading(reading).correctCount
+  })
+
+  return {
+    reading: {
+      completedCount: submitted.length,
+      generatedCount: readings.length,
+      totalTokens,
+    },
+    questions: {
+      answered,
+      correct,
+      wrong: answered - correct,
+      accuracy: answered ? Math.round((correct / answered) * 100) : 0,
+    },
+    weekly: buildWeeklyBuckets(readings, now),
+  }
+}
+
+/**
+ * 个人中心接口的本地实现
+ * 资料单独存一个键，避免为了改昵称把整套种子阅读库重建（DB_VERSION 不用动）。
+ */
+export const mockProfile = {
+  async get() {
+    await wait(latency)
+    return { user: toProfileUser(readProfile()) }
+  },
+
+  async update(patch = {}) {
+    await wait(latency)
+
+    const profile = readProfile()
+    const next = { ...profile }
+
+    if (patch.nickname !== undefined) {
+      const nickname = String(patch.nickname ?? '').trim()
+      if (!nickname) {
+        throw new MockApiError('INVALID_REQUEST', '昵称不能为空', 400, 'nickname')
+      }
+      if (nickname.length > NICKNAME_MAX) {
+        throw new MockApiError(
+          'INVALID_REQUEST',
+          `昵称最多 ${NICKNAME_MAX} 个字符`,
+          400,
+          'nickname',
+        )
+      }
+      next.nickname = nickname
+    }
+
+    if (patch.signature !== undefined) {
+      const signature = String(patch.signature ?? '').trim()
+      if (signature.length > SIGNATURE_MAX) {
+        throw new MockApiError(
+          'INVALID_REQUEST',
+          `个性签名最多 ${SIGNATURE_MAX} 个字符`,
+          400,
+          'signature',
+        )
+      }
+      next.signature = signature
+    }
+
+    writeProfile(next)
+    return { user: toProfileUser(next) }
+  },
+
+  async changePassword({ oldPassword = '', newPassword = '' } = {}) {
+    await wait(latency)
+
+    const next = String(newPassword)
+    if (!String(oldPassword)) {
+      throw new MockApiError('INVALID_REQUEST', '请输入当前密码', 400, 'oldPassword')
+    }
+    if (next.length < PASSWORD_MIN) {
+      throw new MockApiError('INVALID_REQUEST', `新密码至少 ${PASSWORD_MIN} 位`, 400, 'newPassword')
+    }
+    if (next.length > PASSWORD_MAX) {
+      throw new MockApiError('INVALID_REQUEST', `新密码最多 ${PASSWORD_MAX} 位`, 400, 'newPassword')
+    }
+    if (next === String(oldPassword)) {
+      throw new MockApiError('INVALID_REQUEST', '新密码不能与当前密码相同', 400, 'newPassword')
+    }
+
+    // mock 不保存密码，只校验表单规则；真实后端会更新 hash 并踢掉其它会话（md/33 §4.4）
+    return { ok: true }
+  },
+
+  async stats() {
+    await wait(latency)
+    return buildProfileStats(readDb().readings)
+  },
 }
 
 export const mockWords = {

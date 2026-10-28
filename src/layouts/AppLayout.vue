@@ -14,7 +14,15 @@
  */
 import { computed, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { BookOpen, Clock, Home, Library, NotebookPen } from 'lucide-vue-next'
+import {
+  BookOpen,
+  ChevronDown,
+  Clock,
+  Home,
+  Library,
+  NotebookPen,
+  UserRound,
+} from 'lucide-vue-next'
 import GenerateOverlay from '../component/GenerateOverlay.vue'
 import ToastHost from '../component/ToastHost.vue'
 
@@ -24,6 +32,7 @@ const navItems = [
   { key: 'basic-words', label: '基础词汇', to: '/basic-words', icon: Library },
   { key: 'reading', label: '阅读训练', to: '/settings', icon: NotebookPen },
   { key: 'history', label: '历史记录', to: '/history', icon: Clock },
+  { key: 'profile', label: '个人中心', to: '/profile', icon: UserRound },
 ]
 
 const route = useRoute()
@@ -80,10 +89,11 @@ watch(
             <BookOpen :size="18" :stroke-width="1.7" aria-hidden="true" />
             <span>Word Reading</span>
           </RouterLink>
-          <div class="topbar-user">
+          <RouterLink class="topbar-user" to="/profile" aria-label="打开个人中心">
             <span class="user-avatar" aria-hidden="true">S</span>
             <span class="user-name">Sound</span>
-          </div>
+            <ChevronDown class="user-chevron" :size="14" :stroke-width="1.8" aria-hidden="true" />
+          </RouterLink>
         </div>
       </header>
 
@@ -275,9 +285,24 @@ watch(
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
   color: var(--color-ink-2);
   font-size: var(--text-small);
   line-height: var(--leading-small);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.topbar-user:hover {
+  background: var(--color-bg-deep);
+  color: var(--color-ink);
+}
+
+.user-chevron {
+  color: var(--color-muted);
 }
 
 .user-avatar {
@@ -380,6 +405,11 @@ watch(
     font-family: var(--font-display);
     font-size: 16px;
     letter-spacing: 0.01em;
+  }
+
+  /* 顶部头像也是个人中心入口，触控目标补到 44px */
+  .topbar-user {
+    min-height: 44px;
   }
 
   .main-inner {

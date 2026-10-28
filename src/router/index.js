@@ -56,6 +56,12 @@ const routes = [
     meta: { title: '历史记录', module: 'history' },
   },
   {
+    path: '/profile',
+    name: 'profile',
+    component: () => import('../views/Profile/index.vue'),
+    meta: { title: '个人中心', module: 'profile' },
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
     component: () => import('../views/NotFound/index.vue'),
