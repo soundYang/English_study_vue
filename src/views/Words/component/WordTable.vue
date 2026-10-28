@@ -21,19 +21,8 @@ import BaseButton from '../../../component/BaseButton.vue'
 import SkeletonBlock from '../../../component/SkeletonBlock.vue'
 import StatusPill from '../../../component/StatusPill.vue'
 import { formatDate } from '../../../unit/format'
+import { phoneticParts } from '../../../unit/phonetic'
 import { frequencyTierOf } from '../../../unit/word-tiers'
-
-/** 英式缺失时用美式顶上；两式相同只显示一次，都没有则交给模板显示占位符 */
-function phoneticParts(item) {
-  const uk = item.phonetic?.uk || ''
-  const us = item.phonetic?.us || ''
-
-  if (!uk && !us) return []
-
-  const parts = [{ label: '英', value: uk || us }]
-  if (uk && us && us !== uk) parts.push({ label: '美', value: us })
-  return parts
-}
 
 /** 词频档位；手填词没有 cocaRank，返回 null 时不渲染徽标 */
 function tierOf(item) {
@@ -137,11 +126,15 @@ function rowDelay(index) {
             </td>
             <td
               class="cell-phonetic"
-              :class="{ 'is-empty': !phoneticParts(item).length }"
+              :class="{ 'is-empty': !phoneticParts(item.phonetic).length }"
               lang="en"
             >
-              <template v-if="phoneticParts(item).length">
-                <span v-for="part in phoneticParts(item)" :key="part.label" class="phonetic-part">
+              <template v-if="phoneticParts(item.phonetic).length">
+                <span
+                  v-for="part in phoneticParts(item.phonetic)"
+                  :key="part.label"
+                  class="phonetic-part"
+                >
                   {{ part.label }} {{ part.value }}
                 </span>
               </template>
@@ -218,11 +211,15 @@ function rowDelay(index) {
           </span>
           <span
             class="card-phonetic"
-            :class="{ 'is-empty': !phoneticParts(item).length }"
+            :class="{ 'is-empty': !phoneticParts(item.phonetic).length }"
             lang="en"
           >
-            <template v-if="phoneticParts(item).length">
-              <span v-for="part in phoneticParts(item)" :key="part.label" class="phonetic-part">
+            <template v-if="phoneticParts(item.phonetic).length">
+              <span
+                v-for="part in phoneticParts(item.phonetic)"
+                :key="part.label"
+                class="phonetic-part"
+              >
                 {{ part.label }} {{ part.value }}
               </span>
             </template>
