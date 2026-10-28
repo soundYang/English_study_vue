@@ -100,6 +100,37 @@ describe('WordCard · 内容槽位', () => {
   })
 })
 
+describe('WordCard · 详情入口', () => {
+  it('should emit detail with the button as anchor when the word is clicked', async () => {
+    const item = makeItem()
+    const wrapper = mount(WordCard, { props: { item } })
+
+    await wrapper.get('.card-word-button').trigger('click')
+
+    const [[payload]] = wrapper.emitted('detail')
+    expect(payload.item).toEqual(item)
+    expect(payload.anchor).toBe(wrapper.get('.card-word-button').element)
+  })
+
+  it('should reflect the open state on the trigger', () => {
+    const wrapper = mount(WordCard, { props: { item: makeItem(), expanded: true } })
+    const trigger = wrapper.get('.card-word-button')
+
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+    expect(trigger.attributes('aria-haspopup')).toBe('dialog')
+    expect(wrapper.get('.word-card').classes()).toContain('is-expanded')
+  })
+
+  it('should not open the detail from the menu trigger', async () => {
+    const wrapper = mount(WordCard, { props: { item: makeItem() } })
+
+    await wrapper.get('.menu-trigger').trigger('click')
+
+    expect(wrapper.emitted('detail')).toBeUndefined()
+    expect(wrapper.find('[role="menu"]').exists()).toBe(true)
+  })
+})
+
 describe('WordCard · 操作菜单', () => {
   it('should hide the menu on a read-only word', () => {
     const wrapper = mount(WordCard, {

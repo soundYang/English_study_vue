@@ -4,17 +4,20 @@
  *
  * 用途：桌面端表格 + 小于 768px 的卡片列表，覆盖骨架屏、错误卡与新增/编辑高亮
  * 用法：<WordTable :items="items" :loading="loading" :error="error" :highlight-id="id"
- *          @edit="openEdit" @remove="askDelete" @retry="fetch" />
+ *          :expanded-word="expandedWord"
+ *          @edit="openEdit" @remove="askDelete" @retry="fetch" @detail="openDetail" />
  *
  * props:
- *   items       — 词汇数组
- *   loading     — 加载中，表头保留并显示 8 行骨架
- *   error       — 错误文案，存在时整块替换为错误卡
- *   highlightId — 新增/编辑后需要高亮的行 id
+ *   items        — 词汇数组
+ *   loading      — 加载中，表头保留并显示 8 行骨架
+ *   error        — 错误文案，存在时整块替换为错误卡
+ *   highlightId  — 新增/编辑后需要高亮的行 id
+ *   expandedWord — 详情浮层当前显示的单词，用来同步 aria-expanded
  * emits:
  *   edit — 点击编辑，参数为词汇对象
  *   remove — 点击删除，参数为词汇对象
  *   retry — 错误卡中的重试
+ *   detail — 点击单词查看详情，参数 { item, anchor }
  */
 import { Pencil, Trash2 } from 'lucide-vue-next'
 import BaseButton from '../../../component/BaseButton.vue'
@@ -43,9 +46,14 @@ defineProps({
   loading: { type: Boolean, default: false },
   error: { type: String, default: '' },
   highlightId: { type: String, default: '' },
+  expandedWord: { type: String, default: '' },
 })
 
-const emit = defineEmits(['edit', 'remove', 'retry'])
+const emit = defineEmits(['edit', 'remove', 'retry', 'detail'])
+
+function detail(item, event) {
+  emit('detail', { item, anchor: event.currentTarget })
+}
 
 function edit(item) {
   emit('edit', item)
@@ -116,7 +124,16 @@ function rowDelay(index) {
             :style="rowDelay(index)"
           >
             <td class="cell-word">
-              <span class="word-text">{{ item.word }}</span>
+              <button
+                type="button"
+                class="word-text"
+                aria-haspopup="dialog"
+                :aria-expanded="item.word === expandedWord ? 'true' : 'false'"
+                :aria-label="`查看 ${item.word} 的详细信息`"
+                @click="detail(item, $event)"
+              >
+                {{ item.word }}
+              </button>
               <span class="word-source" :class="`is-${item.source}`">
                 {{ item.source === 'dictionary' ? '词库' : '手填' }}
               </span>
@@ -201,7 +218,16 @@ function rowDelay(index) {
       >
         <div class="card-text">
           <span class="card-line">
-            <span class="card-word">{{ item.word }}</span>
+            <button
+              type="button"
+              class="card-word"
+              aria-haspopup="dialog"
+              :aria-expanded="item.word === expandedWord ? 'true' : 'false'"
+              :aria-label="`查看 ${item.word} 的详细信息`"
+              @click="detail(item, $event)"
+            >
+              {{ item.word }}
+            </button>
             <span class="word-source" :class="`is-${item.source}`">
               {{ item.source === 'dictionary' ? '词库' : '手填' }}
             </span>
@@ -350,9 +376,29 @@ function rowDelay(index) {
   align-items: baseline;
 }
 
+/* 单词本身就是详情入口：去掉按钮默认外观，保留正文排版，悬停下划线提示可点 */
 .word-text {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
   font-size: 15px;
   font-weight: 500;
+  line-height: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    text-decoration-color var(--dur-fast) var(--ease-out);
+}
+
+.word-text:hover {
+  color: var(--color-accent);
+  text-decoration-color: currentColor;
 }
 
 /* 来源决定这条词能不能编辑释义，值得一个常驻徽标；词频只是参考信息，做成弱标签 */
@@ -582,10 +628,25 @@ function rowDelay(index) {
   }
 
   .card-word {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font-family: inherit;
     font-size: 15px;
     font-weight: 500;
     line-height: 22px;
+    text-align: left;
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    text-underline-offset: 3px;
     overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+
+  .card-word:hover {
+    color: var(--color-accent);
+    text-decoration-color: currentColor;
   }
 
   .card-phonetic {

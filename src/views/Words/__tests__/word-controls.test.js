@@ -121,6 +121,25 @@ describe('WordTable', () => {
     // 手填词也没有音标，卡片上同样是占位符
     expect(wrapper.get('.card-phonetic').text()).toBe('—')
   })
+
+  it('should emit detail with the clicked word as the anchor', async () => {
+    const wrapper = mount(WordTable, { props: { items: [TOMATO] } })
+    const trigger = wrapper.get('.word-text')
+
+    await trigger.trigger('click')
+
+    const [[payload]] = wrapper.emitted('detail')
+    expect(payload.item).toEqual(TOMATO)
+    expect(payload.anchor).toBe(trigger.element)
+  })
+
+  it('should sync aria-expanded on both the table and the mobile card', () => {
+    const wrapper = mount(WordTable, { props: { items: [TOMATO], expandedWord: 'tomato' } })
+
+    expect(wrapper.get('.word-text').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('.card-word').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('.word-text').attributes('aria-haspopup')).toBe('dialog')
+  })
 })
 
 describe('WordFormPanel', () => {

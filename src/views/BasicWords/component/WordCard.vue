@@ -6,13 +6,16 @@
  *       底部类型徽标 + 状态。四类词（实词、功能词、日历词、缩写）只换内容不换版式，
  *       这样同一行的卡片高度一致、状态标签能对成一条线（md/16 §6.1）。
  * 用法：<WordCard :item="item" :pending="pendingWord === item.word"
- *          @remove="onRemove" @restore="onRestore" />
+ *          :expanded="expandedWord === item.word"
+ *          @remove="onRemove" @restore="onRestore" @detail="onDetail" />
  *
  * props:
- *   item    — 基础词表接口返回的单条记录
- *   pending — 该词的写请求进行中
+ *   item     — 基础词表接口返回的单条记录
+ *   pending  — 该词的写请求进行中
+ *   expanded — 详情浮层当前显示的是这个词
  * emits:
  *   remove / restore — 菜单动作，是否二次确认由页面决定
+ *   detail           — 查看详情，参数 { item, anchor }，anchor 是单词按钮
  */
 import { computed } from 'vue'
 import StatusPill from '../../../component/StatusPill.vue'
@@ -23,9 +26,10 @@ import WordCardMenu from './WordCardMenu.vue'
 const props = defineProps({
   item: { type: Object, required: true },
   pending: { type: Boolean, default: false },
+  expanded: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['remove', 'restore'])
+const emit = defineEmits(['remove', 'restore', 'detail'])
 
 const isAbbreviation = computed(() => Boolean(props.item.kinds?.includes('abbreviation')))
 const isFunctionWord = computed(() => Boolean(props.item.isFunctionWord))
@@ -38,16 +42,31 @@ const meaning = computed(() =>
 )
 const meta = computed(() => metaOf(props.item))
 const status = computed(() => statusOf(props.item))
+
+function openDetail(event) {
+  emit('detail', { item: props.item, anchor: event.currentTarget })
+}
 </script>
 
 <template>
   <article
     class="word-card"
-    :class="{ 'is-function': isFunctionWord }"
+    :class="{ 'is-function': isFunctionWord, 'is-expanded': expanded }"
     :aria-busy="pending || undefined"
   >
     <header class="card-head">
-      <h3 class="card-word">{{ item.word }}</h3>
+      <h3 class="card-word">
+        <button
+          type="button"
+          class="card-word-button"
+          aria-haspopup="dialog"
+          :aria-expanded="expanded ? 'true' : 'false'"
+          :aria-label="`查看 ${item.word} 的详细信息`"
+          @click="openDetail"
+        >
+          <span class="card-word-text">{{ item.word }}</span>
+        </button>
+      </h3>
       <WordCardMenu
         :item="item"
         :pending="pending"
@@ -75,6 +94,7 @@ const status = computed(() => statusOf(props.item))
 
 <style scoped>
 .word-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -83,11 +103,22 @@ const status = computed(() => statusOf(props.item))
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
+  cursor: pointer;
   transition: border-color var(--dur-fast) var(--ease-out);
 }
 
 .word-card:hover {
   border-color: var(--color-line-strong);
+}
+
+.word-card.is-expanded {
+  border-color: var(--color-accent);
+}
+
+/* 键盘用户看不到铺满卡片的点击层，用整卡描边提示焦点 */
+.word-card:has(.card-word-button:focus-visible) {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 /* 写请求在飞：卡片降透明度，和菜单的 progress 光标一起表示「正在处理」 */
@@ -112,7 +143,40 @@ const status = computed(() => statusOf(props.item))
   font-weight: 500;
   line-height: 28px;
   letter-spacing: 0.01em;
-  /* 长词截断，避免把整行卡片撑宽 */
+}
+
+.card-word-button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+}
+
+/* 点击层铺满整张卡片：点释义、音标、状态都能打开详情，⋮ 菜单在它上一层 */
+.card-word-button::after {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: var(--radius-lg);
+  content: '';
+}
+
+.card-word-button:focus-visible {
+  outline: none;
+}
+
+.card-word-button:hover {
+  color: var(--color-accent);
+}
+
+/* 长词截断，避免把整行卡片撑宽；不能放在 h3 上，否则会把点击层裁掉 */
+.card-word-text {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

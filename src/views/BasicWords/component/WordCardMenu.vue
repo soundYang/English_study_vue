@@ -110,8 +110,10 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleOutside)
 </template>
 
 <style scoped>
+/* z-index 1：卡片上铺满整卡的详情点击层是 0，菜单必须能点到 */
 .card-menu {
   position: relative;
+  z-index: 1;
   flex: 0 0 auto;
 }
 

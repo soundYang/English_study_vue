@@ -5,17 +5,21 @@
  * 请求、筛选与分页状态都在 basic-words store，本页只负责交互、空态与提示。
  * 「标为不认识」需二次确认，「恢复」不可撤销但影响小，直接执行。
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import BaseButton from '../../component/BaseButton.vue'
 import ConfirmDialog from '../../component/ConfirmDialog.vue'
 import EmptyState from '../../component/EmptyState.vue'
 import PaginationBar from '../../component/PaginationBar.vue'
+import StatusPill from '../../component/StatusPill.vue'
+import WordDetailPopover from '../../component/WordDetailPopover.vue'
 import BasicStats from './component/BasicStats.vue'
 import GroupTabs from './component/GroupTabs.vue'
 import WordCardGrid from './component/WordCardGrid.vue'
 import WordIndexToolbar from './component/WordIndexToolbar.vue'
 import { useToast } from '../../composables/useToast'
 import { useBasicWordsStore } from '../../stores/model/basic-words'
+import { statusOf } from '../../unit/basic-words'
+import { basicWordDetail } from '../../unit/word-detail'
 
 const store = useBasicWordsStore()
 const toast = useToast()
@@ -23,6 +27,8 @@ const toast = useToast()
 // 待确认的「标为不认识」目标；为空即对话框关闭
 const removeTarget = ref(null)
 const removing = ref(false)
+// 详情浮层：{ item, anchor }，为空即关闭；数据从列表快照整理，不再请求
+const detailTarget = ref(null)
 
 const groupModel = computed({
   get: () => store.group,
@@ -68,6 +74,19 @@ const emptyMeta = computed(() => {
 
 const confirmTitle = computed(() => `标记 “${removeTarget.value?.word || ''}” 为不认识？`)
 
+const detailData = computed(() =>
+  detailTarget.value ? basicWordDetail(detailTarget.value.item) : null,
+)
+const detailStatus = computed(() => (detailTarget.value ? statusOf(detailTarget.value.item) : null))
+
+// 换筛选 / 翻页后原来的锚点可能已经不在列表里，浮层跟着关掉
+watch(
+  () => [store.group, store.status, store.query, store.page, store.pageSize],
+  () => {
+    detailTarget.value = null
+  },
+)
+
 onMounted(() => store.fetchList())
 
 // 离开页面就清空：下次进来从第 1 页、基础词、全部状态开始，不继承上次的筛选
@@ -87,6 +106,19 @@ function handleEmptyAction() {
   store.setGroup('basic')
 }
 
+function handleDetail({ item, anchor }) {
+  if (detailTarget.value?.item.word === item.word) {
+    detailTarget.value = null
+    return
+  }
+
+  detailTarget.value = { item, anchor }
+}
+
+function handleDetailOpen(value) {
+  if (!value) detailTarget.value = null
+}
+
 function handleRemove(item) {
   removeTarget.value = item
 }
@@ -103,6 +135,7 @@ async function handleConfirmRemove() {
   const result = await store.markRemoved(word)
   removing.value = false
   removeTarget.value = null
+  detailTarget.value = null
 
   if (result.ok) toast.success(`已标记 “${word}” 为不认识`)
   else toast.error(result.message)
@@ -111,8 +144,12 @@ async function handleConfirmRemove() {
 async function handleRestore(item) {
   const result = await store.restore(item.word)
 
-  if (result.ok) toast.success(`已恢复 “${item.word}”`)
-  else toast.error(result.message)
+  if (result.ok) {
+    detailTarget.value = null
+    toast.success(`已恢复 “${item.word}”`)
+  } else {
+    toast.error(result.message)
+  }
 }
 </script>
 
@@ -144,9 +181,11 @@ async function handleRestore(item) {
         :loading="store.loading"
         :error="store.error"
         :pending-word="store.pendingWord"
+        :expanded-word="detailTarget?.item.word || ''"
         @retry="store.fetchList()"
         @remove="handleRemove"
         @restore="handleRestore"
+        @detail="handleDetail"
       />
 
       <EmptyState
@@ -186,6 +225,20 @@ async function handleRestore(item) {
       @update:open="handleDialogOpen"
       @confirm="handleConfirmRemove"
     />
+
+    <WordDetailPopover
+      :open="Boolean(detailTarget)"
+      :anchor="detailTarget?.anchor || null"
+      :word="detailData?.word || ''"
+      :phonetic="detailData?.phonetic || null"
+      :senses="detailData?.senses || []"
+      :facts="detailData?.facts || []"
+      @update:open="handleDetailOpen"
+    >
+      <template #badges>
+        <StatusPill v-if="detailStatus" :value="detailStatus.value" :label="detailStatus.label" />
+      </template>
+    </WordDetailPopover>
   </section>
 </template>
 

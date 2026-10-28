@@ -4,7 +4,8 @@
  *
  * 用途：词表的网格视图，含加载骨架与错误卡；空态由页面用 EmptyState 承担
  * 用法：<WordCardGrid :items="items" :loading="loading" :error="error" :pending-word="pendingWord"
- *         @retry="reload" @remove="onRemove" @restore="onRestore" />
+ *         :expanded-word="expandedWord"
+ *         @retry="reload" @remove="onRemove" @restore="onRestore" @detail="onDetail" />
  *
  * 列数按视口固定：桌面 4 列，1440 起 5 列，1800 起 6 列。不用 auto-fill——
  * 设计要求是「4–5 列、宽屏 5–6 列」，自动流会让 1200px 自己滑成 5 列。
@@ -13,10 +14,12 @@
  *   items       — 词表项数组
  *   loading     — 加载中，显示 12 张骨架卡
  *   error       — 错误文案，存在时整块替换为错误卡
- *   pendingWord — 写请求进行中的词，只禁用对应那一个菜单
+ *   pendingWord  — 写请求进行中的词，只禁用对应那一个菜单
+ *   expandedWord — 详情浮层当前显示的词，对应卡片画描边并同步 aria-expanded
  * emits:
  *   retry — 错误卡中的重试
  *   remove / restore — 逐张卡片转发上去
+ *   detail — 查看详情 { item, anchor }
  */
 import BaseButton from '../../../component/BaseButton.vue'
 import SkeletonBlock from '../../../component/SkeletonBlock.vue'
@@ -27,9 +30,10 @@ defineProps({
   loading: { type: Boolean, default: false },
   error: { type: String, default: '' },
   pendingWord: { type: String, default: '' },
+  expandedWord: { type: String, default: '' },
 })
 
-const emit = defineEmits(['retry', 'remove', 'restore'])
+const emit = defineEmits(['retry', 'remove', 'restore', 'detail'])
 </script>
 
 <template>
@@ -53,8 +57,10 @@ const emit = defineEmits(['retry', 'remove', 'restore'])
       <WordCard
         :item="item"
         :pending="item.word === pendingWord"
+        :expanded="item.word === expandedWord"
         @remove="emit('remove', $event)"
         @restore="emit('restore', $event)"
+        @detail="emit('detail', $event)"
       />
     </li>
   </ul>

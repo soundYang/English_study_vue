@@ -3,7 +3,7 @@
  * 覆盖首屏列表与统计、搜索/无结果/清除搜索、添加与删除的完整交互；
  * 使用真实 mock adapter（延迟 0），不依赖 300ms 等待。
  */
-import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import WordsView from '../index.vue'
@@ -11,10 +11,19 @@ import { resetMockDb, setMockLatency } from '../../../mock/adapter'
 import { useToastStore } from '../../../stores/model/toast'
 import { useWordsStore } from '../../../stores/model/words'
 
+let wrapper = null
+
 beforeEach(() => {
   localStorage.clear()
   resetMockDb()
   setMockLatency(0)
+})
+
+// 详情浮层要靠 isConnected 判断锚点还在不在，所以页面必须挂到真实文档上
+afterEach(() => {
+  if (wrapper) wrapper.unmount()
+  wrapper = null
+  document.body.innerHTML = ''
 })
 
 afterAll(() => {
@@ -24,7 +33,8 @@ afterAll(() => {
 async function mountPage() {
   const pinia = createPinia()
   setActivePinia(pinia)
-  const wrapper = mount(WordsView, {
+  wrapper = mount(WordsView, {
+    attachTo: document.body,
     global: {
       plugins: [pinia],
       stubs: { teleport: true, 'transition-group': false },
@@ -67,6 +77,26 @@ describe('Words page', () => {
 
     expect(input.element.value).toBe('')
     expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(10)
+  })
+
+  it('should show the word detail when the word itself is clicked', async () => {
+    const wrapper = await mountPage()
+    const trigger = wrapper.findAll('tbody .word-text')[0]
+    const word = trigger.text()
+
+    await trigger.trigger('click')
+    await flushPromises()
+
+    const panel = wrapper.get('.detail-popover')
+    expect(panel.get('.detail-word').text()).toBe(word)
+    expect(panel.text()).toContain('来源')
+    expect(panel.text()).toContain('收录')
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+
+    await trigger.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.detail-popover').exists()).toBe(false)
   })
 
   it('should add a word from the side form and highlight it', async () => {

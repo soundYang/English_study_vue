@@ -3,7 +3,7 @@
  * 本页没有 mock 适配器，api 层用 vi.mock 替身。
  * 覆盖数字卡、分组标签、首屏请求参数、分组/状态/每页切换、搜索、空态与错误态。
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import BasicWordsView from '../index.vue'
@@ -60,10 +60,13 @@ function makePage(overrides = {}) {
   }
 }
 
+let wrapper = null
+
 async function mountPage() {
   const pinia = createPinia()
   setActivePinia(pinia)
-  const wrapper = mount(BasicWordsView, {
+  wrapper = mount(BasicWordsView, {
+    attachTo: document.body,
     global: {
       plugins: [pinia],
       stubs: { teleport: true },
@@ -72,6 +75,13 @@ async function mountPage() {
   await flushPromises()
   return wrapper
 }
+
+// 详情浮层要靠 isConnected 判断锚点还在不在，所以页面必须挂到真实文档上
+afterEach(() => {
+  if (wrapper) wrapper.unmount()
+  wrapper = null
+  document.body.innerHTML = ''
+})
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -118,6 +128,28 @@ describe('Basic words page · 首屏', () => {
     expect(wrapper.text()).toContain('放弃；抛弃')
     expect(wrapper.text()).toContain('共 600 条')
     expect(wrapper.text()).toContain('当前第 1 / 6 页')
+  })
+})
+
+describe('Basic words page · 详情浮层', () => {
+  it('should open the word detail and close it on the second click', async () => {
+    const wrapper = await mountPage()
+    const trigger = wrapper.findAll('.card-word-button')[0]
+
+    await trigger.trigger('click')
+    await flushPromises()
+
+    const panel = wrapper.get('.detail-popover')
+    expect(panel.text()).toContain('放弃；抛弃')
+    expect(panel.text()).toContain('词表')
+    expect(panel.get('.detail-word').text()).toBe('abandon')
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+
+    await trigger.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.detail-popover').exists()).toBe(false)
+    expect(trigger.attributes('aria-expanded')).toBe('false')
   })
 })
 

@@ -4,12 +4,14 @@
  * 组合搜索、状态筛选、分页与增删改；右侧为常驻添加表单，小于 1200px 时改用弹层。
  * 所有请求状态由 words store 维护，本页只负责交互、Toast 与行高亮。
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import BaseButton from '../../component/BaseButton.vue'
 import BaseModal from '../../component/BaseModal.vue'
 import ConfirmDialog from '../../component/ConfirmDialog.vue'
 import EmptyState from '../../component/EmptyState.vue'
 import PaginationBar from '../../component/PaginationBar.vue'
+import StatusPill from '../../component/StatusPill.vue'
+import WordDetailPopover from '../../component/WordDetailPopover.vue'
 import WordEditModal from './component/WordEditModal.vue'
 import WordFormPanel from './component/WordFormPanel.vue'
 import WordStatusTabs from './component/WordStatusTabs.vue'
@@ -19,6 +21,7 @@ import wordsBook from '../../assets/images/words-book.png'
 import { useMediaQuery } from '../../composables/useMediaQuery'
 import { useToast } from '../../composables/useToast'
 import { useWordsStore } from '../../stores/model/words'
+import { myWordDetail } from '../../unit/word-detail'
 
 const TOAST_HIGHLIGHT_DURATION = 800
 const EDIT_HIGHLIGHT_DURATION = 600
@@ -36,6 +39,12 @@ const deleting = ref(false)
 const highlightId = ref('')
 const desktopPanel = ref(null)
 const modalPanel = ref(null)
+// 详情浮层：{ item, anchor }，为空即关闭；数据来自列表快照，不额外请求
+const detailTarget = ref(null)
+
+const detailData = computed(() =>
+  detailTarget.value ? myWordDetail(detailTarget.value.item) : null,
+)
 
 let highlightTimer = null
 
@@ -86,6 +95,14 @@ const deleteTitle = computed(() =>
   deleteTarget.value ? `删除 “${deleteTarget.value.word}”？` : '删除这个单词？',
 )
 
+// 换筛选 / 翻页后原来的锚点可能已经不在列表里，浮层跟着关掉
+watch(
+  () => [store.query, store.status, store.page],
+  () => {
+    detailTarget.value = null
+  },
+)
+
 onMounted(() => {
   store.fetchList()
 })
@@ -111,6 +128,19 @@ function flashRow(id, duration) {
 
 function handleSearch(value) {
   store.search(value)
+}
+
+function handleDetail({ item, anchor }) {
+  if (detailTarget.value?.item.id === item.id) {
+    detailTarget.value = null
+    return
+  }
+
+  detailTarget.value = { item, anchor }
+}
+
+function handleDetailOpen(value) {
+  if (!value) detailTarget.value = null
 }
 
 async function openAddPanel() {
@@ -148,6 +178,7 @@ async function handleAdd(payload) {
     return result
   }
 
+  detailTarget.value = null
   toast.success(`已添加 ${result.item.word}`)
   flashRow(result.item.id, TOAST_HIGHLIGHT_DURATION)
   return { ok: true }
@@ -161,6 +192,7 @@ async function handleUpdate(id, patch) {
     return result
   }
 
+  detailTarget.value = null
   toast.success(`已更新 ${result.item.word}`)
   flashRow(result.item.id, EDIT_HIGHLIGHT_DURATION)
   return { ok: true }
@@ -184,6 +216,7 @@ async function confirmDelete() {
   const result = await store.removeWord(target.id)
   deleting.value = false
   deleteOpen.value = false
+  detailTarget.value = null
 
   if (result.ok) {
     toast.success(`已删除 ${result.item.word || target.word}`)
@@ -230,9 +263,11 @@ function reload() {
           :loading="store.loading"
           :error="store.error"
           :highlight-id="highlightId"
+          :expanded-word="detailTarget?.item.word || ''"
           @edit="openEdit"
           @remove="askDelete"
           @retry="reload"
+          @detail="handleDetail"
         />
 
         <EmptyState
@@ -280,6 +315,20 @@ function reload() {
       :loading="deleting"
       @confirm="confirmDelete"
     />
+
+    <WordDetailPopover
+      :open="Boolean(detailTarget)"
+      :anchor="detailTarget?.anchor || null"
+      :word="detailData?.word || ''"
+      :phonetic="detailData?.phonetic || null"
+      :senses="detailData?.senses || []"
+      :facts="detailData?.facts || []"
+      @update:open="handleDetailOpen"
+    >
+      <template #badges>
+        <StatusPill v-if="detailTarget" kind="status" :value="detailTarget.item.status" />
+      </template>
+    </WordDetailPopover>
   </section>
 </template>
 
