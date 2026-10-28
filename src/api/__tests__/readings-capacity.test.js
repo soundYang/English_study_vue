@@ -37,13 +37,37 @@ describe('fetchCapacity', () => {
     expect(data.levels.easy.sufficient).toBe(false)
   })
 
-  it('should tell how many known words each level still needs', async () => {
+  it('should expose the length ladder and the final-mode lock', async () => {
     const data = await fetchCapacity({ targetWords: 100 })
 
-    // 个人词库 + 该档基础词表：简单 20 + 600 = 620，离 1000 还差 380
-    expect(data.levels.easy.knownWords).toBe(620)
-    expect(data.levels.easy.knownSufficient).toBe(false)
-    expect(data.levels.easy.knownShortage).toBe(380)
+    // 已知词 = 个人词库 20 + 基础词表地板 618；写 100 词的下限是 633
+    expect(data.levels.easy.knownWords).toBe(638)
+    expect(data.levels.easy.minKnown).toBe(633)
+    expect(data.levels.easy.personalWords).toBe(20)
+    // md/30 §7 已删除的旧字段不能再回来，否则前端又会悄悄读错
+    expect(data.levels.easy.knownSufficient).toBeUndefined()
+    expect(data.levels.easy.knownShortage).toBeUndefined()
+
+    // 阶梯固定 100–1000 共 10 行；100 词这一档可以写
+    expect(data.levels.easy.lengths).toHaveLength(10)
+    expect(data.levels.easy.lengths[0]).toMatchObject({
+      targetWords: 100,
+      unlocked: true,
+      blockedBy: null,
+    })
+    // 400 词超出 easy 的档位上限
+    expect(data.levels.easy.lengths.find((row) => row.targetWords === 400)).toMatchObject({
+      unlocked: false,
+      blockedBy: 'level_cap',
+    })
+
+    // 最终模式未解锁：差额按个人词库算，601+ 的 hard 档标 final_mode
+    expect(data.finalMode).toMatchObject({ unlocked: false, unlockAt: 3000, shortage: 2980 })
+    expect(data.levels.hard.lengths.find((row) => row.targetWords === 700)).toMatchObject({
+      unlocked: false,
+      blockedBy: 'final_mode',
+      shortage: 2980,
+    })
   })
 
   it('should reject a length outside the backend range', async () => {

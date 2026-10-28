@@ -9,6 +9,38 @@ function toNumber(value) {
   return Number.isFinite(number) ? number : null
 }
 
+/** 窗口长度转成「每分钟 / 每 2 分钟 / 每 30 秒」 */
+function windowPhraseOf(seconds) {
+  if (!seconds) return ''
+  if (seconds === 60) return '每分钟'
+  if (seconds > 60 && seconds % 60 === 0) return `每 ${seconds / 60} 分钟`
+
+  return `每 ${seconds} 秒`
+}
+
+/**
+ * 429 RATE_LIMITED 的文案（后端 md/22 §4）
+ *
+ * details.windowSeconds 是**窗口长度**，不是剩余时间——写「1 分钟后重试」会报错，
+ * 因为用户可能刚刚开始这个窗口。文案统一说「等一会儿」，精确倒计时需要
+ * RateLimit 响应头的 reset，前端暂不展示。
+ *
+ * @param {{ details?: { limit?: number, windowSeconds?: number } }} error
+ * @returns {{ title: string, hint: string }}
+ */
+export function describeRateLimit({ details = {} } = {}) {
+  const limit = toNumber(details.limit)
+  const windowPhrase = windowPhraseOf(toNumber(details.windowSeconds))
+
+  return {
+    title: '生成太频繁了',
+    hint:
+      limit !== null && windowPhrase
+        ? `${windowPhrase}最多生成 ${limit} 次，等一会儿再试。`
+        : '请求太频繁了，等一会儿再试。',
+  }
+}
+
 /**
  * 三种「生成被挡下」的语义不同，用户能做的补救也不同：
  *   target_words     —— 422 这次参数凑不齐目标词：缩篇幅 / 换词源
@@ -21,8 +53,7 @@ function toNumber(value) {
  * @returns {{ kind: string, title: string, hint: string, actions: string[] }}
  */
 export function describeVocabShortage({ code = '', details = {} } = {}) {
-  const kind =
-    details.kind || (code === 'INSUFFICIENT_VOCABULARY' ? 'known_words' : 'target_words')
+  const kind = details.kind || (code === 'INSUFFICIENT_VOCABULARY' ? 'known_words' : 'target_words')
   const required = toNumber(details.required)
   const available = toNumber(details.available)
   const shortage = toNumber(details.shortage) ?? Math.max(0, (required ?? 0) - (available ?? 0))

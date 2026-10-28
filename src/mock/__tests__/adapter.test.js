@@ -224,7 +224,8 @@ describe('mockReadings vocabScope', () => {
     expect(all.available).toBe(20)
     // 种子词的创建日期都是旧的，「今天新学」一个也选不出来
     expect(today.available).toBe(0)
-    expect(today.levels.easy.knownWords).toBeLessThan(all.levels.easy.knownWords)
+    // knownWords 与词源无关（个人词库 ∪ 基础词表），收窄的只是候选池
+    expect(today.levels.easy.knownWords).toBe(all.levels.easy.knownWords)
   })
 
   it('should treat all as the default and normalize dirty scopes', async () => {

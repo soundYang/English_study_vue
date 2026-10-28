@@ -13,6 +13,17 @@ import { resetMockDb, setMockLatency } from '../../../mock/adapter'
 import { storageKeys } from '../../../unit/storage'
 
 const SETTLE_MS = 320
+// hard / 600：写 600 词要 708 个已知词，种子库只有 638 个
+const HARD_600 = {
+  level: 'hard',
+  targetWords: 600,
+  questionCount: 5,
+  updatedAt: new Date().toISOString(),
+}
+
+function seedSettings(settings) {
+  localStorage.setItem(storageKeys.settings, JSON.stringify(settings))
+}
 
 function createTestRouter() {
   return createRouter({
@@ -50,35 +61,47 @@ beforeEach(() => {
 })
 
 describe('settings page capacity note', () => {
-  it('should show the known-words shortfall for the current level', async () => {
+  it('should say the current settings are writable when the gates are clear', async () => {
     const wrapper = await mountSettings()
 
-    // 默认 easy / 100 词，种子库 20 个可用词 + 600 个基础词，离 1000 还差 380
-    expect(wrapper.get('.capacity-note').text()).toContain('还差 380 个')
+    // 默认 easy / 100 词：已知词 20 + 618 = 638，写 100 词的下限是 633
+    expect(wrapper.get('.capacity-note').text()).toContain('当前难度可写 300 词以内')
+    expect(wrapper.find('.capacity-warn').exists()).toBe(false)
   })
 
-  it('should say which levels are still short of known words', async () => {
+  it('should report the known-words gap for a length the vocabulary cannot support', async () => {
+    seedSettings(HARD_600)
+    const wrapper = await mountSettings()
+
+    // md/30 §7 之后门禁随篇幅走：600 词要 708 个已知词，当前 638 个
+    expect(wrapper.get('.capacity-note').text()).toContain('还差 70 个')
+  })
+
+  it('should say why each level is not writable without disabling it', async () => {
+    seedSettings(HARD_600)
     const wrapper = await mountSettings()
     const notes = wrapper.findAll('.card-note')
 
-    // 三档都写出来，用户才知道该加多少词，而不是逐档点一遍试
+    // 600 词超出 easy / medium 的档位上限，hard 是认识词不够
     expect(notes).toHaveLength(3)
-    expect(notes[0].text()).toContain('还差 380 个认识词')
-    expect(notes[2].text()).toContain('还差 1180 个认识词')
+    expect(notes[0].text()).toBe('最多写 300 词')
+    expect(notes[1].text()).toBe('最多写 450 词')
+    expect(notes[2].text()).toBe('还差 70 个认识词')
     // 只说缘由不禁用：三档一起不够时禁用会让用户一步也走不了
     expect(wrapper.findAll('[role="radio"]:disabled')).toHaveLength(0)
   })
 
   it('should narrow the precheck when the scope is limited', async () => {
     const wrapper = await mountSettings()
-    expect(wrapper.get('.capacity-note').text()).toContain('还差 380 个')
+    expect(wrapper.get('.capacity-note').text()).toContain('当前难度可写 300 词以内')
 
-    // 种子词的 createdAt 都是过去的日子，「今天新学」的池子是空的
+    // 种子词的 createdAt 都是过去的日子，「今天新学」的池子是空的：
+    // 已知词只剩 618 的地板，写 100 词要 633 个
     await wrapper.findAll('[role="checkbox"]')[0].trigger('click')
     await settle()
 
     expect(wrapper.get('.scope-chip.is-active').text()).toBe('今天新学')
-    expect(wrapper.get('.capacity-note').text()).toContain('还差 400 个')
+    expect(wrapper.get('.capacity-note').text()).toContain('还差 15 个')
   })
 
   it('should save the chosen scope with the other settings', async () => {
@@ -100,15 +123,7 @@ describe('settings page capacity note', () => {
 
   it('should clamp the length when the level max shrinks', async () => {
     // 先落一份 hard / 600 的设置，让页面从一个超出现有难度上限的篇幅起步
-    localStorage.setItem(
-      storageKeys.settings,
-      JSON.stringify({
-        level: 'hard',
-        targetWords: 600,
-        questionCount: 5,
-        updatedAt: new Date().toISOString(),
-      }),
-    )
+    seedSettings(HARD_600)
 
     const wrapper = await mountSettings()
     expect(wrapper.findComponent(LengthPicker).props('modelValue')).toBe(600)

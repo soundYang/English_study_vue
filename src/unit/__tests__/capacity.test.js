@@ -1,0 +1,126 @@
+/**
+ * 预检门禁解读测试
+ * /capacity 的字段是后端三道门的合并结果（md/30 §7），这里锁的是「哪一道门先说」
+ * 以及设置页 / 难度卡各自的文案，不锁具体数字的来源。
+ */
+import { describe, expect, it } from 'vitest'
+import { blockReasonOf, capacityNoteOf, difficultyNoteOf, knownShortageOf } from '../capacity'
+
+// 与后端 levels[level] 同形：已知词 638、写 100 词的下限 633、上限 300
+const GATE = {
+  required: 15,
+  sufficient: true,
+  shortage: 0,
+  available: 20,
+  knownWords: 638,
+  personalWords: 20,
+  minKnown: 633,
+  unknownBudget: 0,
+  maxTargetWords: 300,
+  targetWordsAllowed: true,
+  finalMode: { supported: false, unlocked: false, unlockAt: 3000, shortage: 2980, active: false },
+}
+
+describe('knownShortageOf', () => {
+  it('should return the gap between minKnown and knownWords', () => {
+    expect(knownShortageOf({ ...GATE, minKnown: 704 })).toBe(66)
+  })
+
+  it('should ignore the gate in final mode', () => {
+    expect(knownShortageOf({ ...GATE, minKnown: 3618, finalMode: { active: true } })).toBe(0)
+  })
+
+  it('should stay silent when the fields are missing', () => {
+    expect(knownShortageOf({})).toBe(0)
+    expect(knownShortageOf(null)).toBe(0)
+  })
+})
+
+describe('blockReasonOf', () => {
+  it('should pass when every gate is clear', () => {
+    expect(blockReasonOf(GATE)).toBeNull()
+  })
+
+  it('should report the level cap before the known-words gate', () => {
+    // 后端按「上限 → 已知词 → 候选池」的顺序拦截，前端不能倒过来
+    const block = blockReasonOf({ ...GATE, targetWordsAllowed: false, minKnown: 704 })
+
+    expect(block).toMatchObject({ kind: 'level_cap', maxTargetWords: 300 })
+  })
+
+  it('should report the known-words gate before the candidate pool', () => {
+    const block = blockReasonOf({ ...GATE, minKnown: 704, sufficient: false, shortage: 10 })
+
+    expect(block).toMatchObject({
+      kind: 'known_words',
+      shortage: 66,
+      minKnown: 704,
+      knownWords: 638,
+    })
+  })
+
+  it('should report the candidate pool last', () => {
+    const block = blockReasonOf({ ...GATE, sufficient: false, shortage: 10 })
+
+    expect(block).toEqual({ kind: 'target_words', shortage: 10 })
+  })
+
+  it('should let final mode through without checking the length gates', () => {
+    const gate = {
+      ...GATE,
+      minKnown: 0,
+      maxTargetWords: 1000,
+      finalMode: { supported: true, unlocked: true, unlockAt: 3000, shortage: 0, active: true },
+    }
+
+    expect(blockReasonOf(gate)).toBeNull()
+  })
+})
+
+describe('capacityNoteOf', () => {
+  it('should describe the writable range when nothing blocks', () => {
+    const note = capacityNoteOf(GATE, {
+      levelLabel: '简单',
+      targetWords: 100,
+      wordRangeLabel: '100–115 词',
+    })
+
+    expect(note).toEqual({ tone: 'ok', text: '当前难度可写 300 词以内，成文约 100–115 词。' })
+  })
+
+  it('should spell out the known-words gap', () => {
+    const note = capacityNoteOf(
+      { ...GATE, minKnown: 704 },
+      { levelLabel: '挑战', targetWords: 600 },
+    )
+
+    expect(note.tone).toBe('warn')
+    expect(note.text).toBe('挑战写 600 词需要认识约 704 个单词，当前 638 个，还差 66 个。')
+  })
+
+  it('should point at the level cap when the length is too long', () => {
+    const note = capacityNoteOf({ ...GATE, targetWordsAllowed: false }, { levelLabel: '简单' })
+
+    expect(note.tone).toBe('warn')
+    expect(note.text).toContain('简单最多写 300 词')
+  })
+
+  it('should suggest shortening when the candidate pool is short', () => {
+    const note = capacityNoteOf({ ...GATE, sufficient: false, shortage: 10 }, { targetWords: 200 })
+
+    expect(note.text).toContain('还差 10 个可用词')
+  })
+})
+
+describe('difficultyNoteOf', () => {
+  it('should keep the card note short', () => {
+    expect(difficultyNoteOf({ ...GATE, minKnown: 704 })).toBe('还差 66 个认识词')
+    expect(difficultyNoteOf({ ...GATE, targetWordsAllowed: false })).toBe('最多写 300 词')
+  })
+
+  it('should leave the candidate-pool gate to the page-level note', () => {
+    // 三张卡同时写「还差 10 个可用词」只会制造噪音，A 门由设置页整句说明
+    expect(difficultyNoteOf({ ...GATE, sufficient: false, shortage: 10 })).toBe('')
+    expect(difficultyNoteOf(null)).toBe('')
+  })
+})

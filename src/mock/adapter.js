@@ -26,14 +26,95 @@ const DB_VERSION = 4
 const DEFAULT_LATENCY = 300
 const MAX_PAGE_SIZE = 100
 const DEFAULT_PAGE_SIZE = 10
-// 与后端 level-limits.js 保持一致：难度 → 已知词门槛 / 生词预算 / 篇幅上限
+// 与后端 level-limits.js 保持一致：难度 → 生词预算 / 篇幅上限。
+// 原来的 requiredKnown（1000 / 1900 / 3778）已在 md/30 §7 删除，
+// 篇幅门槛改由 minKnownFor 按篇幅现算，见下面的 mockMinKnown
 const LEVEL_LIMITS = {
-  easy: { requiredKnown: 1000, unknownBudget: 0, maxTargetWords: 300 },
-  medium: { requiredKnown: 1900, unknownBudget: 3, maxTargetWords: 450 },
-  hard: { requiredKnown: 3778, unknownBudget: 5, maxTargetWords: 600 },
+  easy: { unknownBudget: 0, maxTargetWords: 300 },
+  medium: { unknownBudget: 3, maxTargetWords: 450 },
+  hard: { unknownBudget: 5, maxTargetWords: 600 },
 }
-// 与后端 basic-words.js 保持一致：各档基础词表条数
-const BASIC_WORDS_BY_LEVEL = { easy: 600, medium: 1340, hard: 2578 }
+// 已知词地板：600 个基础词 ∪ 19 个日历词 − 1 个重合（may）。
+// 真实值由后端按实际词表求并集现算；mock 没有那份表，用近似常量
+const KNOWN_FLOOR = 618
+// 最终模式：个人词库 3000 解锁，只有 hard 能写到 1000（md/30 §2.2）
+const FINAL_MODE_PERSONAL_WORDS = 3000
+const FINAL_MODE_MAX_WORDS = 1000
+const LENGTH_STEP = 100
+// hard 的实测下限（md/27 §4.6–§4.8）；easy / medium 没有采样，只走 A 门折算
+const HARD_MEASURED_MIN_KNOWN = { 100: 638, 200: 647, 300: 661, 400: 676, 500: 690, 600: 704 }
+
+/** 写 targetWords 词至少要认识多少词；与后端 capacity-table.js 的 minKnownFor 同构 */
+function mockMinKnown(targetWords, level) {
+  const n = Math.max(1, Math.round(Number(targetWords) || 0))
+
+  if (n > LEVEL_LIMITS.hard.maxTargetWords) {
+    // easy / medium 写不到 601+，按本档上限报，免得让人以为攒够词就能用 easy 写 1000
+    if (level !== 'hard') return mockMinKnown(LEVEL_LIMITS[level]?.maxTargetWords || 300, level)
+    return KNOWN_FLOOR + FINAL_MODE_PERSONAL_WORDS
+  }
+
+  // A 门折算值的近似：mock 不区分难度的池比例，统一按篇幅的 15% 估
+  const byGate = KNOWN_FLOOR + Math.max(1, Math.round(n * 0.15))
+
+  if (level !== 'hard') return byGate
+
+  const keys = Object.keys(HARD_MEASURED_MIN_KNOWN)
+    .map(Number)
+    .sort((left, right) => left - right)
+  let measured = HARD_MEASURED_MIN_KNOWN[keys[0]]
+  for (const key of keys) {
+    if (key <= n) measured = HARD_MEASURED_MIN_KNOWN[key]
+  }
+
+  return Math.max(measured, byGate)
+}
+
+/** /capacity 的篇幅阶梯：100–1000 每 100 一行，blockedBy 口径与后端一致 */
+function mockLengthLadder({ level, knownWords, personalWords }) {
+  const hardCap = LEVEL_LIMITS.hard.maxTargetWords
+  const finalModeUnlocked = personalWords >= FINAL_MODE_PERSONAL_WORDS
+  const levelCap =
+    level === 'hard' && finalModeUnlocked
+      ? FINAL_MODE_MAX_WORDS
+      : LEVEL_LIMITS[level].maxTargetWords
+  const ladder = []
+
+  for (
+    let targetWords = LENGTH_STEP;
+    targetWords <= FINAL_MODE_MAX_WORDS;
+    targetWords += LENGTH_STEP
+  ) {
+    const minKnown = mockMinKnown(targetWords, level)
+    const knownOk = knownWords >= minKnown
+    const beyondFinalMode = level === 'hard' && targetWords > hardCap
+
+    let blockedBy = null
+    if (targetWords > levelCap) {
+      blockedBy = beyondFinalMode && !finalModeUnlocked ? 'final_mode' : 'level_cap'
+    } else if (!knownOk) {
+      blockedBy = 'known_words'
+    }
+
+    const shortage =
+      blockedBy === 'final_mode'
+        ? Math.max(0, FINAL_MODE_PERSONAL_WORDS - personalWords)
+        : blockedBy === 'known_words'
+          ? Math.max(0, minKnown - knownWords)
+          : 0
+
+    ladder.push({
+      targetWords,
+      minKnown,
+      unlocked: blockedBy === null,
+      blockedBy,
+      shortage,
+      finalMode: beyondFinalMode,
+    })
+  }
+
+  return ladder
+}
 
 let latency = DEFAULT_LATENCY
 
@@ -566,29 +647,44 @@ export const mockReadings = {
     // 预检也要过词源：范围收窄后池子会变小，否则界面说「够」、点下去 422
     const scope = normalizeVocabScope(payload.vocabScope)
     const available = filterByScope(usableWords(db.words), scope).length
+    // personalWords / knownWords 与词源无关（后端读整份个人词库），mock 同口径
+    const personalWords = usableWords(db.words).length
+    const knownWords = personalWords + KNOWN_FLOOR
+    const finalModeUnlocked = personalWords >= FINAL_MODE_PERSONAL_WORDS
+    const unlockShortage = Math.max(0, FINAL_MODE_PERSONAL_WORDS - personalWords)
     // 与后端同口径：目标词数 ≈ 篇幅的 15%，至少 1 个
     const required = Math.max(1, Math.round(targetWords * 0.15))
     const levels = {}
 
     LEVELS.forEach((level) => {
       const limit = LEVEL_LIMITS[level]
-      // 近似口径：个人词库 + 该档基础词表；真实值由后端按「去重后并集」计算
-      const knownWords = available + BASIC_WORDS_BY_LEVEL[level]
+      const maxTargetWords =
+        level === 'hard' && finalModeUnlocked ? FINAL_MODE_MAX_WORDS : limit.maxTargetWords
+      // 本次请求算不算最终模式：hard + 超过 600 + 已解锁
+      const active = level === 'hard' && targetWords > limit.maxTargetWords && finalModeUnlocked
 
       levels[level] = {
-        required,
-        sufficient: available >= required,
-        shortage: Math.max(0, required - available),
+        // A 门：最终模式不挑目标词，报 0 / true，免得前端显示「还差 N 个」
+        required: active ? 0 : required,
+        sufficient: active || available >= required,
+        shortage: active ? 0 : Math.max(0, required - available),
         // 每档各自的候选池（后端 md/22 §3）：mock 不按难度选池，三档同值，
         // 只保证字段形状一致，前端一律读 levels[level].available
         available,
         knownWords,
-        requiredKnown: limit.requiredKnown,
-        knownSufficient: knownWords >= limit.requiredKnown,
-        knownShortage: Math.max(0, limit.requiredKnown - knownWords),
+        personalWords,
+        minKnown: active ? 0 : mockMinKnown(targetWords, level),
         unknownBudget: limit.unknownBudget,
-        maxTargetWords: limit.maxTargetWords,
-        targetWordsAllowed: targetWords <= limit.maxTargetWords,
+        maxTargetWords,
+        targetWordsAllowed: targetWords <= maxTargetWords,
+        finalMode: {
+          supported: level === 'hard',
+          unlocked: finalModeUnlocked,
+          unlockAt: FINAL_MODE_PERSONAL_WORDS,
+          shortage: unlockShortage,
+          active,
+        },
+        lengths: mockLengthLadder({ level, knownWords, personalWords }),
       }
     })
 
@@ -599,6 +695,14 @@ export const mockReadings = {
     return {
       targetWords,
       available,
+      knownWords,
+      personalWords,
+      finalMode: {
+        unlocked: finalModeUnlocked,
+        unlockAt: FINAL_MODE_PERSONAL_WORDS,
+        shortage: unlockShortage,
+        maxTargetWords: FINAL_MODE_MAX_WORDS,
+      },
       wordRange: { min: targetWords, target, max, label: `${targetWords}–${max} 词` },
       acceptedRange: { min, target, max, label: `${min}–${max} 词` },
       levels,

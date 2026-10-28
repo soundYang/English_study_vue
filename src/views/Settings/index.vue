@@ -16,6 +16,7 @@ import { useCapacity } from '../../composables/useCapacity'
 import { useGenerateReading } from '../../composables/useGenerateReading'
 import { useToast } from '../../composables/useToast'
 import { useSettingsStore } from '../../stores/model/settings'
+import { capacityNoteOf } from '../../unit/capacity'
 import { firstError, LEVEL_MAX_TARGET_WORDS, TARGET_WORDS_MAX } from '../../unit/validators'
 
 const LEVEL_LABELS = { easy: '简单', medium: '进阶', hard: '挑战' }
@@ -69,6 +70,15 @@ const availableWords = computed(() => capacity.value?.levels?.[draft.level]?.ava
 // 上限以预检为准，回来之前用静态副本兜底，避免控件在上限未知时放开到 600
 const lengthMax = computed(
   () => maxOf(draft.level) || LEVEL_MAX_TARGET_WORDS[draft.level] || TARGET_WORDS_MAX,
+)
+// 门禁解释统一在 unit/capacity.js：后端按「上限 → 已知词 → 候选池」的顺序拦截，
+// 这里按同一顺序说明，避免两处各写一套判断（md/30 §7 删掉 knownSufficient 后尤其如此）
+const capacityNote = computed(() =>
+  capacityNoteOf(gate.value, {
+    levelLabel: levelLabel.value,
+    targetWords: draft.targetWords,
+    wordRangeLabel: capacity.value?.wordRange?.label || '',
+  }),
 )
 
 // 生成失败覆盖层里的“降低难度 / 缩短文章”会改写已保存设置（路由仍是本页），
@@ -165,17 +175,9 @@ async function handleGenerate() {
           >
             <p v-if="capacityError" class="capacity-warn">{{ capacityError }}</p>
             <p v-else-if="capacityLoading && !gate" class="capacity-idle">正在检查当前词库…</p>
-            <template v-else-if="gate">
-              <p v-if="!gate.knownSufficient" class="capacity-warn">
-                {{ levelLabel }}需要认识约 {{ gate.requiredKnown }} 个单词，当前
-                {{ gate.knownWords }} 个，还差 {{ gate.knownShortage }} 个。
-              </p>
-              <p v-else-if="!gate.sufficient" class="capacity-warn">
-                这个篇幅还差 {{ gate.shortage }} 个可用词，建议缩短文章。
-              </p>
-              <p v-else class="capacity-ok">
-                当前难度可写 {{ gate.maxTargetWords }} 词以内，成文约
-                {{ capacity?.wordRange?.label }}。
+            <template v-else-if="gate && capacityNote">
+              <p :class="capacityNote.tone === 'warn' ? 'capacity-warn' : 'capacity-ok'">
+                {{ capacityNote.text }}
               </p>
             </template>
           </div>

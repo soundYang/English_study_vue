@@ -21,6 +21,7 @@ import { Check } from 'lucide-vue-next'
 import easyImage from '../../../assets/images/difficulty-easy.png'
 import mediumImage from '../../../assets/images/difficulty-medium.png'
 import hardImage from '../../../assets/images/difficulty-hard.png'
+import { difficultyNoteOf } from '../../../unit/capacity'
 
 const options = [
   {
@@ -56,13 +57,11 @@ const emit = defineEmits(['update:modelValue'])
 
 const cardRefs = ref([])
 
-// 认识词不够是根本问题，优先说它；篇幅上限只是「切过去会自动缩短」
+// 认识词不够是根本问题，优先说它；篇幅上限只是「切过去会自动缩短」。
+// 判断放在 unit/capacity.js：md/30 §7 删掉了 knownSufficient / knownShortage，
+// 现在要按 minKnown 与 knownWords 现算
 function noteOf(value) {
-  const gate = props.gates?.[value]
-  if (!gate) return ''
-  if (!gate.knownSufficient) return `还差 ${gate.knownShortage} 个认识词`
-  if (!gate.targetWordsAllowed) return `最多写 ${gate.maxTargetWords} 词`
-  return ''
+  return difficultyNoteOf(props.gates?.[value])
 }
 
 const cards = computed(() => options.map((option) => ({ ...option, note: noteOf(option.value) })))

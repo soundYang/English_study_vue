@@ -10,6 +10,7 @@
  *   - 生成中：浮动书本图标、不定长进度条、每 2.5s 轮换提示、可取消
  *   - 词汇不够（INSUFFICIENT_VOCABULARY / VOCABULARY_TOO_SMALL）：
  *     去添加单词 / 降低难度 / 缩短文章，按当前处境只显示有效的那个
+ *   - 限流（429 RATE_LIMITED）：说「太频繁」，不给重试（窗口内重试必然还是 429）
  *   - 其他错误：重试 / 返回修改
  *   - 打开时锁定背景滚动，焦点落到首个按钮，Esc 取消或关闭
  */
@@ -19,7 +20,7 @@ import { AlertCircle, BookOpen } from 'lucide-vue-next'
 import BaseButton from './BaseButton.vue'
 import { useGenerateReading } from '../composables/useGenerateReading'
 import { useSettingsStore } from '../stores/model/settings'
-import { describeVocabShortage } from '../unit/error-text'
+import { describeRateLimit, describeVocabShortage } from '../unit/error-text'
 import { TARGET_WORDS_MIN } from '../unit/validators'
 
 const TIPS = ['文章只会使用你学过的词', '正在检查词汇范围', '马上就好']
@@ -63,12 +64,24 @@ const vocabShortage = computed(() =>
     : null,
 )
 
-const errorTitle = computed(() =>
-  vocabShortage.value ? vocabShortage.value.title : '这次生成没有成功',
+// 429 单独说「太频繁」：窗口内重试一定还是 429，给「重试」按钮等于骗用户多点一次
+const isRateLimited = computed(() => errorCode.value === 'RATE_LIMITED')
+const rateLimit = computed(() =>
+  isRateLimited.value ? describeRateLimit({ details: error.value?.details }) : null,
 )
-const errorHint = computed(() =>
-  vocabShortage.value ? vocabShortage.value.hint : '可以稍后再试，或返回设置调整参数。',
-)
+
+const errorTitle = computed(() => {
+  if (vocabShortage.value) return vocabShortage.value.title
+  if (rateLimit.value) return rateLimit.value.title
+
+  return '这次生成没有成功'
+})
+const errorHint = computed(() => {
+  if (vocabShortage.value) return vocabShortage.value.hint
+  if (rateLimit.value) return rateLimit.value.hint
+
+  return '可以稍后再试，或返回设置调整参数。'
+})
 
 function startTips() {
   tipIndex.value = 0
@@ -229,8 +242,11 @@ onBeforeUnmount(() => {
             </div>
 
             <h2 id="generate-title" class="generate-title">{{ errorTitle }}</h2>
-            <!-- 命中词汇类错误时后端 message 与 hint 说的是同一件事，只留 hint -->
-            <p v-if="!vocabShortage" class="generate-subtitle">{{ error?.message }}</p>
+            <!-- 命中词汇类错误时后端 message 与 hint 说的是同一件事，只留 hint；
+                 429 同样按 code 给文案，后端 message 会重复一遍 -->
+            <p v-if="!vocabShortage && !rateLimit" class="generate-subtitle">
+              {{ error?.message }}
+            </p>
             <p class="generate-hint">{{ errorHint }}</p>
             <!-- 只有真实后端才带 requestId，mock 时这一行自然不出现 -->
             <p v-if="error?.requestId" class="generate-id">错误编号：{{ error.requestId }}</p>
@@ -253,6 +269,10 @@ onBeforeUnmount(() => {
               <BaseButton v-if="vocabShortage.actions.includes('add')" @click="goAddWords">
                 去添加单词
               </BaseButton>
+            </div>
+            <div v-else-if="rateLimit" class="generate-actions">
+              <BaseButton variant="secondary" @click="backToSettings">返回修改</BaseButton>
+              <BaseButton @click="dismiss">知道了</BaseButton>
             </div>
             <div v-else class="generate-actions">
               <BaseButton variant="secondary" @click="backToSettings">返回修改</BaseButton>
