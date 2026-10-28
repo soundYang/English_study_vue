@@ -121,7 +121,7 @@ describe('NewWordsPanel', () => {
     { word: 'USA', phonetic: { uk: '/ˌjuː.esˈeɪ/' }, senses: [], source: 'abbreviation' },
   ]
 
-  it('should stay collapsed and emit the toggled state', async () => {
+  it('should stay collapsed and expand itself without a v-model', async () => {
     const wrapper = mount(NewWordsPanel, { props: { words: WORDS } })
 
     expect(wrapper.get('.new-words-toggle').attributes('aria-expanded')).toBe('false')
@@ -130,6 +130,19 @@ describe('NewWordsPanel', () => {
     await wrapper.get('.new-words-toggle').trigger('click')
 
     expect(wrapper.emitted('update:open')).toEqual([[true]])
+    // 没绑 v-model 时（结果页）靠组件内部状态展开，不能变成点不动的死按钮
+    expect(wrapper.get('.new-words-toggle').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.findAll('.new-word')).toHaveLength(2)
+  })
+
+  it('should follow the open prop when the page controls it', async () => {
+    const wrapper = mount(NewWordsPanel, { props: { words: WORDS, open: false } })
+
+    await wrapper.setProps({ open: true })
+    expect(wrapper.findAll('.new-word')).toHaveLength(2)
+
+    await wrapper.setProps({ open: false })
+    expect(wrapper.find('.new-words-list').exists()).toBe(false)
   })
 
   it('should list the words when open and hide the abbreviation fragments', () => {

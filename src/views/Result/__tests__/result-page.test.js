@@ -110,6 +110,14 @@ describe('Result page', () => {
     expect(wrapper.text()).toContain('本文含 2 个未学单词')
     expect(wrapper.get('.result-time').text()).toContain('本次生成消耗 904 tokens')
 
+    // 生词面板没绑 v-model 也要能展开：点标题后清单出现
+    await wrapper.get('.new-words-toggle').trigger('click')
+    expect(wrapper.findAll('.new-word')).toHaveLength(2)
+    expect(wrapper.get('.new-words-toggle').attributes('aria-expanded')).toBe('true')
+
+    await wrapper.get('.new-words-toggle').trigger('click')
+    expect(wrapper.findAll('.new-word')).toHaveLength(0)
+
     const wrongCard = wrapper.findAll('.review-card')[3]
     expect(wrongCard.classes()).toContain('is-wrong')
     expect(wrongCard.text()).toContain('回答错误')

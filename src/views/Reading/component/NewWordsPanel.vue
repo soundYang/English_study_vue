@@ -16,7 +16,7 @@
  * emits:
  *   update:open — 点标题切换展开状态
  */
-import { computed, useId } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 
 const props = defineProps({
   words: { type: Array, default: () => [] },
@@ -28,6 +28,17 @@ const emit = defineEmits(['update:open'])
 
 // 同一页可能挂两个面板（未来结果页也开入口），id 用 useId 保唯一
 const listId = `new-words-${useId()}`
+
+// 阅读页用 v-model:open 接管展开状态；结果页没绑 v-model 时退化为组件内部状态，
+// 否则 open 恒为 false，点标题永远展不开（结果页的「下拉」会失效）
+const isOpen = ref(props.open)
+
+watch(
+  () => props.open,
+  (value) => {
+    isOpen.value = value
+  },
+)
 
 const items = computed(() =>
   props.words.map((item) => ({
@@ -43,7 +54,8 @@ const items = computed(() =>
 )
 
 function toggle() {
-  emit('update:open', !props.open)
+  isOpen.value = !isOpen.value
+  emit('update:open', isOpen.value)
 }
 </script>
 
@@ -53,14 +65,14 @@ function toggle() {
       type="button"
       class="new-words-toggle"
       :aria-controls="listId"
-      :aria-expanded="open ? 'true' : 'false'"
+      :aria-expanded="isOpen ? 'true' : 'false'"
       @click="toggle"
     >
       <span class="new-words-title">本文含 {{ items.length }} 个未学单词</span>
       <span class="new-words-caret" aria-hidden="true">▾</span>
     </button>
 
-    <ul v-if="open" :id="listId" class="new-words-list">
+    <ul v-if="isOpen" :id="listId" class="new-words-list">
       <li v-for="item in items" :key="item.word" class="new-word">
         <span class="new-word-text" lang="en">{{ item.word }}</span>
         <span v-if="item.phonetic && !item.plain" class="new-word-phonetic" lang="en">
