@@ -10,6 +10,10 @@ import { countWords } from '../unit/format'
 import {
   firstError,
   isValidWordStatus,
+  LEVELS,
+  TARGET_WORDS_MAX,
+  TARGET_WORDS_MIN,
+  TARGET_WORDS_STEP,
   validateSettings,
   validateWordInput,
   VOCABULARY_THRESHOLD,
@@ -20,6 +24,14 @@ const DB_VERSION = 2
 const DEFAULT_LATENCY = 300
 const MAX_PAGE_SIZE = 100
 const DEFAULT_PAGE_SIZE = 10
+// 与后端 level-limits.js 保持一致：难度 → 已知词门槛 / 生词预算 / 篇幅上限
+const LEVEL_LIMITS = {
+  easy: { requiredKnown: 1000, unknownBudget: 0, maxTargetWords: 300 },
+  medium: { requiredKnown: 1900, unknownBudget: 3, maxTargetWords: 450 },
+  hard: { requiredKnown: 3778, unknownBudget: 5, maxTargetWords: 600 },
+}
+// 与后端 basic-words.js 保持一致：各档基础词表条数
+const BASIC_WORDS_BY_LEVEL = { easy: 600, medium: 1340, hard: 2578 }
 
 let latency = DEFAULT_LATENCY
 
@@ -166,6 +178,11 @@ function toWordDto(item) {
     senses: normalizeSenses(item.senses),
     summary: buildSummary(item.senses),
   }
+}
+
+/** 可用于生成的词：学习中 / 已掌握；预检与生成共用，避免两处口径漂移 */
+function usableWords(words) {
+  return words.filter((item) => item.status === 'learning' || item.status === 'mastered')
 }
 
 function countWordsByStatus(words) {
@@ -480,6 +497,67 @@ export const mockWords = {
 }
 
 export const mockReadings = {
+  /**
+   * 生成能力预检
+   * 字段与后端 getCapacity 一致，数字是近似值（真实值以后端为准），前端只消费字段形状。
+   */
+  async capacity(payload = {}, options = {}) {
+    await wait(latency, options.signal)
+
+    const targetWords = Number(payload.targetWords)
+
+    if (
+      !Number.isInteger(targetWords) ||
+      targetWords < TARGET_WORDS_MIN ||
+      targetWords > TARGET_WORDS_MAX ||
+      targetWords % TARGET_WORDS_STEP !== 0
+    ) {
+      throw new MockApiError(
+        'INVALID_REQUEST',
+        `targetWords 必须是 ${TARGET_WORDS_MIN}–${TARGET_WORDS_MAX} 之间 ${TARGET_WORDS_STEP} 的倍数`,
+        400,
+        'targetWords',
+      )
+    }
+
+    const db = readDb()
+    const available = usableWords(db.words).length
+    // 与后端同口径：目标词数 ≈ 篇幅的 15%，至少 1 个
+    const required = Math.max(1, Math.round(targetWords * 0.15))
+    const levels = {}
+
+    LEVELS.forEach((level) => {
+      const limit = LEVEL_LIMITS[level]
+      // 近似口径：个人词库 + 该档基础词表；真实值由后端按「去重后并集」计算
+      const knownWords = available + BASIC_WORDS_BY_LEVEL[level]
+
+      levels[level] = {
+        required,
+        sufficient: available >= required,
+        shortage: Math.max(0, required - available),
+        knownWords,
+        requiredKnown: limit.requiredKnown,
+        knownSufficient: knownWords >= limit.requiredKnown,
+        knownShortage: Math.max(0, limit.requiredKnown - knownWords),
+        unknownBudget: limit.unknownBudget,
+        maxTargetWords: limit.maxTargetWords,
+        targetWordsAllowed: targetWords <= limit.maxTargetWords,
+      }
+    })
+
+    const target = Math.round(targetWords * 1.1)
+    const max = Math.round(targetWords * 1.15)
+    const min = Math.round(targetWords * 0.85)
+
+    return {
+      targetWords,
+      available,
+      wordRange: { min: targetWords, target, max, label: `${targetWords}–${max} 词` },
+      acceptedRange: { min, target, max, label: `${min}–${max} 词` },
+      levels,
+    }
+  },
+
   async generate(payload = {}, options = {}) {
     await wait(latency, options.signal)
 
@@ -491,9 +569,7 @@ export const mockReadings = {
 
     const { level, targetWords, questionCount } = payload
     const db = readDb()
-    const available = db.words.filter(
-      (item) => item.status === 'learning' || item.status === 'mastered',
-    )
+    const available = usableWords(db.words)
 
     if (available.length < VOCABULARY_THRESHOLD) {
       throw new MockApiError(

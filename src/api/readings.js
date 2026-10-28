@@ -13,6 +13,13 @@ export function generateReading(payload, options = {}) {
   return apiPost('/readings/generate', payload, { timeout: config.generateTimeout, ...options })
 }
 
+/** 生成前预检：三档门禁、可用词数与篇幅上限；不发 AI 请求，可随参数变化频繁调用 */
+export function fetchCapacity(params = {}, options = {}) {
+  if (config.useMock) return mockReadings.capacity(params, options)
+
+  return apiGet('/readings/capacity', params, options)
+}
+
 /** 获取阅读详情：未提交返回安全 DTO，已提交返回含答案与翻译的完整结果 */
 export function fetchReading(id, options = {}) {
   if (config.useMock) return mockReadings.get(id)

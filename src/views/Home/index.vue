@@ -11,6 +11,7 @@ import BaseButton from '../../component/BaseButton.vue'
 import BaseModal from '../../component/BaseModal.vue'
 import EntryCard from './component/EntryCard.vue'
 import HeroPanel from './component/HeroPanel.vue'
+import { fetchCapacity } from '../../api/readings'
 import { fetchWords } from '../../api/words'
 import { useGenerateReading } from '../../composables/useGenerateReading'
 import { useToast } from '../../composables/useToast'
@@ -37,6 +38,14 @@ onMounted(async () => {
   } catch {
     totalWords.value = null
     availableWords.value = null
+  }
+
+  // 预检失败不影响首页：拿不到就沿用词库口径的数字，生成时以后端为准
+  try {
+    const capacity = await fetchCapacity({ targetWords: settings.targetWords })
+    if (capacity?.available != null) availableWords.value = capacity.available
+  } catch {
+    // 静默失败：首页只需要一个提示数字，弹错反而挡住「开始阅读」
   }
 })
 

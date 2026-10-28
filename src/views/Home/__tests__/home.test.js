@@ -9,13 +9,16 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import Home from '../index.vue'
 import { fetchWords } from '../../../api/words'
-import { generateReading } from '../../../api/readings'
+import { fetchCapacity, generateReading } from '../../../api/readings'
 import { useReadingStore } from '../../../stores/model/reading'
 import { useSettingsStore } from '../../../stores/model/settings'
 import { useToastStore } from '../../../stores/model/toast'
 
 vi.mock('../../../api/words', () => ({ fetchWords: vi.fn() }))
-vi.mock('../../../api/readings', () => ({ generateReading: vi.fn() }))
+vi.mock('../../../api/readings', () => ({
+  fetchCapacity: vi.fn(),
+  generateReading: vi.fn(),
+}))
 
 const WORDS_RESPONSE = {
   total: 24,
@@ -57,6 +60,8 @@ beforeEach(() => {
   localStorage.clear()
   vi.clearAllMocks()
   fetchWords.mockResolvedValue(WORDS_RESPONSE)
+  // 首页只用预检的 available 覆盖词表口径的数字，其余字段不消费
+  fetchCapacity.mockResolvedValue({ available: 20 })
 })
 
 describe('home entry branches', () => {

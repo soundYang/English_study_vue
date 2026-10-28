@@ -4,28 +4,34 @@
  * 难度整卡、文章长度步进器、题目数量分段控件；保存到 localStorage 并启动生成。
  * 生成失败、取消与重试统一由全局 GenerateOverlay 处理。
  */
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import BaseButton from '../../component/BaseButton.vue'
 import DifficultyPicker from './component/DifficultyPicker.vue'
 import LengthPicker from './component/LengthPicker.vue'
 import QuestionCountPicker from './component/QuestionCountPicker.vue'
 import SettingsAside from './component/SettingsAside.vue'
-import { fetchWords } from '../../api/words'
+import { useCapacity } from '../../composables/useCapacity'
 import { useGenerateReading } from '../../composables/useGenerateReading'
 import { useToast } from '../../composables/useToast'
 import { useSettingsStore } from '../../stores/model/settings'
-import {
-  firstError,
-  LEVEL_MAX_TARGET_WORDS,
-  TARGET_WORDS_MAX,
-  VOCABULARY_THRESHOLD,
-} from '../../unit/validators'
+import { firstError, LEVEL_MAX_TARGET_WORDS, TARGET_WORDS_MAX } from '../../unit/validators'
+
+const LEVEL_LABELS = { easy: '简单', medium: '进阶', hard: '挑战' }
 
 const router = useRouter()
 const toast = useToast()
 const settings = useSettingsStore()
 const { isGenerating, start } = useGenerateReading()
+const {
+  capacity,
+  loading: capacityLoading,
+  error: capacityError,
+  load: loadCapacity,
+  levelGate: gateOf,
+  maxTargetWords: maxOf,
+  dispose: disposeCapacity,
+} = useCapacity()
 
 const draft = reactive({
   level: settings.level,
@@ -34,7 +40,6 @@ const draft = reactive({
 })
 
 const saving = ref(false)
-const availableWords = ref(null)
 
 const isDirty = computed(
   () =>
@@ -48,12 +53,14 @@ const canSave = computed(
   () => (!settings.hasSavedSettings || isDirty.value) && !isGenerating.value && !saving.value,
 )
 
-const showVocabHint = computed(
-  () => availableWords.value !== null && availableWords.value < VOCABULARY_THRESHOLD,
+const gate = computed(() => gateOf(draft.level))
+const levelLabel = computed(() => LEVEL_LABELS[draft.level] || '当前难度')
+// 「基于你的 N 个单词」与覆盖层重试都用它；删掉 fetchWords 之后这是唯一来源
+const availableWords = computed(() => capacity.value?.available ?? null)
+// 上限以预检为准，回来之前用静态副本兜底，避免控件在上限未知时放开到 600
+const lengthMax = computed(
+  () => maxOf(draft.level) || LEVEL_MAX_TARGET_WORDS[draft.level] || TARGET_WORDS_MAX,
 )
-
-// 篇幅上限跟难度走：批次 3 接入 /capacity 后改由预检结果覆盖，这里先用后端常量的副本兜底
-const lengthMax = computed(() => LEVEL_MAX_TARGET_WORDS[draft.level] || TARGET_WORDS_MAX)
 
 // 生成失败覆盖层里的“降低难度 / 缩短文章”会改写已保存设置（路由仍是本页），
 // 这里同步回草稿，避免再次生成时把调整覆盖回去
@@ -71,14 +78,14 @@ watch(lengthMax, (max) => {
   if (draft.targetWords > max) draft.targetWords = max
 })
 
-onMounted(async () => {
-  try {
-    const result = await fetchWords({ page: 1, pageSize: 1 })
-    availableWords.value = result.counts.learning + result.counts.mastered
-  } catch {
-    availableWords.value = null
-  }
-})
+// 难度或篇幅一变就重预检：一个接口同时回答「这个难度认识词够不够」和「这个篇幅凑不凑得齐」
+watch(
+  () => [draft.level, draft.targetWords],
+  ([, targetWords]) => loadCapacity({ targetWords }),
+  { immediate: true },
+)
+
+onBeforeUnmount(disposeCapacity)
 
 function persistDraft() {
   const result = settings.save({ ...draft })
@@ -129,9 +136,28 @@ async function handleGenerate() {
             <QuestionCountPicker v-model="draft.questionCount" :disabled="isGenerating" />
           </div>
 
-          <p v-if="showVocabHint" class="vocab-hint">
-            当前可用词汇较少，建议先添加更多单词或选择更短的文章。
-          </p>
+          <!-- 预检是防抖的：加载中说明这一块还是上一次参数的结果，弱化而不是清空 -->
+          <div
+            class="capacity-note"
+            :class="{ 'is-stale': capacityLoading }"
+            role="status"
+            aria-live="polite"
+          >
+            <p v-if="capacityError" class="capacity-warn">{{ capacityError }}</p>
+            <p v-else-if="capacityLoading && !gate" class="capacity-idle">正在检查当前词库…</p>
+            <template v-else-if="gate">
+              <p v-if="!gate.knownSufficient" class="capacity-warn">
+                {{ levelLabel }}需要认识约 {{ gate.requiredKnown }} 个单词，当前
+                {{ gate.knownWords }} 个，还差 {{ gate.knownShortage }} 个。
+              </p>
+              <p v-else-if="!gate.sufficient" class="capacity-warn">
+                这个篇幅还差 {{ gate.shortage }} 个可用词，建议缩短文章。
+              </p>
+              <p v-else class="capacity-ok">
+                当前难度可写 {{ gate.maxTargetWords }} 词以内，参数可用。
+              </p>
+            </template>
+          </div>
         </section>
 
         <div class="actions">
@@ -209,14 +235,19 @@ async function handleGenerate() {
   margin-top: var(--space-4);
 }
 
-.vocab-hint {
+.capacity-note {
   margin-top: var(--space-4);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
+  color: var(--color-muted);
   font-size: var(--text-small);
   line-height: var(--leading-small);
+}
+
+.capacity-note.is-stale {
+  opacity: 0.55;
+}
+
+.capacity-warn {
+  color: var(--color-warning);
 }
 
 .actions {
