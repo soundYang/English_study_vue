@@ -55,8 +55,9 @@ const canSave = computed(
 
 const gate = computed(() => gateOf(draft.level))
 const levelLabel = computed(() => LEVEL_LABELS[draft.level] || '当前难度')
-// 「基于你的 N 个单词」与覆盖层重试都用它；删掉 fetchWords 之后这是唯一来源
-const availableWords = computed(() => capacity.value?.available ?? null)
+// 「基于你的 N 个单词」与覆盖层重试都用它；各档池子不是同一个数，
+// 顶层 available 只是 hard 的口径，必须读当前难度的（后端 md/22 §3）
+const availableWords = computed(() => capacity.value?.levels?.[draft.level]?.available ?? null)
 // 上限以预检为准，回来之前用静态副本兜底，避免控件在上限未知时放开到 600
 const lengthMax = computed(
   () => maxOf(draft.level) || LEVEL_MAX_TARGET_WORDS[draft.level] || TARGET_WORDS_MAX,
@@ -126,7 +127,11 @@ async function handleGenerate() {
       </header>
 
       <form class="settings-form" @submit.prevent="handleGenerate">
-        <DifficultyPicker v-model="draft.level" :disabled="isGenerating" />
+        <DifficultyPicker
+          v-model="draft.level"
+          :gates="capacity?.levels || {}"
+          :disabled="isGenerating"
+        />
 
         <section class="params">
           <h2 class="section-title">2. 设置文章参数</h2>
@@ -154,7 +159,8 @@ async function handleGenerate() {
                 这个篇幅还差 {{ gate.shortage }} 个可用词，建议缩短文章。
               </p>
               <p v-else class="capacity-ok">
-                当前难度可写 {{ gate.maxTargetWords }} 词以内，参数可用。
+                当前难度可写 {{ gate.maxTargetWords }} 词以内，成文约
+                {{ capacity?.wordRange?.label }}。
               </p>
             </template>
           </div>

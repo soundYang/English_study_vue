@@ -535,6 +535,9 @@ export const mockReadings = {
         required,
         sufficient: available >= required,
         shortage: Math.max(0, required - available),
+        // 每档各自的候选池（后端 md/22 §3）：mock 不按难度选池，三档同值，
+        // 只保证字段形状一致，前端一律读 levels[level].available
+        available,
         knownWords,
         requiredKnown: limit.requiredKnown,
         knownSufficient: knownWords >= limit.requiredKnown,

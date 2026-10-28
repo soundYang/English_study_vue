@@ -20,6 +20,8 @@ describe('fetchCapacity', () => {
     expect(Object.keys(data.levels)).toEqual(['easy', 'medium', 'hard'])
     expect(data.levels.easy.maxTargetWords).toBe(300)
     expect(data.levels.hard.maxTargetWords).toBe(600)
+    // 每档各自的候选池（后端 md/22 §3）：新代码读这里，不再用顶层 available
+    expect(data.levels.easy.available).toBe(data.available)
     // label 前端暂不消费，但缺了会让下次新增字段时误判成「已经对上了」
     expect(data.wordRange.label).toContain('词')
     expect(data.acceptedRange.label).toContain('词')

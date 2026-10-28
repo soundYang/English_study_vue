@@ -4,15 +4,19 @@
  *
  * 用途：三张难度素材图整卡单选。图片内已含标题、描述与箭头，外层只负责选中描边、
  *       勾选徽标、键盘方向键与读屏标签。
- * 用法：<DifficultyPicker v-model="draft.level" :disabled="isGenerating" />
+ *       每张卡下面一行预检结论（还差多少认识词 / 该档最多写多少词），不可用的难度**不禁用**：
+ *       难度三档常常一起不够（新用户），禁用后连「看看别的档」都做不到，
+ *       而点了仍然会得到一条带补救动作的错误提示。
+ * 用法：<DifficultyPicker v-model="draft.level" :gates="capacity?.levels" :disabled="isGenerating" />
  *
  * props:
  *   modelValue — 当前难度 easy / medium / hard
  *   disabled   — 生成中禁用整组
+ *   gates      — /capacity 的 levels 原样传入；缺省时所有卡都不显示结论
  * emits:
  *   update:modelValue — 选中难度变化
  */
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Check } from 'lucide-vue-next'
 import easyImage from '../../../assets/images/difficulty-easy.png'
 import mediumImage from '../../../assets/images/difficulty-medium.png'
@@ -45,11 +49,23 @@ const options = [
 const props = defineProps({
   modelValue: { type: String, required: true },
   disabled: { type: Boolean, default: false },
+  gates: { type: Object, default: () => ({}) },
 })
 
 const emit = defineEmits(['update:modelValue'])
 
 const cardRefs = ref([])
+
+// 认识词不够是根本问题，优先说它；篇幅上限只是「切过去会自动缩短」
+function noteOf(value) {
+  const gate = props.gates?.[value]
+  if (!gate) return ''
+  if (!gate.knownSufficient) return `还差 ${gate.knownShortage} 个认识词`
+  if (!gate.targetWordsAllowed) return `最多写 ${gate.maxTargetWords} 词`
+  return ''
+}
+
+const cards = computed(() => options.map((option) => ({ ...option, note: noteOf(option.value) })))
 
 function setCardRef(element, index) {
   if (element) cardRefs.value[index] = element
@@ -89,31 +105,28 @@ function handleKeydown(event) {
     <legend class="section-title">1. 选择难度</legend>
 
     <div class="cards" role="radiogroup" aria-label="选择难度" @keydown="handleKeydown">
-      <button
-        v-for="(option, index) in options"
-        :key="option.value"
-        :ref="(element) => setCardRef(element, index)"
-        type="button"
-        role="radio"
-        class="card"
-        :class="{ 'is-selected': option.value === modelValue }"
-        :aria-checked="option.value === modelValue"
-        :aria-label="option.label"
-        :tabindex="option.value === modelValue ? 0 : -1"
-        :disabled="disabled"
-        @click="select(option.value)"
-      >
-        <img
-          :src="option.image"
-          alt=""
-          :width="option.width"
-          :height="option.height"
-          loading="lazy"
-        />
-        <span v-if="option.value === modelValue" class="badge" aria-hidden="true">
-          <Check :size="14" :stroke-width="2.6" />
-        </span>
-      </button>
+      <div v-for="(card, index) in cards" :key="card.value" class="card-item">
+        <button
+          :ref="(element) => setCardRef(element, index)"
+          type="button"
+          role="radio"
+          class="card"
+          :class="{ 'is-selected': card.value === modelValue }"
+          :aria-checked="card.value === modelValue"
+          :aria-label="card.note ? `${card.label}（${card.note}）` : card.label"
+          :tabindex="card.value === modelValue ? 0 : -1"
+          :disabled="disabled"
+          @click="select(card.value)"
+        >
+          <img :src="card.image" alt="" :width="card.width" :height="card.height" loading="lazy" />
+          <span v-if="card.value === modelValue" class="badge" aria-hidden="true">
+            <Check :size="14" :stroke-width="2.6" />
+          </span>
+        </button>
+
+        <!-- 不可用的难度只说缘由，不禁用：三档常常一起不够，禁了就一步也走不了 -->
+        <p v-if="card.note" class="card-note">{{ card.note }}</p>
+      </div>
     </div>
   </fieldset>
 </template>
@@ -145,6 +158,21 @@ function handleKeydown(event) {
   /* 宽屏时不再跟着左栏无限放大，整行收到 700px，页面高度随之变矮 */
   max-width: 700px;
   margin-top: var(--space-4);
+}
+
+/* 卡片 + 下方一行预检结论：结论跟着卡片同宽，窄屏换行而不是撑宽整行 */
+.card-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.card-note {
+  color: var(--color-warning);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  text-align: center;
 }
 
 .card {
@@ -217,7 +245,7 @@ function handleKeydown(event) {
     justify-items: center;
   }
 
-  .card {
+  .card-item {
     max-width: 280px;
   }
 }

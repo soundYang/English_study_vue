@@ -57,6 +57,18 @@ describe('settings page capacity note', () => {
     expect(wrapper.get('.capacity-note').text()).toContain('还差 380 个')
   })
 
+  it('should say which levels are still short of known words', async () => {
+    const wrapper = await mountSettings()
+    const notes = wrapper.findAll('.card-note')
+
+    // 三档都写出来，用户才知道该加多少词，而不是逐档点一遍试
+    expect(notes).toHaveLength(3)
+    expect(notes[0].text()).toContain('还差 380 个认识词')
+    expect(notes[2].text()).toContain('还差 1180 个认识词')
+    // 只说缘由不禁用：三档一起不够时禁用会让用户一步也走不了
+    expect(wrapper.findAll('[role="radio"]:disabled')).toHaveLength(0)
+  })
+
   it('should clamp the length when the level max shrinks', async () => {
     // 先落一份 hard / 600 的设置，让页面从一个超出现有难度上限的篇幅起步
     localStorage.setItem(
