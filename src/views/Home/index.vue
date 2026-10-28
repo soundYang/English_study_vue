@@ -1,7 +1,7 @@
 <script setup>
 /**
  * 首页视图
- * 呈现 Hero 与三个入口；负责“开始阅读”的未设置 / 空词库 / 直接生成三条分支。
+ * 呈现 Hero 与三个入口；负责“开始阅读”的未设置 / 空词库 / 交给生成页三条分支。
  * 词汇总数只用于提示，请求失败时静默隐藏，不阻塞页面。
  */
 import { computed, onMounted, ref } from 'vue'
@@ -13,14 +13,13 @@ import EntryCard from './component/EntryCard.vue'
 import HeroPanel from './component/HeroPanel.vue'
 import { fetchCapacity } from '../../api/readings'
 import { fetchWords } from '../../api/words'
-import { useGenerateReading } from '../../composables/useGenerateReading'
+import { hasGenerationHandoff, setGenerationHandoff } from '../../composables/useGenerationHandoff'
 import { useToast } from '../../composables/useToast'
 import { useSettingsStore } from '../../stores/model/settings'
 
 const router = useRouter()
 const toast = useToast()
 const settings = useSettingsStore()
-const { start } = useGenerateReading()
 
 const totalWords = ref(null)
 const availableWords = ref(null)
@@ -53,9 +52,13 @@ onMounted(async () => {
   }
 })
 
-async function beginGeneration() {
-  const generated = await start(settings.payload, { availableWords: availableWords.value })
-  if (generated) router.push(`/readings/${generated.id}`)
+function beginGeneration() {
+  // 参数与词库口径交给生成页；动画和请求都在那一页完成，这里只负责跳转。
+  // 交接单还没被取走时不要覆盖：连点两下仍然只发一次生成
+  if (!hasGenerationHandoff()) {
+    setGenerationHandoff(settings.payload, { availableWords: availableWords.value, from: '/' })
+  }
+  router.push('/generating')
 }
 
 function handleStartReading() {

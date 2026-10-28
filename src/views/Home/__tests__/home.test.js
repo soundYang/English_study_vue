@@ -1,7 +1,7 @@
 /**
  * 首页入口分支测试
- * 覆盖未保存设置 → 跳设置页并提示、空词库 → 二次确认、正常 → 生成并进入答题页。
- * 词汇与生成接口在此替换为 mock，避免依赖 300ms 延迟与 seed 数据。
+ * 覆盖未保存设置 → 跳设置页并提示、空词库 → 二次确认、正常 → 交接到生成页。
+ * 词汇与预检接口在此替换为 mock，避免依赖 300ms 延迟与 seed 数据。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -10,7 +10,10 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import Home from '../index.vue'
 import { fetchWords } from '../../../api/words'
 import { fetchCapacity, generateReading } from '../../../api/readings'
-import { useReadingStore } from '../../../stores/model/reading'
+import {
+  clearGenerationHandoff,
+  takeGenerationHandoff,
+} from '../../../composables/useGenerationHandoff'
 import { useSettingsStore } from '../../../stores/model/settings'
 import { useToastStore } from '../../../stores/model/toast'
 
@@ -37,6 +40,7 @@ function createTestRouter() {
       { path: '/', name: 'home', component: { template: '<div />' } },
       { path: '/settings', name: 'settings', component: { template: '<div />' } },
       { path: '/words', name: 'words', component: { template: '<div />' } },
+      { path: '/generating', name: 'generating', component: { template: '<div />' } },
       { path: '/readings/:id', name: 'reading', component: { template: '<div />' } },
     ],
   })
@@ -58,6 +62,7 @@ async function mountHome() {
 
 beforeEach(() => {
   localStorage.clear()
+  clearGenerationHandoff()
   vi.clearAllMocks()
   fetchWords.mockResolvedValue(WORDS_RESPONSE)
   // 首页只用预检的 available 覆盖词表口径的数字，其余字段不消费
@@ -91,25 +96,21 @@ describe('home entry branches', () => {
     expect(generateReading).not.toHaveBeenCalled()
   })
 
-  it('should generate and navigate to the reading page when ready', async () => {
+  it('should hand the generation over to the generating page', async () => {
     setActivePinia(createPinia())
     useSettingsStore().save({ level: 'easy', targetWords: 100, questionCount: 5 })
-    generateReading.mockResolvedValue({
-      id: 'r99',
-      title: 'A Quiet Morning',
-      article: 'It is a sunny day.',
-      level: 'easy',
-      targetWords: 100,
-      questionCount: 5,
-      questions: [],
-    })
 
     const { wrapper, router } = await mountHome()
     await wrapper.get('button.entry').trigger('click')
+    await flushPromises()
 
-    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/readings/r99'), {
-      timeout: 2000,
+    expect(router.currentRoute.value.path).toBe('/generating')
+    // 请求改在生成页发，首页只交参数与词库口径
+    expect(generateReading).not.toHaveBeenCalled()
+    expect(takeGenerationHandoff()).toEqual({
+      payload: { level: 'easy', targetWords: 100, questionCount: 5, vocabScope: ['all'] },
+      availableWords: 20,
+      from: '/',
     })
-    expect(useReadingStore().phase).toBe('answering')
   })
 })

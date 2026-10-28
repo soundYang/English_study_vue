@@ -19,25 +19,27 @@ function windowPhraseOf(seconds) {
 }
 
 /**
- * 429 RATE_LIMITED 的文案（后端 md/22 §4）
+ * 429 RATE_LIMITED 的文案（后端 md/22 §4 / §8.5 ③）
  *
- * details.windowSeconds 是**窗口长度**，不是剩余时间——写「1 分钟后重试」会报错，
- * 因为用户可能刚刚开始这个窗口。文案统一说「等一会儿」，精确倒计时需要
- * RateLimit 响应头的 reset，前端暂不展示。
+ * details.windowSeconds 是**窗口长度**，不是剩余时间——不能拿它写「1 分钟后重试」，
+ * 因为用户可能刚刚开始这个窗口。剩余时间只认请求拦截器从 `RateLimit: … reset=N`
+ * 解析出来的 details.remainingSeconds；没有就只说「等一会儿」，不编倒计时。
  *
- * @param {{ details?: { limit?: number, windowSeconds?: number } }} error
+ * @param {{ details?: { limit?: number, windowSeconds?: number, remainingSeconds?: number } }} error
  * @returns {{ title: string, hint: string }}
  */
 export function describeRateLimit({ details = {} } = {}) {
   const limit = toNumber(details.limit)
   const windowPhrase = windowPhraseOf(toNumber(details.windowSeconds))
+  const remaining = toNumber(details.remainingSeconds)
+  const waitPhrase = remaining > 0 ? `请在 ${remaining} 秒后再试。` : '等一会儿再试。'
 
   return {
     title: '生成太频繁了',
     hint:
       limit !== null && windowPhrase
-        ? `${windowPhrase}最多生成 ${limit} 次，等一会儿再试。`
-        : '请求太频繁了，等一会儿再试。',
+        ? `${windowPhrase}最多生成 ${limit} 次，${waitPhrase}`
+        : `请求太频繁了，${waitPhrase}`,
   }
 }
 

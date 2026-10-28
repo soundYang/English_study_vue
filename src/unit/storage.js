@@ -88,6 +88,8 @@ export const storageKeys = {
   // v2 起单词带 source / phonetic / senses，旧键数据不再读取
   mockDb: 'wr.mock.db.v2',
   dictionarySuggest: 'wr.pref.dictionarySuggest',
+  // 生成任务 id 必须在刷新后还能读到：回来直接 GET 续上轮询（后端 md/32 §5）
+  generationTask: 'wr.generation.task.v1',
   answers: (readingId) => `wr.answers:${readingId}`,
   timer: (readingId) => `wr.timer:${readingId}`,
 }

@@ -1,8 +1,9 @@
 /**
  * Mock 适配器测试
- * 覆盖分页筛选、词汇 CRUD 校验、安全 DTO、判分、重复提交、取消生成与历史统计。
+ * 覆盖分页筛选、词汇 CRUD 校验、安全 DTO、判分、重复提交、取消生成、历史统计，
+ * 以及任务化生成的状态机（建任务 → 轮询 → 取消 / 重试 / 幂等）。
  */
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockReadings, mockWords, resetMockDb, setMockLatency } from '../adapter'
 
 beforeEach(() => {
@@ -322,5 +323,144 @@ describe('mockReadings.history', () => {
     expect(easy.total).toBe(2)
     expect(easy.items.every((item) => item.level === 'easy')).toBe(true)
     expect(easy.stats.totalCount).toBe(4)
+  })
+})
+
+describe('mockReadings generation tasks', () => {
+  const SETTINGS = { level: 'easy', targetWords: 100, questionCount: 3 }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('should walk queued → generating → checking → saving → succeeded', async () => {
+    const accepted = await mockReadings.createTask(SETTINGS)
+
+    expect(accepted.taskId).toMatch(/^g\d+$/)
+    expect(accepted).toMatchObject({ status: 'queued', stage: 'queued', reused: false })
+    expect(accepted.params).toMatchObject({ ...SETTINGS, vocabScope: ['all'] })
+
+    // planning 结束前不报段数，界面据此不画格子
+    let dto = await mockReadings.getTask(accepted.taskId)
+    expect(dto.progress).toEqual({ done: 0, total: 0 })
+    expect(dto.selectedWords).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(600)
+    dto = await mockReadings.getTask(accepted.taskId)
+    // 100 词按每段 60 词折成 2 段，是真实段数不是百分比
+    expect(dto).toMatchObject({ status: 'running', stage: 'generating' })
+    expect(dto.progress).toEqual({ done: 0, total: 2 })
+    expect(dto.selectedWords.length).toBeGreaterThan(0)
+
+    await vi.advanceTimersByTimeAsync(600)
+    dto = await mockReadings.getTask(accepted.taskId)
+    expect(dto.stage).toBe('checking')
+    expect(dto.progress).toEqual({ done: 2, total: 2 })
+
+    await vi.advanceTimersByTimeAsync(660)
+    dto = await mockReadings.getTask(accepted.taskId)
+    expect(dto).toMatchObject({ status: 'succeeded', stage: 'done' })
+    expect(dto.readingId).toBeTruthy()
+    expect(dto.segments).toHaveLength(2)
+    expect(dto.durationMs).toBeGreaterThan(0)
+
+    const reading = await mockReadings.get(dto.readingId)
+    expect(reading.id).toBe(dto.readingId)
+  })
+
+  it('should delay vocabulary gates to the task so the paper can start', async () => {
+    const accepted = await mockReadings.createTask({ ...SETTINGS, targetWords: 700, level: 'hard' })
+
+    expect(accepted.status).toBe('queued')
+
+    await vi.advanceTimersByTimeAsync(500)
+    const dto = await mockReadings.getTask(accepted.taskId)
+
+    expect(dto.status).toBe('failed')
+    expect(dto.retryable).toBe(false)
+    expect(dto.error).toMatchObject({
+      code: 'INVALID_REQUEST',
+      details: { kind: 'final_mode_locked' },
+    })
+  })
+
+  it('should cancel immediately and keep the task readable', async () => {
+    const accepted = await mockReadings.createTask(SETTINGS)
+    await vi.advanceTimersByTimeAsync(720)
+
+    const cancelled = await mockReadings.cancelTask(accepted.taskId)
+
+    expect(cancelled.status).toBe('cancelled')
+    expect(cancelled.stage).toBe('done')
+
+    const again = await mockReadings.getTask(accepted.taskId)
+    expect(again.status).toBe('cancelled')
+    expect(again.retryable).toBe(false)
+  })
+
+  it('should resume from the written segments on retry', async () => {
+    const accepted = await mockReadings.createTask(SETTINGS)
+    await vi.advanceTimersByTimeAsync(720)
+    await mockReadings.cancelTask(accepted.taskId)
+
+    const retried = await mockReadings.retryTask(accepted.taskId)
+
+    expect(retried).toMatchObject({ taskId: accepted.taskId, status: 'queued', retryCount: 1 })
+    expect(retried.reused).toBe(false)
+
+    // 只补剩下的 1 段，再从检查 / 保存走完
+    await vi.advanceTimersByTimeAsync(500 + 220 + 400 + 260)
+    const dto = await mockReadings.getTask(accepted.taskId)
+
+    expect(dto.status).toBe('succeeded')
+    expect(dto.progress).toEqual({ done: 2, total: 2 })
+    expect(dto.retryCount).toBe(1)
+  })
+
+  it('should reuse a task by client token without starting a second one', async () => {
+    const first = await mockReadings.createTask({ ...SETTINGS, clientToken: 'click-1' })
+    await vi.advanceTimersByTimeAsync(1600)
+
+    const again = await mockReadings.createTask({ ...SETTINGS, clientToken: 'click-1' })
+
+    expect(again.taskId).toBe(first.taskId)
+    expect(again.reused).toBe(true)
+    expect(again.status).toBe('succeeded')
+  })
+
+  it('should reuse the running task with the same params and 409 on different params', async () => {
+    const first = await mockReadings.createTask(SETTINGS)
+    const same = await mockReadings.createTask({ ...SETTINGS })
+    const other = mockReadings.createTask({ ...SETTINGS, targetWords: 150 })
+
+    expect(same.taskId).toBe(first.taskId)
+    expect(same.reused).toBe(true)
+
+    await expect(other).rejects.toMatchObject({
+      error: { code: 'TASK_IN_PROGRESS', details: { taskId: first.taskId } },
+    })
+  })
+
+  it('should validate settings before creating a task', async () => {
+    await expect(mockReadings.createTask({ ...SETTINGS, targetWords: 125 })).rejects.toMatchObject({
+      error: { code: 'INVALID_REQUEST', field: 'targetWords' },
+    })
+  })
+
+  it('should return TASK_NOT_FOUND for unknown tasks and after a reset', async () => {
+    await expect(mockReadings.getTask('g999')).rejects.toMatchObject({
+      error: { code: 'TASK_NOT_FOUND' },
+    })
+
+    const { taskId } = await mockReadings.createTask(SETTINGS)
+    resetMockDb()
+
+    await expect(mockReadings.getTask(taskId)).rejects.toMatchObject({
+      error: { code: 'TASK_NOT_FOUND' },
+    })
   })
 })

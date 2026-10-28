@@ -26,12 +26,32 @@ http.interceptors.request.use((requestConfig) => {
   return requestConfig
 })
 
+/**
+ * 429 的剩余秒数
+ * express-rate-limit 用 draft-7，响应头形如 `RateLimit: limit=20, remaining=0, reset=42`；
+ * 旧版 X-RateLimit-* 后端已不发。拿不到就返回 0，调用方据此不展示倒计时。
+ */
+function retryAfterOf(error) {
+  const headers = error?.response?.headers || {}
+  const rateLimit = headers.ratelimit || headers.RateLimit || headers['x-ratelimit-reset'] || ''
+  const match = String(rateLimit).match(/reset=(\d+)/)
+  if (match) return Number(match[1])
+
+  const retryAfter = Number(headers['retry-after'])
+  return Number.isFinite(retryAfter) && retryAfter > 0 ? Math.ceil(retryAfter) : 0
+}
+
 // 401 只清理 token 并抛出 AuthError，不在此处跳转：MVP 没有登录页，导航由调用方决定
 http.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error?.response?.status === 401) localStore.remove('accessToken')
-    return Promise.reject(normalizeApiError(error))
+
+    const normalized = normalizeApiError(error)
+    // 429 冷却要等多少秒只有响应头知道；挂到错误对象上，三个生成入口共用（md/22 §8.5 ③）
+    const retryAfter = retryAfterOf(error)
+    if (retryAfter > 0) normalized.retryAfter = retryAfter
+    return Promise.reject(normalized)
   },
 )
 

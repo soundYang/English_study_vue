@@ -68,6 +68,21 @@ describe('describeRateLimit', () => {
     expect(result.hint).toContain('每 30 秒最多生成 5 次')
   })
 
+  // 剩余时间来自拦截器解析的 RateLimit: reset=N，不是窗口长度
+  it('should quote the real remaining seconds when they are known', () => {
+    const result = describeRateLimit({
+      details: { limit: 20, windowSeconds: 60, remainingSeconds: 42 },
+    })
+
+    expect(result.hint).toBe('每分钟最多生成 20 次，请在 42 秒后再试。')
+  })
+
+  it('should not invent a countdown from the window length', () => {
+    const result = describeRateLimit({ details: { limit: 20, windowSeconds: 60 } })
+
+    expect(result.hint).toBe('每分钟最多生成 20 次，等一会儿再试。')
+  })
+
   // 窗口长度不是剩余时间：没有 details 时只能说「等一会儿」，不能编一个倒计时
   it('should fall back to a generic hint without details', () => {
     const result = describeRateLimit({})

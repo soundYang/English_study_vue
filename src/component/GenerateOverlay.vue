@@ -7,11 +7,14 @@
  * 用法：在 AppLayout 中挂载一次 <GenerateOverlay />，页面只调用 useGenerateReading().start()
  *
  * 行为：
- *   - 生成中：浮动书本图标、不定长进度条、每 2.5s 轮换提示、可取消
+ *   - 生成中（creating / generating / fetching）：浮动书本图标、不定长进度条、
+ *     每 2.5s 轮换提示、可取消；/generating 页有自己的纸页动画，那里不再叠这一层
+ *   - 生成在其他页面完成（例如从生成页离开）：补上「进入阅读页」的落点
  *   - 词汇不够（INSUFFICIENT_VOCABULARY / VOCABULARY_TOO_SMALL）：
  *     去添加单词 / 降低难度 / 缩短文章，按当前处境只显示有效的那个
  *   - 限流（429 RATE_LIMITED）：说「太频繁」，不给重试（窗口内重试必然还是 429）
- *   - 其他错误：重试 / 返回修改
+ *   - 其他错误：retryable 为 false 时只给「返回修改」，否则「重试」走任务 /retry，
+ *     复用已写好的段，不重新建任务
  *   - 打开时锁定背景滚动，焦点落到首个按钮，Esc 取消或关闭
  */
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
@@ -19,6 +22,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { AlertCircle, BookOpen } from 'lucide-vue-next'
 import BaseButton from './BaseButton.vue'
 import { useGenerateReading } from '../composables/useGenerateReading'
+import { useReadingStore } from '../stores/model/reading'
 import { useSettingsStore } from '../stores/model/settings'
 import { describeRateLimit, describeVocabShortage } from '../unit/error-text'
 import { TARGET_WORDS_MIN } from '../unit/validators'
@@ -26,12 +30,15 @@ import { TARGET_WORDS_MIN } from '../unit/validators'
 const TIPS = ['文章只会使用你学过的词', '正在检查词汇范围', '马上就好']
 const LEVEL_LABELS = { easy: '简单', medium: '进阶', hard: '挑战' }
 const LEVEL_ORDER = ['easy', 'medium', 'hard']
+// 这些页面自己处理生成成功后的落点，覆盖层不要抢导航
+const READING_ROUTES = ['generating', 'reading', 'reading-result']
 const FOCUSABLE_SELECTOR = 'button:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 const router = useRouter()
 const route = useRoute()
 const settings = useSettingsStore()
-const { phase, error, summary, isGenerating, start, cancel, dismiss } = useGenerateReading()
+const readingStore = useReadingStore()
+const { error, summary, task, isGenerating, retry, cancel, dismiss } = useGenerateReading()
 
 const dialogRef = ref(null)
 const tipIndex = ref(0)
@@ -42,7 +49,9 @@ let lastActiveElement = null
 // 两道「词不够」的码：20 词兜底 + 主闸门（A 门 target_words / B 门 known_words）
 const INSUFFICIENT_CODES = ['INSUFFICIENT_VOCABULARY', 'VOCABULARY_TOO_SMALL']
 
-const isOpen = computed(() => phase.value === 'generating' || Boolean(error.value))
+// 生成页用纸页动画承担「进行中」的反馈，覆盖层只负责错误
+const isPaperPage = computed(() => route.name === 'generating')
+const isOpen = computed(() => Boolean(error.value) || (isGenerating.value && !isPaperPage.value))
 const errorCode = computed(() => error.value?.code || '')
 const isInsufficient = computed(() => INSUFFICIENT_CODES.includes(errorCode.value))
 // easy 已经是最低档，降低难度点了也不会有反应
@@ -70,9 +79,19 @@ const rateLimit = computed(() =>
   isRateLimited.value ? describeRateLimit({ details: error.value?.details }) : null,
 )
 
+// retryable === false 的（词不够、参数错）重试只会再失败一次，按钮不该给；
+// 本地建任务失败（网络 / 429）没有这个字段，按可重试处理
+const canRetry = computed(() => error.value?.retryable !== false)
+// retryCount 只用于标题区分第几次尝试，不参与「复用了几段」的数量计算（md/22 §8.5 ②）
+const attemptTitle = computed(() => {
+  const retryCount = Number(task.value?.retryCount) || 0
+  return retryCount > 0 ? `第 ${retryCount + 1} 次尝试没有成功` : ''
+})
+
 const errorTitle = computed(() => {
   if (vocabShortage.value) return vocabShortage.value.title
   if (rateLimit.value) return rateLimit.value.title
+  if (attemptTitle.value) return attemptTitle.value
 
   return '这次生成没有成功'
 })
@@ -163,19 +182,28 @@ function backToSettings() {
   if (route.name !== 'settings') router.push('/settings')
 }
 
-async function retry() {
-  // 直接重放已保存的设置：手挑三个字段的话，vocabScope 之类的后续字段会在重试时丢掉
-  const generated = await start(
-    { ...settings.payload },
-    { availableWords: summary.value.availableWords },
-  )
-  if (generated) router.push(`/readings/${generated.id}`)
+async function handleRetry() {
+  // 重试由 store 决定：任务终态走 /retry（复用已写好的段），建任务失败才重新建
+  const started = await retry()
+  if (!started) return
+
+  // 失败发生在设置页 / 首页时，动画仍在生成页：把用户带过去，别留在遮罩里干等
+  if (route.name !== 'generating') router.push('/generating')
 }
 
+// 从生成页离开后生成才完成时，入口页已经没有「await 完再跳」的代码了，这里补上落点
 watch(
-  phase,
-  (next) => {
-    if (next === 'generating') startTips()
+  () => readingStore.reading?.id,
+  (id) => {
+    if (!id || READING_ROUTES.includes(route.name)) return
+    router.push(`/readings/${id}`)
+  },
+)
+
+watch(
+  isGenerating,
+  (active) => {
+    if (active) startTips()
     else stopTips()
   },
   { immediate: true },
@@ -276,8 +304,11 @@ onBeforeUnmount(() => {
             </div>
             <div v-else class="generate-actions">
               <BaseButton variant="secondary" @click="backToSettings">返回修改</BaseButton>
-              <BaseButton @click="retry">重试</BaseButton>
+              <BaseButton v-if="canRetry" @click="handleRetry">重试</BaseButton>
             </div>
+            <p v-if="canRetry && !vocabShortage && !rateLimit" class="generate-note">
+              会从上次中断的地方继续，已经写好的部分不会重来
+            </p>
           </template>
         </div>
       </div>
@@ -361,6 +392,14 @@ onBeforeUnmount(() => {
   font-size: var(--text-caption);
   line-height: var(--leading-caption);
   font-variant-numeric: tabular-nums;
+}
+
+.generate-note {
+  max-width: 34ch;
+  margin-top: var(--space-3);
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 
 .progress {

@@ -1,7 +1,7 @@
 <script setup>
 /**
  * 阅读设置视图
- * 难度整卡、文章长度步进器、题目数量分段控件；保存到 localStorage 并启动生成。
+ * 难度整卡、文章长度步进器、题目数量分段控件；保存到 localStorage 后交给 /generating 生成。
  * 生成失败、取消与重试统一由全局 GenerateOverlay 处理。
  */
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
@@ -14,6 +14,7 @@ import ScopePicker from './component/ScopePicker.vue'
 import SettingsAside from './component/SettingsAside.vue'
 import { useCapacity } from '../../composables/useCapacity'
 import { useGenerateReading } from '../../composables/useGenerateReading'
+import { hasGenerationHandoff, setGenerationHandoff } from '../../composables/useGenerationHandoff'
 import { useToast } from '../../composables/useToast'
 import { useSettingsStore } from '../../stores/model/settings'
 import { capacityNoteOf } from '../../unit/capacity'
@@ -24,7 +25,7 @@ const LEVEL_LABELS = { easy: '简单', medium: '进阶', hard: '挑战' }
 const router = useRouter()
 const toast = useToast()
 const settings = useSettingsStore()
-const { isGenerating, start } = useGenerateReading()
+const { isGenerating } = useGenerateReading()
 const {
   capacity,
   loading: capacityLoading,
@@ -139,12 +140,19 @@ async function handleSave() {
   toast.success('设置已保存')
 }
 
-async function handleGenerate() {
+function handleGenerate() {
   if (isGenerating.value || saving.value) return
   if (!persistDraft()) return
 
-  const generated = await start(settings.payload, { availableWords: availableWords.value })
-  if (generated) router.push(`/readings/${generated.id}`)
+  // 生成页负责发请求与播纸页动画；这里只保存设置、把参数交接过去。
+  // 交接单还在说明上一次跳转还没被取走，不覆盖，避免连点发两次
+  if (!hasGenerationHandoff()) {
+    setGenerationHandoff(settings.payload, {
+      availableWords: availableWords.value,
+      from: '/settings',
+    })
+  }
+  router.push('/generating')
 }
 </script>
 

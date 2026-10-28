@@ -118,6 +118,20 @@ function mockLengthLadder({ level, knownWords, personalWords }) {
 
 let latency = DEFAULT_LATENCY
 
+/** 内存里的生成任务；刷新页面即丢，真实后端有 24h TTL，mock 只模拟状态机 */
+const generationTasks = new Map()
+let generationTaskSeq = 0
+
+// 任务节奏：600 词约 4s，够看清「逐段点亮 → 校对 → 保存」；真实后端 40–90s
+const TASK_TTL_MS = 24 * 60 * 60 * 1000
+const TASK_PLANNING_MS = 500
+const TASK_SEGMENT_MS = 220
+const TASK_CHECKING_MS = 400
+const TASK_SAVING_MS = 260
+const TASK_SEGMENT_WORDS = 60
+// 参数错、词不够时重试只会再失败一次：retryable=false（后端 md/32 §9）
+const TASK_NOT_RETRYABLE = ['INSUFFICIENT_VOCABULARY', 'VOCABULARY_TOO_SMALL', 'INVALID_REQUEST']
+
 /** 测试与演示时可覆盖延迟；传 0 关闭延迟 */
 export function setMockLatency(value) {
   latency = Math.max(0, Number(value) || 0)
@@ -200,6 +214,8 @@ function writeDb(db) {
 
 /** 恢复初始数据；返回新的数据库对象，便于调用方继续使用 */
 export function resetMockDb() {
+  generationTasks.clear()
+  generationTaskSeq = 0
   const fresh = createSeedDatabase()
   localStore.set(storageKeys.mockDb, fresh)
   return fresh
@@ -619,6 +635,296 @@ export const mockWords = {
   },
 }
 
+/**
+ * 生成前的三道闸门（与后端同口径）
+ * 同步接口直接抛错；任务接口把错误存进任务，planning 结束后以 failed 呈现——
+ * 建任务时已经回过 202，后台失败没有 HTTP 响应可写（后端 md/31 §3.1）。
+ */
+function evaluateGenerationGates(payload, db) {
+  const { level, targetWords } = payload
+  const scope = normalizeVocabScope(payload.vocabScope)
+  const available = filterByScope(usableWords(db.words), scope)
+  const personalWords = usableWords(db.words).length
+  // 与后端同口径：600 是 hard 的常规上限，601+ 要么已解锁最终模式，要么 400
+  const levelCap = LEVEL_LIMITS[level]?.maxTargetWords ?? TARGET_WORDS_MAX
+  const finalModeActivated =
+    level === 'hard' && targetWords > levelCap && personalWords >= FINAL_MODE_PERSONAL_WORDS
+
+  if (targetWords > levelCap && !finalModeActivated) {
+    if (level === 'hard') {
+      const shortage = Math.max(0, FINAL_MODE_PERSONAL_WORDS - personalWords)
+
+      return {
+        error: new MockApiError(
+          'INVALID_REQUEST',
+          `写 ${targetWords} 词的长文属于「最终模式」，需要个人词库里有 ${FINAL_MODE_PERSONAL_WORDS} 个单词才能解锁，当前有 ${personalWords} 个（还差 ${shortage} 个）。请缩短篇幅，或继续添加单词。`,
+          400,
+          'targetWords',
+          {
+            kind: 'final_mode_locked',
+            targetWords,
+            metric: 'personal_words',
+            unlockAt: FINAL_MODE_PERSONAL_WORDS,
+            available: personalWords,
+            shortage,
+          },
+        ),
+        available,
+      }
+    }
+
+    return {
+      error: new MockApiError(
+        'INVALID_REQUEST',
+        `当前难度最多写 ${levelCap} 词，请缩短篇幅或提高难度。`,
+        400,
+        'targetWords',
+        {
+          kind: 'target_words_cap',
+          level,
+          targetWords,
+          maxTargetWords: levelCap,
+          finalModeUnlocked: false,
+        },
+      ),
+      available,
+    }
+  }
+
+  if (available.length < VOCABULARY_THRESHOLD) {
+    return {
+      error: new MockApiError(
+        'INSUFFICIENT_VOCABULARY',
+        `当前可用于生成的学习中 / 已掌握单词只有 ${available.length} 个，至少需要 ${VOCABULARY_THRESHOLD} 个。`,
+        422,
+      ),
+      available,
+    }
+  }
+
+  // A 门：这次篇幅凑不齐目标词。与后端 vocabularyTooSmall 同口径，
+  // 数字用近似值（目标词数 ≈ 篇幅的 15%），前端只消费 details 的字段形状。
+  // 最终模式不挑目标词，跳过这道门（后端 freeForm 同一取舍，md/30 §7.4）
+  const required = Math.max(1, Math.round(targetWords * 0.15))
+
+  if (!finalModeActivated && available.length < required) {
+    return {
+      error: new MockApiError(
+        'VOCABULARY_TOO_SMALL',
+        `按当前词库，${targetWords} 词的文章还差 ${required - available.length} 个可用词。`,
+        422,
+        'targetWords',
+        {
+          kind: 'target_words',
+          required,
+          available: available.length,
+          targetWords,
+          scope,
+          level,
+        },
+      ),
+      available,
+    }
+  }
+
+  return { error: null, available }
+}
+
+/** 按模板生成一篇阅读并落库；同步接口与任务成功共用 */
+function createReadingRecord(db, payload, available) {
+  const templates = READING_TEMPLATES[payload.level] || []
+  if (!templates.length) {
+    throw new MockApiError('AI_PROVIDER_ERROR', '暂时没有可用的生成模板，请稍后重试。', 502)
+  }
+
+  const template = templates[db.readingSeq % templates.length]
+  const questions = template.questions.slice(0, payload.questionCount).map((question, index) => ({
+    ...question,
+    id: index + 1,
+  }))
+
+  const reading = {
+    id: `r${db.readingSeq}`,
+    title: template.title,
+    article: template.article,
+    translation: template.translation,
+    level: payload.level,
+    targetWords: payload.targetWords,
+    questionCount: payload.questionCount,
+    vocabulary: available.slice(0, 10).map((item) => item.word),
+    // 模板上带的这两项就是真实后端由 AI 返回、再经 DTO 输出的部分
+    newWords: template.newWords || [],
+    tokenUsage: template.tokenUsage || emptyTokenUsage(),
+    questions,
+    status: 'generated',
+    userAnswers: null,
+    createdAt: new Date().toISOString(),
+    submittedAt: null,
+  }
+
+  db.readingSeq += 1
+  db.readings.unshift(reading)
+  writeDb(db)
+
+  return reading
+}
+
+/** 规划一结束就能给前端的本次抽词（后端 md/31 §3.2） */
+function buildSelectedWords(available) {
+  return available.slice(0, 10).map((item, index) => ({
+    word: item.word,
+    kind: index < 2 ? 'focus' : 'target',
+    phonetic: item.phonetic ? normalizePhonetic(item.phonetic) : { uk: '', us: '' },
+    senses: normalizeSenses(item.senses),
+  }))
+}
+
+function normalizeScopeList(scope) {
+  return [...normalizeVocabScope(scope)].sort().join(',')
+}
+
+function sameTaskParams(left, right) {
+  return (
+    left.level === right.level &&
+    Number(left.targetWords) === Number(right.targetWords) &&
+    Number(left.questionCount) === Number(right.questionCount) &&
+    normalizeScopeList(left.vocabScope) === normalizeScopeList(right.vocabScope)
+  )
+}
+
+function isTaskActive(task) {
+  return task.status === 'queued' || task.status === 'running'
+}
+
+/** 按已过时间推进状态机；只在被查询时计算，不建定时器（与后端「回调驱动」同精神） */
+function advanceTask(task, now = Date.now()) {
+  const elapsed = now - task.startedAt
+
+  if (task.cancelled) {
+    task.status = 'cancelled'
+    task.stage = 'done'
+    task.durationMs = elapsed
+    return task
+  }
+
+  if (task.status === 'succeeded' || task.status === 'failed') return task
+
+  if (elapsed < TASK_PLANNING_MS) {
+    task.status = 'queued'
+    task.stage = 'queued'
+    task.progress = { done: 0, total: 0 }
+    return task
+  }
+
+  // planning 结束：词不够 / 参数问题的任务在这里失败
+  if (task.failureCode) {
+    task.status = 'failed'
+    task.stage = 'done'
+    task.progress = { done: 0, total: 0 }
+    task.durationMs = elapsed
+    task.error = {
+      code: task.failureCode,
+      message: task.failureMessage,
+      details: task.failureDetails || {},
+    }
+    return task
+  }
+
+  const remaining = Math.max(1, task.total - task.reusedDone)
+  const generationElapsed = elapsed - TASK_PLANNING_MS
+  let done = Math.min(task.total, task.reusedDone + Math.floor(generationElapsed / TASK_SEGMENT_MS))
+  const generationMs = remaining * TASK_SEGMENT_MS
+
+  if (generationElapsed < generationMs) {
+    task.status = 'running'
+    task.stage = 'generating'
+  } else {
+    done = task.total
+    const checkingElapsed = generationElapsed - generationMs
+
+    if (checkingElapsed < TASK_CHECKING_MS) {
+      task.status = 'running'
+      task.stage = 'checking'
+    } else if (checkingElapsed < TASK_CHECKING_MS + TASK_SAVING_MS) {
+      task.status = 'running'
+      task.stage = 'saving'
+    } else {
+      task.status = 'succeeded'
+      task.stage = 'done'
+      task.durationMs = elapsed
+      if (!task.readingId) {
+        const reading = createReadingRecord(readDb(), task.params, task.available)
+        task.readingId = reading.id
+      }
+    }
+  }
+
+  task.progress = { done, total: task.total }
+  return task
+}
+
+function toTaskDto(task) {
+  advanceTask(task)
+
+  const settled = ['succeeded', 'failed', 'cancelled'].includes(task.status)
+  const isQueued = task.stage === 'queued'
+
+  return {
+    taskId: task.taskId,
+    status: task.status,
+    stage: task.stage,
+    progress: { ...task.progress },
+    selectedWords: isQueued ? [] : task.selectedWords,
+    segments: isQueued
+      ? []
+      : Array.from({ length: task.progress.total }, (_, index) => {
+          const position = index + 1
+          let status = 'pending'
+          if (position <= task.progress.done) status = 'accepted'
+          else if (task.status === 'running' && position === task.progress.done + 1) {
+            status = 'generating'
+          }
+          return {
+            index: position,
+            status,
+            words: status === 'accepted' ? Math.round(task.params.targetWords / task.total) : 0,
+          }
+        }),
+    readingId: task.readingId || null,
+    error: task.status === 'failed' ? { ...task.error } : null,
+    retryable: task.status === 'failed' ? !TASK_NOT_RETRYABLE.includes(task.error?.code) : false,
+    retryCount: task.retryCount,
+    durationMs: settled ? (task.durationMs ?? null) : null,
+    params: { ...task.params },
+    createdAt: task.createdAt,
+  }
+}
+
+/** 建任务 / 重试的 202 响应只有状态骨架，不含 progress / segments（后端 md/31 §3.2） */
+function taskAccepted(task, reused) {
+  advanceTask(task)
+
+  return {
+    taskId: task.taskId,
+    status: task.status,
+    stage: task.stage,
+    reused,
+    params: { ...task.params },
+  }
+}
+
+function requireTask(taskId) {
+  const task = generationTasks.get(taskId)
+  const expired = task && Date.now() - new Date(task.createdAt).getTime() > TASK_TTL_MS
+
+  if (!task || expired) {
+    generationTasks.delete(taskId)
+    throw new MockApiError('TASK_NOT_FOUND', '这次生成的任务已经过期，请重新生成。', 404)
+  }
+
+  return task
+}
+
 export const mockReadings = {
   /**
    * 生成能力预检
@@ -718,116 +1024,143 @@ export const mockReadings = {
       throw new MockApiError('INVALID_REQUEST', message, 400, field)
     }
 
-    const { level, targetWords, questionCount } = payload
     const db = readDb()
-    const scope = normalizeVocabScope(payload.vocabScope)
-    const available = filterByScope(usableWords(db.words), scope)
-    const personalWords = usableWords(db.words).length
-    // 与后端同口径：600 是 hard 的常规上限，601+ 要么已解锁最终模式，要么 400
-    const levelCap = LEVEL_LIMITS[level]?.maxTargetWords ?? TARGET_WORDS_MAX
-    const finalModeActivated =
-      level === 'hard' && targetWords > levelCap && personalWords >= FINAL_MODE_PERSONAL_WORDS
+    const gates = evaluateGenerationGates(payload, db)
+    if (gates.error) throw gates.error
 
-    if (targetWords > levelCap && !finalModeActivated) {
-      if (level === 'hard') {
-        const shortage = Math.max(0, FINAL_MODE_PERSONAL_WORDS - personalWords)
+    return toSafeReading(createReadingRecord(db, payload, gates.available))
+  },
 
-        throw new MockApiError(
-          'INVALID_REQUEST',
-          `写 ${targetWords} 词的长文属于「最终模式」，需要个人词库里有 ${FINAL_MODE_PERSONAL_WORDS} 个单词才能解锁，当前有 ${personalWords} 个（还差 ${shortage} 个）。请缩短篇幅，或继续添加单词。`,
-          400,
-          'targetWords',
-          {
-            kind: 'final_mode_locked',
-            targetWords,
-            metric: 'personal_words',
-            unlockAt: FINAL_MODE_PERSONAL_WORDS,
-            available: personalWords,
-            shortage,
-          },
-        )
-      }
+  /**
+   * 建生成任务（后端 md/31 §3.1）
+   * 参数错误在建任务时就 400；词量闸门留给后台，以 failed + error.code 呈现。
+   */
+  async createTask(payload = {}, options = {}) {
+    await wait(latency, options.signal)
 
+    const { valid, errors } = validateSettings(payload)
+    if (!valid) {
+      const { field, message } = firstError(errors)
+      throw new MockApiError('INVALID_REQUEST', message, 400, field)
+    }
+
+    // clientToken 命中：任何状态的已有任务都直接返回，不扣第二次钱
+    const token = typeof payload.clientToken === 'string' ? payload.clientToken.trim() : ''
+    if (token) {
+      const existing = [...generationTasks.values()].find((task) => task.clientToken === token)
+      if (existing) return taskAccepted(existing, true)
+    }
+
+    // 同参数的在跑任务直接复用；参数不同则 409，前端按 details.taskId 切过去
+    const running = [...generationTasks.values()].find(isTaskActive)
+    if (running) {
+      if (sameTaskParams(running.params, payload)) return taskAccepted(running, true)
       throw new MockApiError(
-        'INVALID_REQUEST',
-        `当前难度最多写 ${levelCap} 词，请缩短篇幅或提高难度。`,
-        400,
-        'targetWords',
-        {
-          kind: 'target_words_cap',
-          level,
-          targetWords,
-          maxTargetWords: levelCap,
-          finalModeUnlocked: false,
-        },
+        'TASK_IN_PROGRESS',
+        '已经有一次生成在进行中，等它跑完或先取消它。',
+        409,
+        '',
+        { taskId: running.taskId },
       )
     }
 
-    if (available.length < VOCABULARY_THRESHOLD) {
-      throw new MockApiError(
-        'INSUFFICIENT_VOCABULARY',
-        `当前可用于生成的学习中 / 已掌握单词只有 ${available.length} 个，至少需要 ${VOCABULARY_THRESHOLD} 个。`,
-        422,
-      )
-    }
+    const db = readDb()
+    const gates = evaluateGenerationGates(payload, db)
 
-    // A 门：这次篇幅凑不齐目标词。与后端 vocabularyTooSmall 同口径，
-    // 数字用近似值（目标词数 ≈ 篇幅的 15%），前端只消费 details 的字段形状。
-    // 最终模式不挑目标词，跳过这道门（后端 freeForm 同一取舍，md/30 §7.4）
-    const required = Math.max(1, Math.round(targetWords * 0.15))
-
-    if (!finalModeActivated && available.length < required) {
-      throw new MockApiError(
-        'VOCABULARY_TOO_SMALL',
-        `按当前词库，${targetWords} 词的文章还差 ${required - available.length} 个可用词。`,
-        422,
-        'targetWords',
-        {
-          kind: 'target_words',
-          required,
-          available: available.length,
-          targetWords,
-          scope,
-          level,
-        },
-      )
-    }
-
-    const templates = READING_TEMPLATES[level] || []
-    if (!templates.length) {
-      throw new MockApiError('AI_PROVIDER_ERROR', '暂时没有可用的生成模板，请稍后重试。', 502)
-    }
-
-    const template = templates[db.readingSeq % templates.length]
-    const questions = template.questions.slice(0, questionCount).map((question, index) => ({
-      ...question,
-      id: index + 1,
-    }))
-
-    const reading = {
-      id: `r${db.readingSeq}`,
-      title: template.title,
-      article: template.article,
-      translation: template.translation,
-      level,
-      targetWords,
-      questionCount,
-      vocabulary: available.slice(0, 10).map((item) => item.word),
-      // 模板上带的这两项就是真实后端由 AI 返回、再经 DTO 输出的部分
-      newWords: template.newWords || [],
-      tokenUsage: template.tokenUsage || emptyTokenUsage(),
-      questions,
-      status: 'generated',
-      userAnswers: null,
+    const task = {
+      taskId: `g${(generationTaskSeq += 1)}`,
+      clientToken: token,
+      params: {
+        level: payload.level,
+        targetWords: payload.targetWords,
+        questionCount: payload.questionCount,
+        vocabScope: normalizeVocabScope(payload.vocabScope),
+      },
+      status: 'queued',
+      stage: 'queued',
+      progress: { done: 0, total: 0 },
+      total: Math.max(1, Math.min(12, Math.round(payload.targetWords / TASK_SEGMENT_WORDS))),
+      reusedDone: 0,
+      selectedWords: buildSelectedWords(gates.available),
+      available: gates.available,
+      failureCode: gates.error ? gates.error.error.code : '',
+      failureMessage: gates.error ? gates.error.error.message : '',
+      failureDetails: gates.error ? gates.error.error.details : null,
+      readingId: '',
+      error: null,
+      retryCount: 0,
       createdAt: new Date().toISOString(),
-      submittedAt: null,
+      startedAt: Date.now(),
+      durationMs: null,
+      cancelled: false,
     }
 
-    db.readingSeq += 1
-    db.readings.unshift(reading)
-    writeDb(db)
+    generationTasks.set(task.taskId, task)
+    return taskAccepted(task, false)
+  },
 
-    return toSafeReading(reading)
+  /** 轮询任务：只读、无副作用，同一任务多查几次结果一致 */
+  async getTask(taskId, options = {}) {
+    await wait(latency, options.signal)
+    return toTaskDto(requireTask(taskId))
+  },
+
+  /** 取消：终态再调是 no-op；mock 里立刻落到 cancelled */
+  async cancelTask(taskId, options = {}) {
+    await wait(latency, options.signal)
+
+    const task = requireTask(taskId)
+    advanceTask(task)
+
+    if (isTaskActive(task)) {
+      task.cancelled = true
+      advanceTask(task)
+    }
+
+    return toTaskDto(task)
+  },
+
+  /**
+   * 重试：只接受 failed / cancelled，复用已落地的段，不重新规划
+   * 建任务时被闸门挡下的任务重试仍会失败——真实后端同样是 retryable=false。
+   */
+  async retryTask(taskId, options = {}) {
+    await wait(latency, options.signal)
+
+    const task = requireTask(taskId)
+    advanceTask(task)
+
+    if (task.status === 'queued' || task.status === 'running' || task.status === 'succeeded') {
+      return { ...taskAccepted(task, true), retryCount: task.retryCount }
+    }
+
+    const otherRunning = [...generationTasks.values()].find(
+      (item) => item.taskId !== task.taskId && isTaskActive(item),
+    )
+    if (otherRunning) {
+      throw new MockApiError(
+        'TASK_IN_PROGRESS',
+        '已经有一次生成在进行中，等它跑完或先取消它。',
+        409,
+        '',
+        { taskId: otherRunning.taskId },
+      )
+    }
+
+    // 复用已写好的段：闸门失败时没有可复用的进度
+    task.reusedDone = task.failureCode ? 0 : Math.min(task.total, task.progress.done || 0)
+    task.retryCount += 1
+    task.cancelled = false
+    task.status = 'queued'
+    task.stage = 'queued'
+    task.progress = { done: 0, total: 0 }
+    task.error = null
+    task.readingId = ''
+    task.durationMs = null
+    task.createdAt = new Date().toISOString()
+    task.startedAt = Date.now()
+
+    return { ...taskAccepted(task, false), retryCount: task.retryCount }
   },
 
   async get(id) {

@@ -1,12 +1,12 @@
 /**
- * 生成覆盖层 · 429 限流
- * 限流窗口内点「重试」必然还是 429，所以这一支只给「返回修改 / 知道了」，
- * 文案也不能把窗口长度说成剩余时间（md/22 §4）。
+ * 生成覆盖层 · 失败出口
+ * 429 只给「返回修改 / 知道了」；retryable=false 不给重试；
+ * 其余错误的重试交给 store（任务终态走 /retry），并把人带回生成页看纸页。
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { mount } from '@vue/test-utils'
 import GenerateOverlay from '../GenerateOverlay.vue'
 import { useReadingStore } from '../../stores/model/reading'
 
@@ -20,11 +20,12 @@ function createTestRouter() {
     routes: [
       { path: '/', name: 'home', component: EmptyStub },
       { path: '/settings', name: 'settings', component: EmptyStub },
+      { path: '/generating', name: 'generating', component: EmptyStub },
     ],
   })
 }
 
-async function mountOverlay(error) {
+async function mountOverlay(error, setup) {
   const pinia = createPinia()
   setActivePinia(pinia)
 
@@ -35,13 +36,14 @@ async function mountOverlay(error) {
   const store = useReadingStore()
   store.phase = 'error'
   store.error = { field: '', details: {}, requestId: '', ...error }
+  if (setup) setup(store)
 
   wrapper = mount(GenerateOverlay, {
     attachTo: document.body,
     global: { plugins: [pinia, router], stubs: { teleport: true } },
   })
 
-  return { store }
+  return { store, router }
 }
 
 afterEach(() => {
@@ -76,5 +78,49 @@ describe('GenerateOverlay', () => {
     expect(wrapper.get('.generate-title').text()).toBe('这次生成没有成功')
     expect(wrapper.get('.generate-subtitle').text()).toBe('暂时没有可用的生成模板')
     expect(wrapper.text()).toContain('重试')
+    // 重试会复用已写好的段，这句是承诺也是解释
+    expect(wrapper.get('.generate-note').text()).toContain('已经写好的部分不会重来')
+  })
+
+  it('should hide retry when the server says the failure is not retryable', async () => {
+    await mountOverlay({
+      code: 'INVALID_REQUEST',
+      message: '参数不合法',
+      retryable: false,
+    })
+
+    expect(wrapper.text()).not.toContain('重试')
+    expect(wrapper.find('.generate-note').exists()).toBe(false)
+    // 至少留一条能走的路
+    expect(wrapper.text()).toContain('返回修改')
+  })
+
+  it('should distinguish the attempt without quoting a reused segment count', async () => {
+    await mountOverlay(
+      { code: 'AI_PROVIDER_ERROR', message: '上游挂了', retryable: true },
+      (store) => {
+        store.task = { taskId: 't1', retryCount: 1 }
+      },
+    )
+
+    expect(wrapper.get('.generate-title').text()).toBe('第 2 次尝试没有成功')
+    expect(wrapper.text()).not.toContain('复用')
+  })
+
+  it('should hand the retry to the store and go back to the paper stage', async () => {
+    const retry = vi.fn().mockResolvedValue(true)
+    const { router } = await mountOverlay(
+      { code: 'AI_PROVIDER_ERROR', message: '上游挂了', retryable: true },
+      (store) => {
+        store.retryGeneration = retry
+      },
+    )
+
+    const button = wrapper.findAll('button').find((item) => item.text() === '重试')
+    await button.trigger('click')
+    await flushPromises()
+
+    expect(retry).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.name).toBe('generating')
   })
 })
