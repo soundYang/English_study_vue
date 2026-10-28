@@ -65,6 +65,8 @@ function validate() {
   if (!next) errors.newPassword = '请输入新密码'
   else if (next.length < PASSWORD_MIN) errors.newPassword = `新密码至少 ${PASSWORD_MIN} 位`
   else if (next.length > PASSWORD_MAX) errors.newPassword = `新密码最多 ${PASSWORD_MAX} 位`
+  else if (!/[A-Za-z]/.test(next)) errors.newPassword = '新密码需要包含字母'
+  else if (!/\d/.test(next)) errors.newPassword = '新密码需要包含数字'
   else if (next === form.oldPassword) errors.newPassword = '新密码不能与当前密码相同'
 
   if (!form.confirmPassword) errors.confirmPassword = '请再次输入新密码'
@@ -131,7 +133,7 @@ async function handleSubmit() {
         autocomplete="new-password"
         :maxlength="PASSWORD_MAX"
         :error="fieldErrors.newPassword"
-        :hint="`至少 ${PASSWORD_MIN} 位，建议混合字母与数字`"
+        :hint="`${PASSWORD_MIN}–${PASSWORD_MAX} 位，需同时包含字母和数字`"
       />
 
       <BaseInput

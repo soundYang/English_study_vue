@@ -62,6 +62,19 @@ const routes = [
     meta: { title: '个人中心', module: 'profile' },
   },
   {
+    path: '/login',
+    name: 'login',
+    component: () => import('../views/Auth/index.vue'),
+    // bare：不套侧栏与顶栏，登录 / 注册页是独立整屏（md/33 §11）
+    meta: { title: '登录', bare: true, authMode: 'login' },
+  },
+  {
+    path: '/register',
+    name: 'register',
+    component: () => import('../views/Auth/index.vue'),
+    meta: { title: '注册', bare: true, authMode: 'register' },
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
     component: () => import('../views/NotFound/index.vue'),

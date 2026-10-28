@@ -12,6 +12,7 @@
  *   - API 设置本期只读，个人密钥由服务端统一配置（md/33 §2.2）
  */
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import BaseButton from '../../component/BaseButton.vue'
 import SkeletonBlock from '../../component/SkeletonBlock.vue'
 import AccountSettings from './component/AccountSettings.vue'
@@ -23,8 +24,11 @@ import ProfileStats from './component/ProfileStats.vue'
 import { fetchProfile, fetchProfileStats } from '../../api/profile'
 import { useToast } from '../../composables/useToast'
 import { normalizeApiError } from '../../errors'
+import { useAuthStore } from '../../stores/model/auth'
 
+const router = useRouter()
 const toast = useToast()
+const auth = useAuthStore()
 
 const user = ref(null)
 const stats = ref(null)
@@ -62,12 +66,22 @@ async function load() {
 }
 
 function handleProfileSaved(next) {
-  if (next) user.value = next
+  if (next) {
+    user.value = next
+    // 顶栏读的是 auth store，资料改了要同步过去，否则顶栏还显示旧昵称
+    auth.updateUser(next)
+  }
   toast.success('个人资料已更新')
 }
 
 function handlePasswordChanged() {
   toast.success('密码已更新')
+}
+
+async function handleLogout() {
+  await auth.logout()
+  toast.success('已退出登录')
+  router.replace('/login')
 }
 </script>
 
@@ -107,6 +121,7 @@ function handlePasswordChanged() {
           :nickname="user.nickname || user.username"
           @edit-nickname="editOpen = true"
           @change-password="passwordOpen = true"
+          @logout="handleLogout"
         />
         <ApiSettings />
       </div>

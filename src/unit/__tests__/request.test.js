@@ -3,8 +3,9 @@
  * 429 的剩余秒数只来自响应头（后端 standardHeaders: 'draft-7'），
  * 归一化后的错误必须带上 retryAfter，三个生成入口才能共用同一份冷却。
  */
-import { afterEach, describe, expect, it } from 'vitest'
-import http, { apiGet } from '../request'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import http, { apiGet, AUTH_EXPIRED_EVENT } from '../request'
+import { localStore, storageKeys } from '../storage'
 
 const originalAdapter = http.defaults.adapter
 
@@ -25,7 +26,23 @@ function rejectWith(headers) {
 
 afterEach(() => {
   http.defaults.adapter = originalAdapter
+  localStore.remove(storageKeys.accessToken)
 })
+
+/** 用自定义 adapter 模拟一次 401，payload 决定业务码 */
+function rejectUnauthorized(code) {
+  http.defaults.adapter = async (requestConfig) => {
+    const error = new Error('Request failed with status code 401')
+    error.config = requestConfig
+    error.response = {
+      status: 401,
+      headers: {},
+      data: { error: { code, message: '请先登录' } },
+      config: requestConfig,
+    }
+    throw error
+  }
+}
 
 describe('request rate limit headers', () => {
   it('should read the reset seconds from the draft-7 RateLimit header', async () => {
@@ -52,5 +69,35 @@ describe('request rate limit headers', () => {
 
     expect(error.code).toBe('RATE_LIMITED')
     expect(error.retryAfter).toBeUndefined()
+  })
+})
+
+describe('request auth expiry', () => {
+  it('should broadcast and clear the token on 401 AUTH_REQUIRED', async () => {
+    localStore.set(storageKeys.accessToken, 'sess_expired')
+    rejectUnauthorized('AUTH_REQUIRED')
+
+    const handler = vi.fn()
+    window.addEventListener(AUTH_EXPIRED_EVENT, handler)
+
+    await expect(apiGet('/profile')).rejects.toMatchObject({ code: 'AUTH_REQUIRED' })
+
+    expect(handler).toHaveBeenCalledTimes(1)
+    expect(localStore.get(storageKeys.accessToken, '')).toBe('')
+    window.removeEventListener(AUTH_EXPIRED_EVENT, handler)
+  })
+
+  it('should not broadcast a failed login', async () => {
+    rejectUnauthorized('AUTH_INVALID_CREDENTIALS')
+
+    const handler = vi.fn()
+    window.addEventListener(AUTH_EXPIRED_EVENT, handler)
+
+    await expect(apiGet('/auth/login')).rejects.toMatchObject({
+      code: 'AUTH_INVALID_CREDENTIALS',
+    })
+
+    expect(handler).not.toHaveBeenCalled()
+    window.removeEventListener(AUTH_EXPIRED_EVENT, handler)
   })
 })

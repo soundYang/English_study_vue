@@ -218,6 +218,11 @@ export function resetMockDb() {
   generationTaskSeq = 0
   // 资料与阅读库分开存，重置种子数据时也要一起回到默认昵称
   localStore.remove(storageKeys.mockProfile)
+  // 账号与会话一并回到演示账号，避免重置后还停在某个已注册账号上
+  localStore.remove(storageKeys.mockAuthSession)
+  localStore.remove(storageKeys.mockAuthUsers)
+  mockCaptchas.clear()
+  loginFailures.clear()
   const fresh = createSeedDatabase()
   localStore.set(storageKeys.mockDb, fresh)
   return fresh
@@ -489,6 +494,17 @@ const DEFAULT_PROFILE = Object.freeze({
 })
 
 function readProfile() {
+  // 登录后个人中心属于当前账号；没登录时沿用 local-user，保持 mock 单机体验不变
+  const active = activeMockUser()
+  if (active) {
+    return {
+      ...DEFAULT_PROFILE,
+      ...active,
+      nickname: String(active.nickname || active.username),
+      signature: String(active.signature ?? ''),
+    }
+  }
+
   const stored = localStore.get(storageKeys.mockProfile, null)
   if (!stored || typeof stored !== 'object') return { ...DEFAULT_PROFILE }
 
@@ -501,6 +517,17 @@ function readProfile() {
 }
 
 function writeProfile(profile) {
+  const active = activeMockUser()
+  if (active) {
+    const users = readMockUsers().map((user) =>
+      user.id === active.id
+        ? { ...user, nickname: profile.nickname, signature: profile.signature }
+        : user,
+    )
+    writeMockUsers(users)
+    return
+  }
+
   localStore.set(storageKeys.mockProfile, profile)
 }
 
@@ -514,6 +541,170 @@ function toProfileUser(profile) {
     phone: profile.phone,
     createdAt: profile.createdAt,
   }
+}
+
+// ——— Mock 鉴权（md/33 §3–§6） ———
+// 真实后端的规则全部照搬：用户名 3–20 位字母数字下划线、密码 8–64 位且含字母与数字、
+// 图形验证码一次性、登录失败 5 次后必须带验证码。只把「库」换成 localStorage。
+
+const AUTH_USERNAME_MIN = 3
+const AUTH_USERNAME_MAX = 20
+const AUTH_USERNAME_PATTERN = /^[A-Za-z0-9_]+$/
+const AUTH_PHONE_PATTERN = /^1[3-9]\d{9}$/
+const CAPTCHA_TTL_SECONDS = 300
+const LOGIN_FAILURE_LIMIT = 5
+const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1000
+// 去掉 I / O / 0 / 1 等易混字符，跟后端 captcha.js 的取字思路一致
+const CAPTCHA_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+const SESSION_TTL_MS = Object.freeze({
+  standard: 24 * 60 * 60 * 1000,
+  remember: 30 * 24 * 60 * 60 * 1000,
+})
+
+// 演示账号：mock 登录页会显示这组账号。首个注册的账号同样会占用 local-user（md/33 §8）
+const DEMO_ACCOUNT = Object.freeze({
+  id: 'local-user',
+  username: 'Sound',
+  usernameLower: 'sound',
+  password: 'sound1234',
+  nickname: 'Sound',
+  signature: '少年，大胆走，怎么都是路。',
+  phone: null,
+  dataKey: 'local-user',
+  createdAt: '2026-09-01T08:00:00.000Z',
+})
+
+/** 登录页的演示提示只读这一份，避免页面和 mock 两处硬编码 */
+export const MOCK_DEMO_CREDENTIALS = Object.freeze({
+  username: DEMO_ACCOUNT.username,
+  password: DEMO_ACCOUNT.password,
+})
+
+const mockCaptchas = new Map()
+const loginFailures = new Map()
+
+function randomToken() {
+  return `${Math.random().toString(36).slice(2, 12)}${Math.random().toString(36).slice(2, 12)}`
+}
+
+function readMockUsers() {
+  const stored = localStore.get(storageKeys.mockAuthUsers, null)
+  if (Array.isArray(stored) && stored.length > 0) return stored
+
+  const seeded = [{ ...DEMO_ACCOUNT }]
+  localStore.set(storageKeys.mockAuthUsers, seeded)
+  return seeded
+}
+
+function writeMockUsers(users) {
+  localStore.set(storageKeys.mockAuthUsers, users)
+}
+
+function readMockSession() {
+  const stored = localStore.get(storageKeys.mockAuthSession, null)
+  if (!stored || typeof stored !== 'object') return null
+
+  if (Number(stored.expiresAt) <= Date.now()) {
+    localStore.remove(storageKeys.mockAuthSession)
+    return null
+  }
+  return stored
+}
+
+/** 当前登录的 mock 用户；没登录时返回 null，个人中心回落到默认的 local-user */
+function activeMockUser() {
+  const session = readMockSession()
+  if (!session) return null
+
+  return readMockUsers().find((user) => user.id === session.userId) || null
+}
+
+function saveMockSession(user, rememberMe) {
+  const ttl = rememberMe ? SESSION_TTL_MS.remember : SESSION_TTL_MS.standard
+  const expiresAt = Date.now() + ttl
+  const token = `mock_sess_${randomToken()}`
+
+  localStore.set(storageKeys.mockAuthSession, { token, userId: user.id, expiresAt })
+  return { token, expiresAt: new Date(expiresAt).toISOString() }
+}
+
+function clearMockSession() {
+  localStore.remove(storageKeys.mockAuthSession)
+}
+
+function buildCaptchaSvg(code) {
+  const chars = code
+    .split('')
+    .map((char, index) => {
+      const x = 16 + index * 24
+      const rotate = (index % 2 ? 1 : -1) * (6 + index * 2)
+      return `<text x="${x}" y="27" font-family="Georgia, serif" font-size="22" fill="#3d4a3f" transform="rotate(${rotate} ${x + 6} 22)">${char}</text>`
+    })
+    .join('')
+
+  return [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40" viewBox="0 0 120 40">',
+    '<rect width="120" height="40" rx="8" fill="#f4efe3"/>',
+    '<path d="M6 30 Q30 12 54 26 T102 18" fill="none" stroke="#c3cdbd" stroke-width="1"/>',
+    '<path d="M10 12 Q40 28 86 10" fill="none" stroke="#d8cbb2" stroke-width="1"/>',
+    chars,
+    '</svg>',
+  ].join('')
+}
+
+function verifyMockCaptcha(captchaId, answer) {
+  const record = mockCaptchas.get(captchaId)
+  // 一次性：不管对错，取出来就作废（后端 findOneAndDelete，md/33 §5.3）
+  mockCaptchas.delete(captchaId)
+
+  if (!record || record.expiresAt <= Date.now()) {
+    throw new MockApiError('CAPTCHA_EXPIRED', '验证码已过期，请换一张', 400, 'captchaCode')
+  }
+  if (
+    record.code.toLowerCase() !==
+    String(answer ?? '')
+      .trim()
+      .toLowerCase()
+  ) {
+    throw new MockApiError('CAPTCHA_INVALID', '验证码不对，请重新输入', 400, 'captchaCode')
+  }
+}
+
+function assertPasswordRule(value, field = 'password') {
+  const password = String(value ?? '')
+  if (password.length < PASSWORD_MIN) {
+    throw new MockApiError('INVALID_REQUEST', `密码至少 ${PASSWORD_MIN} 位`, 400, field)
+  }
+  if (password.length > PASSWORD_MAX) {
+    throw new MockApiError('INVALID_REQUEST', `密码最多 ${PASSWORD_MAX} 位`, 400, field)
+  }
+  if (!/[A-Za-z]/.test(password)) {
+    throw new MockApiError('INVALID_REQUEST', '密码需要包含字母', 400, field)
+  }
+  if (!/\d/.test(password)) {
+    throw new MockApiError('INVALID_REQUEST', '密码需要包含数字', 400, field)
+  }
+}
+
+function recordLoginFailure(key) {
+  const now = Date.now()
+  const entry = loginFailures.get(key)
+
+  if (!entry || now - entry.firstAt > LOGIN_FAILURE_WINDOW_MS) {
+    loginFailures.set(key, { count: 1, firstAt: now })
+    return
+  }
+  entry.count += 1
+}
+
+function requiresCaptcha(key) {
+  const entry = loginFailures.get(key)
+  if (!entry) return false
+  if (Date.now() - entry.firstAt > LOGIN_FAILURE_WINDOW_MS) {
+    loginFailures.delete(key)
+    return false
+  }
+  return entry.count >= LOGIN_FAILURE_LIMIT
 }
 
 /** 周一作为一周起点，与后端 weekly.weekStart 的口径一致 */
@@ -647,27 +838,185 @@ export const mockProfile = {
   async changePassword({ oldPassword = '', newPassword = '' } = {}) {
     await wait(latency)
 
+    const previous = String(oldPassword)
     const next = String(newPassword)
-    if (!String(oldPassword)) {
+    if (!previous) {
       throw new MockApiError('INVALID_REQUEST', '请输入当前密码', 400, 'oldPassword')
     }
-    if (next.length < PASSWORD_MIN) {
-      throw new MockApiError('INVALID_REQUEST', `新密码至少 ${PASSWORD_MIN} 位`, 400, 'newPassword')
-    }
-    if (next.length > PASSWORD_MAX) {
-      throw new MockApiError('INVALID_REQUEST', `新密码最多 ${PASSWORD_MAX} 位`, 400, 'newPassword')
-    }
-    if (next === String(oldPassword)) {
+    assertPasswordRule(next, 'newPassword')
+    if (next === previous) {
       throw new MockApiError('INVALID_REQUEST', '新密码不能与当前密码相同', 400, 'newPassword')
     }
 
-    // mock 不保存密码，只校验表单规则；真实后端会更新 hash 并踢掉其它会话（md/33 §4.4）
+    // 有会话时按真实后端校验旧密码并落盘；没登录的老 local-user 没有密码可对，
+    // 只校验表单规则（历史行为，避免 mock 旧数据突然改不了密码）
+    const active = activeMockUser()
+    if (active) {
+      if (previous !== active.password) {
+        throw new MockApiError('INVALID_REQUEST', '当前密码不正确', 400, 'oldPassword')
+      }
+
+      const users = readMockUsers().map((user) =>
+        user.id === active.id ? { ...user, password: next } : user,
+      )
+      writeMockUsers(users)
+      // 真实后端会踢掉其它会话，mock 只有一个会话；这里不额外处理（md/33 §4.4）
+    }
+
     return { ok: true }
   },
 
   async stats() {
     await wait(latency)
     return buildProfileStats(readDb().readings)
+  },
+}
+
+/**
+ * 注册 / 登录 / 退出 / 验证码的本地实现（md/33 §6）
+ * 只存 `password` 明文用于本地比对——mock 没有安全边界，真实后端存 scrypt hash。
+ */
+export const mockAuth = {
+  async captcha() {
+    await wait(latency)
+
+    const code = Array.from(
+      { length: 4 },
+      () => CAPTCHA_ALPHABET[Math.floor(Math.random() * CAPTCHA_ALPHABET.length)],
+    ).join('')
+    const captchaId = `mock_${randomToken()}`
+    mockCaptchas.set(captchaId, {
+      code,
+      expiresAt: Date.now() + CAPTCHA_TTL_SECONDS * 1000,
+    })
+
+    return { captchaId, svg: buildCaptchaSvg(code), expiresIn: CAPTCHA_TTL_SECONDS }
+  },
+
+  async register(payload = {}) {
+    await wait(latency)
+
+    const username = String(payload.username ?? '').trim()
+    if (!username) {
+      throw new MockApiError('INVALID_REQUEST', '请输入用户名', 400, 'username')
+    }
+    if (username.length < AUTH_USERNAME_MIN) {
+      throw new MockApiError(
+        'INVALID_REQUEST',
+        `用户名至少 ${AUTH_USERNAME_MIN} 个字符`,
+        400,
+        'username',
+      )
+    }
+    if (username.length > AUTH_USERNAME_MAX) {
+      throw new MockApiError(
+        'INVALID_REQUEST',
+        `用户名最多 ${AUTH_USERNAME_MAX} 个字符`,
+        400,
+        'username',
+      )
+    }
+    if (!AUTH_USERNAME_PATTERN.test(username)) {
+      throw new MockApiError('INVALID_REQUEST', '用户名只能包含字母、数字和下划线', 400, 'username')
+    }
+
+    assertPasswordRule(payload.password, 'password')
+
+    const rawPhone = String(payload.phone ?? '').trim()
+    if (rawPhone && !AUTH_PHONE_PATTERN.test(rawPhone)) {
+      throw new MockApiError('INVALID_REQUEST', '手机号格式不正确', 400, 'phone')
+    }
+
+    const captchaId = String(payload.captchaId ?? '')
+    const captchaCode = String(payload.captchaCode ?? '')
+    if (!captchaId || !captchaCode) {
+      throw new MockApiError('INVALID_REQUEST', '请输入图形验证码', 400, 'captchaCode')
+    }
+    // 先消耗验证码再查重，与后端顺序一致：否则不用解题就能问出用户名是否被占用
+    verifyMockCaptcha(captchaId, captchaCode)
+
+    const users = readMockUsers()
+    const usernameLower = username.toLowerCase()
+    if (users.some((user) => user.usernameLower === usernameLower)) {
+      throw new MockApiError('AUTH_USERNAME_TAKEN', '这个用户名已经被使用了', 409, 'username')
+    }
+    if (rawPhone && users.some((user) => user.phone === rawPhone)) {
+      throw new MockApiError('AUTH_PHONE_TAKEN', '这个手机号已经注册过了', 409, 'phone')
+    }
+
+    const id = `u_${randomToken()}`
+    const user = {
+      id,
+      username,
+      usernameLower,
+      password: String(payload.password),
+      nickname: username,
+      signature: '',
+      phone: rawPhone || null,
+      dataKey: id,
+      createdAt: new Date().toISOString(),
+    }
+    writeMockUsers([...users, user])
+
+    // 注册成功即登录，与后端一致；注册不勾「记住账号」，固定 1 天
+    const session = saveMockSession(user, false)
+    return { ...session, user: toProfileUser(user) }
+  },
+
+  async login(payload = {}) {
+    await wait(latency)
+
+    const identifier = String(payload.usernameOrPhone ?? '').trim()
+    if (!identifier) {
+      throw new MockApiError('INVALID_REQUEST', '请输入用户名或手机号', 400, 'usernameOrPhone')
+    }
+    const password = String(payload.password ?? '')
+    if (!password) {
+      throw new MockApiError('INVALID_REQUEST', '请输入密码', 400, 'password')
+    }
+
+    const key = identifier.toLowerCase()
+    if (requiresCaptcha(key)) {
+      if (!payload.captchaId || !payload.captchaCode) {
+        throw new MockApiError(
+          'CAPTCHA_REQUIRED',
+          '登录失败次数较多，请输入图形验证码后重试',
+          400,
+          'captchaCode',
+        )
+      }
+      verifyMockCaptcha(payload.captchaId, payload.captchaCode)
+    }
+
+    const user = readMockUsers().find(
+      (item) => item.usernameLower === key || (item.phone && item.phone === identifier),
+    )
+    // 用户不存在与密码错一律同一个 code，不暴露账号是否存在（md/33 §10）
+    if (!user || user.password !== password) {
+      recordLoginFailure(key)
+      throw new MockApiError('AUTH_INVALID_CREDENTIALS', '用户名或密码不正确', 401, 'password')
+    }
+
+    loginFailures.delete(key)
+    const session = saveMockSession(user, payload.rememberMe === true)
+    return { ...session, user: toProfileUser(user) }
+  },
+
+  async logout() {
+    await wait(latency)
+    clearMockSession()
+    return { ok: true }
+  },
+
+  /** 只给测试与本地调试：读出验证码答案，真实后端永远不会返回 */
+  peekCaptchaCode(captchaId) {
+    return mockCaptchas.get(captchaId)?.code || ''
+  },
+
+  /** 当前登录用户；没有会话时返回 null */
+  currentUser() {
+    const active = activeMockUser()
+    return active ? toProfileUser(active) : null
   },
 }
 

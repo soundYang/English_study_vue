@@ -92,6 +92,13 @@ export const storageKeys = {
   generationTask: 'wr.generation.task.v1',
   // 个人资料与 Mock 阅读库分开存：改昵称不需要让整套种子数据重建（md/33 §6）
   mockProfile: 'wr.mock.profile.v1',
+  // 会话令牌：request.js 请求拦截器直接读这个键（键名沿用历史，勿改）
+  accessToken: 'accessToken',
+  // 缓存最近一次的用户资料，刷新页面时顶栏先显示昵称，不必等接口
+  authUser: 'wr.auth.user.v1',
+  // Mock 的账号表与会话：真实后端没有这两个键（md/33 §6）
+  mockAuthUsers: 'wr.mock.auth.users.v1',
+  mockAuthSession: 'wr.mock.auth.session.v1',
   answers: (readingId) => `wr.answers:${readingId}`,
   timer: (readingId) => `wr.timer:${readingId}`,
 }

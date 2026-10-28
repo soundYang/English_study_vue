@@ -2,21 +2,21 @@
 /**
  * 账户设置卡
  *
- * 用途：个人中心左栏，提供修改昵称与修改密码两个入口
- * 用法：<AccountSettings :nickname="user.nickname" @edit-nickname="editOpen = true" @change-password="passwordOpen = true" />
+ * 用途：个人中心左栏，提供修改昵称、修改密码与退出登录三个入口
+ * 用法：<AccountSettings :nickname="user.nickname" @edit-nickname="editOpen = true" @change-password="passwordOpen = true" @logout="handleLogout" />
  *
  * props:
  *   nickname — 当前昵称，显示在「修改昵称」说明里
  * emits:
- *   edit-nickname / change-password
+ *   edit-nickname / change-password / logout
  */
-import { ChevronRight, LockKeyhole, UserRound } from 'lucide-vue-next'
+import { ChevronRight, LockKeyhole, LogOut, UserRound } from 'lucide-vue-next'
 
 defineProps({
   nickname: { type: String, default: '' },
 })
 
-const emit = defineEmits(['edit-nickname', 'change-password'])
+const emit = defineEmits(['edit-nickname', 'change-password', 'logout'])
 </script>
 
 <template>
@@ -50,6 +50,19 @@ const emit = defineEmits(['edit-nickname', 'change-password'])
           <span class="row-copy">
             <span class="row-title">修改密码</span>
             <span class="row-desc">定期更换密码，保障账户安全</span>
+          </span>
+          <ChevronRight class="row-arrow" :size="16" aria-hidden="true" />
+        </button>
+      </li>
+
+      <li>
+        <button class="setting-row is-logout" type="button" @click="emit('logout')">
+          <span class="row-icon" aria-hidden="true">
+            <LogOut :size="17" :stroke-width="1.8" />
+          </span>
+          <span class="row-copy">
+            <span class="row-title">退出登录</span>
+            <span class="row-desc">退出当前账号，回到登录页</span>
           </span>
           <ChevronRight class="row-arrow" :size="16" aria-hidden="true" />
         </button>
@@ -153,6 +166,15 @@ const emit = defineEmits(['edit-nickname', 'change-password'])
 
 .setting-row:hover .row-arrow {
   transform: translateX(2px);
+}
+
+.setting-row.is-logout:hover .row-icon {
+  background: var(--color-danger);
+  color: var(--color-danger-ink);
+}
+
+.setting-row.is-logout:hover .row-title {
+  color: var(--color-danger);
 }
 
 @media (max-width: 767px) {

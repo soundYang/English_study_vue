@@ -7,7 +7,11 @@
 import axios from 'axios'
 import { config } from '../config'
 import { normalizeApiError } from '../errors'
-import { localStore } from './storage'
+import { localStore, storageKeys } from './storage'
+
+// 运行中收到 401 AUTH_REQUIRED 时广播，由 App.vue 负责清会话并导航到登录页；
+// 这里不直接操作路由，避免请求层依赖 router（md/34 §4 第 3 条）
+export const AUTH_EXPIRED_EVENT = 'wr:auth-expired'
 
 const http = axios.create({
   baseURL: config.apiBaseUrl,
@@ -16,7 +20,7 @@ const http = axios.create({
 })
 
 http.interceptors.request.use((requestConfig) => {
-  const token = localStore.get('accessToken', '')
+  const token = localStore.get(storageKeys.accessToken, '')
   if (token) requestConfig.headers.Authorization = `Bearer ${token}`
 
   // GET 附加时间戳，避免浏览器或代理缓存旧数据
@@ -45,7 +49,14 @@ function retryAfterOf(error) {
 http.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error?.response?.status === 401) localStore.remove('accessToken')
+    const status = error?.response?.status
+    const code = error?.response?.data?.error?.code
+    if (status === 401) localStore.remove(storageKeys.accessToken)
+
+    // 只有「没登录 / 令牌失效」才广播；登录失败的 401 也有 code，但不是 AUTH_REQUIRED
+    if (status === 401 && code === 'AUTH_REQUIRED' && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT))
+    }
 
     const normalized = normalizeApiError(error)
     // 429 冷却要等多少秒只有响应头知道；挂到错误对象上，三个生成入口共用（md/22 §8.5 ③）

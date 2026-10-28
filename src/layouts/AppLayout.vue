@@ -25,6 +25,7 @@ import {
 } from 'lucide-vue-next'
 import GenerateOverlay from '../component/GenerateOverlay.vue'
 import ToastHost from '../component/ToastHost.vue'
+import { useAuthStore } from '../stores/model/auth'
 
 const navItems = [
   { key: 'home', label: '首页', to: '/', icon: Home },
@@ -36,8 +37,12 @@ const navItems = [
 ]
 
 const route = useRoute()
+const auth = useAuthStore()
 const mainRef = ref(null)
 const activeModule = computed(() => route.meta.module || '')
+// 未登录时沿用本地演示身份，界面不会因为少一个字段而空一块
+const topbarName = computed(() => auth.displayName || 'Sound')
+const topbarInitial = computed(() => (auth.displayName ? auth.initial : 'S'))
 const hideMobileNav = computed(() => route.meta.hideMobileNav === true)
 const isWide = computed(() => route.meta.wide === true)
 const isFlush = computed(() => route.meta.flush === true)
@@ -90,8 +95,8 @@ watch(
             <span>Word Reading</span>
           </RouterLink>
           <RouterLink class="topbar-user" to="/profile" aria-label="打开个人中心">
-            <span class="user-avatar" aria-hidden="true">S</span>
-            <span class="user-name">Sound</span>
+            <span class="user-avatar" aria-hidden="true">{{ topbarInitial }}</span>
+            <span class="user-name">{{ topbarName }}</span>
             <ChevronDown class="user-chevron" :size="14" :stroke-width="1.8" aria-hidden="true" />
           </RouterLink>
         </div>

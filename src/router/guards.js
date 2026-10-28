@@ -4,7 +4,9 @@
  * 答题页：已提交替换到结果页；结果页：未提交替换回答题页。
  * 加载失败不阻断导航，由页面展示错误卡与重试，避免白屏。
  */
+import { config } from '../config'
 import { useReadingStore } from '../stores/model/reading'
+import { localStore, storageKeys } from '../unit/storage'
 
 const BASE_TITLE = 'Word Reading'
 
@@ -50,8 +52,27 @@ async function guardResult(to) {
   return true
 }
 
+/**
+ * 未登录拦截。
+ * 只在 VITE_AUTH_ENFORCED=true 时生效——后端默认 false（回落 local-user），
+ * 前端若强行拦路由，会让现在这套「不登录也能用」的开发方式直接坏掉（md/33 §7.3）。
+ */
+function guardAuth(to) {
+  // 测试会直接构造只带 params 的 to；meta 缺失按普通页面处理即可
+  if (to?.meta?.bare || !config.authEnforced) return true
+  if (localStore.get(storageKeys.accessToken, '')) return true
+
+  return {
+    name: 'login',
+    query: to.fullPath !== '/' ? { redirect: to.fullPath } : {},
+  }
+}
+
 export function registerGuards(router) {
   router.beforeEach((to) => {
+    const authRedirect = guardAuth(to)
+    if (authRedirect !== true) return authRedirect
+
     if (to.name === 'reading') return guardReading(to)
     if (to.name === 'reading-result') return guardResult(to)
     return true
