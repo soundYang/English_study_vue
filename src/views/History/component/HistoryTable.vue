@@ -52,7 +52,7 @@ function rowDelay(index) {
       </colgroup>
       <thead>
         <tr>
-          <th scope="col">日期</th>
+          <th scope="col">时间</th>
           <th scope="col">文章标题</th>
           <th scope="col">难度</th>
           <th scope="col">题目数量</th>
@@ -81,7 +81,7 @@ function rowDelay(index) {
           @click="open(item)"
         >
           <td class="cell-date">
-            {{ formatDate(item.createdAt) }}
+            {{ formatDate(item.submittedAt || item.createdAt) }}
             <!-- token 挂在日期下方，不额外占一列；老数据没有该字段就不显示 -->
             <span v-if="item.tokenUsage?.totalTokens" class="cell-token">
               {{ item.tokenUsage.totalTokens }} tok

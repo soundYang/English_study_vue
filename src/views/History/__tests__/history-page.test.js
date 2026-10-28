@@ -104,6 +104,11 @@ describe('History page', () => {
     expect(rows[3].get('.cell-token').text()).toBe('904 tok')
     expect(rows[0].get('.cell-token').text()).toBe('1550 tok')
 
+    // 已提交看提交时间（r4 是隔天提交），未提交只能看生成时间
+    expect(wrapper.findAll('thead th')[0].text()).toBe('时间')
+    expect(rows[1].get('.cell-date').text()).toContain('2026-10-20')
+    expect(rows[0].get('.cell-date').text()).toContain('2026-10-26')
+
     expect(wrapper.findAll('.stat-value').map((node) => node.text())).toEqual([
       '4次',
       '82%',

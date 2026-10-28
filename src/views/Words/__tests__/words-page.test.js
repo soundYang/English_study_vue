@@ -89,7 +89,8 @@ describe('Words page', () => {
     const store = useWordsStore()
     const toasts = useToastStore()
 
-    const firstWord = wrapper.findAll('tbody tr.word-row')[0].find('.cell-word').text()
+    // .cell-word 里现在还有来源/词频徽标，只取词形本身
+    const firstWord = wrapper.findAll('tbody tr.word-row')[0].find('.word-text').text()
     const deleteButton = wrapper
       .findAll('button')
       .find((button) => button.attributes('aria-label') === `删除 ${firstWord}`)

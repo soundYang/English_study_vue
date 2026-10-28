@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import WordEditModal from '../component/WordEditModal.vue'
 import WordFormPanel from '../component/WordFormPanel.vue'
+import WordTable from '../component/WordTable.vue'
 import WordToolbar from '../component/WordToolbar.vue'
 
 describe('WordToolbar', () => {
@@ -50,6 +51,75 @@ describe('WordToolbar', () => {
     expect(wrapper.emitted('search')).toEqual([['']])
 
     wrapper.unmount()
+  })
+})
+
+describe('WordTable', () => {
+  const TOMATO = {
+    id: 'w1',
+    word: 'tomato',
+    status: 'learning',
+    createdAt: '2026-09-01T08:00:00.000Z',
+    source: 'dictionary',
+    cocaRank: 4321,
+    dictionaryId: 'dict_tomato',
+    phonetic: { uk: '/təˈmɑː.təʊ/', us: '/təˈmeɪ.toʊ/' },
+    senses: [{ pos: 'n.', meaning: '西红柿' }],
+  }
+
+  // 桌面表格与移动卡片同时在 DOM 里，断言要限定在 .word-table 内
+  it('should render both phonetics when they differ', () => {
+    const wrapper = mount(WordTable, { props: { items: [TOMATO] } })
+    const phonetic = wrapper.get('.cell-phonetic')
+
+    expect(phonetic.text()).toContain('英 /təˈmɑː.təʊ/')
+    expect(phonetic.text()).toContain('美 /təˈmeɪ.toʊ/')
+    expect(phonetic.findAll('.phonetic-part')).toHaveLength(2)
+    // 卡片用同一个函数，所以两处都是两份
+    expect(wrapper.get('.card-phonetic').findAll('.phonetic-part')).toHaveLength(2)
+  })
+
+  it('should render one phonetic when both accents are the same', () => {
+    const wrapper = mount(WordTable, {
+      props: { items: [{ ...TOMATO, phonetic: { uk: '/ˈæp.əl/', us: '/ˈæp.əl/' } }] },
+    })
+
+    expect(wrapper.get('.cell-phonetic').findAll('.phonetic-part')).toHaveLength(1)
+    expect(wrapper.get('.cell-phonetic').text()).toBe('英 /ˈæp.əl/')
+  })
+
+  it('should mark the source and the frequency tier of every word', () => {
+    const wrapper = mount(WordTable, { props: { items: [TOMATO] } })
+
+    expect(wrapper.get('.word-table .word-source').text()).toBe('词库')
+    // 4321 落在 3001–8000，是中频
+    expect(wrapper.get('.word-table .word-freq').text()).toBe('中频')
+    expect(wrapper.get('.cell-created').text()).toBe('2026-09-01')
+  })
+
+  it('should mark manual words and hide the frequency badge when rank is missing', () => {
+    const wrapper = mount(WordTable, {
+      props: {
+        items: [
+          {
+            ...TOMATO,
+            word: 'story',
+            source: 'manual',
+            cocaRank: null,
+            dictionaryId: null,
+            phonetic: null,
+            senses: [{ pos: '', meaning: '故事' }],
+          },
+        ],
+      },
+    })
+
+    expect(wrapper.get('.word-table .word-source').text()).toBe('手填')
+    // null 不是「第 0 名」，不能兜底成高频
+    expect(wrapper.find('.word-freq').exists()).toBe(false)
+    expect(wrapper.get('.cell-phonetic').text()).toBe('—')
+    // 手填词也没有音标，卡片上同样是占位符
+    expect(wrapper.get('.card-phonetic').text()).toBe('—')
   })
 })
 

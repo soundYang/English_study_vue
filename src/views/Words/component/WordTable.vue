@@ -20,10 +20,24 @@ import { Pencil, Trash2 } from 'lucide-vue-next'
 import BaseButton from '../../../component/BaseButton.vue'
 import SkeletonBlock from '../../../component/SkeletonBlock.vue'
 import StatusPill from '../../../component/StatusPill.vue'
+import { formatDate } from '../../../unit/format'
+import { frequencyTierOf } from '../../../unit/word-tiers'
 
-/** 列表只展示英式音标；缺失时退回美式，都没有则交给模板显示占位符 */
-function phoneticOf(item) {
-  return item.phonetic?.uk || item.phonetic?.us || ''
+/** 英式缺失时用美式顶上；两式相同只显示一次，都没有则交给模板显示占位符 */
+function phoneticParts(item) {
+  const uk = item.phonetic?.uk || ''
+  const us = item.phonetic?.us || ''
+
+  if (!uk && !us) return []
+
+  const parts = [{ label: '英', value: uk || us }]
+  if (uk && us && us !== uk) parts.push({ label: '美', value: us })
+  return parts
+}
+
+/** 词频档位；手填词没有 cocaRank，返回 null 时不渲染徽标 */
+function tierOf(item) {
+  return frequencyTierOf(item.cocaRank)
 }
 
 function firstSense(item) {
@@ -79,6 +93,7 @@ function rowDelay(index) {
           <col class="col-phonetic" />
           <col class="col-meaning" />
           <col class="col-status" />
+          <col class="col-created" />
           <col class="col-actions" />
         </colgroup>
         <thead>
@@ -87,6 +102,7 @@ function rowDelay(index) {
             <th scope="col">音标</th>
             <th scope="col">词性 · 释义</th>
             <th scope="col">学习状态</th>
+            <th scope="col">收录</th>
             <th scope="col" class="actions-head">操作</th>
           </tr>
         </thead>
@@ -97,6 +113,7 @@ function rowDelay(index) {
             <td><SkeletonBlock width="76%" height="12px" /></td>
             <td><SkeletonBlock width="74%" height="14px" /></td>
             <td><SkeletonBlock width="64px" height="22px" radius="var(--radius-pill)" /></td>
+            <td><SkeletonBlock width="72px" height="12px" /></td>
             <td><SkeletonBlock width="64px" height="22px" /></td>
           </tr>
         </tbody>
@@ -109,9 +126,26 @@ function rowDelay(index) {
             :class="{ 'is-highlight': item.id === highlightId }"
             :style="rowDelay(index)"
           >
-            <td class="cell-word">{{ item.word }}</td>
-            <td class="cell-phonetic" :class="{ 'is-empty': !phoneticOf(item) }" lang="en">
-              {{ phoneticOf(item) || '—' }}
+            <td class="cell-word">
+              <span class="word-text">{{ item.word }}</span>
+              <span class="word-source" :class="`is-${item.source}`">
+                {{ item.source === 'dictionary' ? '词库' : '手填' }}
+              </span>
+              <span v-if="tierOf(item)" class="word-freq" :class="`is-${tierOf(item).key}`">
+                {{ tierOf(item).label }}
+              </span>
+            </td>
+            <td
+              class="cell-phonetic"
+              :class="{ 'is-empty': !phoneticParts(item).length }"
+              lang="en"
+            >
+              <template v-if="phoneticParts(item).length">
+                <span v-for="part in phoneticParts(item)" :key="part.label" class="phonetic-part">
+                  {{ part.label }} {{ part.value }}
+                </span>
+              </template>
+              <template v-else>—</template>
             </td>
             <td class="cell-meaning" :class="{ 'is-empty': !firstSense(item) }">
               <template v-if="firstSense(item)">
@@ -128,6 +162,7 @@ function rowDelay(index) {
             <td>
               <StatusPill kind="status" :value="item.status" />
             </td>
+            <td class="cell-created">{{ formatDate(item.createdAt) }}</td>
             <td>
               <div class="row-actions">
                 <button
@@ -174,9 +209,24 @@ function rowDelay(index) {
         <div class="card-text">
           <span class="card-line">
             <span class="card-word">{{ item.word }}</span>
-            <span class="card-phonetic" :class="{ 'is-empty': !phoneticOf(item) }" lang="en">
-              {{ phoneticOf(item) || '—' }}
+            <span class="word-source" :class="`is-${item.source}`">
+              {{ item.source === 'dictionary' ? '词库' : '手填' }}
             </span>
+            <span v-if="tierOf(item)" class="word-freq" :class="`is-${tierOf(item).key}`">
+              {{ tierOf(item).label }}
+            </span>
+          </span>
+          <span
+            class="card-phonetic"
+            :class="{ 'is-empty': !phoneticParts(item).length }"
+            lang="en"
+          >
+            <template v-if="phoneticParts(item).length">
+              <span v-for="part in phoneticParts(item)" :key="part.label" class="phonetic-part">
+                {{ part.label }} {{ part.value }}
+              </span>
+            </template>
+            <template v-else>—</template>
           </span>
           <span class="card-meaning" :class="{ 'is-empty': !firstSense(item) }">
             <template v-if="firstSense(item)">
@@ -188,6 +238,7 @@ function rowDelay(index) {
             </template>
             <template v-else>—</template>
           </span>
+          <span class="card-created">收录 {{ formatDate(item.createdAt) }}</span>
         </div>
 
         <StatusPill kind="status" :value="item.status" />
@@ -230,19 +281,23 @@ function rowDelay(index) {
 }
 
 .col-word {
-  width: 20%;
+  width: 18%;
 }
 
 .col-phonetic {
-  width: 20%;
+  width: 16%;
 }
 
 .col-meaning {
-  width: 32%;
+  width: 30%;
 }
 
 .col-status {
-  width: 16%;
+  width: 13%;
+}
+
+.col-created {
+  width: 10%;
 }
 
 .col-actions {
@@ -290,15 +345,73 @@ function rowDelay(index) {
   background: var(--color-success-bg);
 }
 
+/* 词形 + 来源 + 词频挤在一列，允许换行，长词不会被徽标顶出格子 */
 .cell-word {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: baseline;
+}
+
+.word-text {
   font-size: 15px;
   font-weight: 500;
+}
+
+/* 来源决定这条词能不能编辑释义，值得一个常驻徽标；词频只是参考信息，做成弱标签 */
+.word-source {
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-caption);
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.word-source.is-dictionary {
+  background: var(--color-bg-deep);
+  color: var(--color-accent);
+}
+
+.word-source.is-manual {
+  background: var(--color-surface-2);
+  color: var(--color-muted);
+}
+
+.word-freq {
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+  white-space: nowrap;
+}
+
+.word-freq.is-high {
+  color: var(--color-success);
+}
+
+.word-freq.is-mid {
+  color: var(--color-muted);
+}
+
+.word-freq.is-low {
+  color: var(--color-warning);
 }
 
 .cell-phonetic {
   color: var(--color-muted);
   font-size: var(--text-caption);
   line-height: var(--leading-caption);
+}
+
+/* 英式在上、美式在下；两式只有一份时自然只占一行 */
+.phonetic-part {
+  display: block;
+}
+
+.cell-created {
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+  white-space: nowrap;
 }
 
 .cell-phonetic.is-empty,
@@ -465,8 +578,9 @@ function rowDelay(index) {
 
   .card-line {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: var(--space-2);
+    gap: 2px var(--space-2);
     min-width: 0;
   }
 
@@ -478,10 +592,23 @@ function rowDelay(index) {
   }
 
   .card-phonetic {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px var(--space-2);
     color: var(--color-muted);
     font-size: var(--text-caption);
     line-height: var(--leading-caption);
-    white-space: nowrap;
+  }
+
+  /* 卡片上音标并排更省高度，换行由 flex-wrap 兜住 */
+  .card-phonetic .phonetic-part {
+    display: inline;
+  }
+
+  .card-created {
+    color: var(--color-muted);
+    font-size: var(--text-caption);
+    line-height: var(--leading-caption);
   }
 
   .card-meaning {

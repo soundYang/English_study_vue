@@ -10,6 +10,26 @@ beforeEach(() => {
   resetMockDb()
 })
 
+describe('mockWords cocaRank', () => {
+  it('should give dictionary words their rank and manual words null', async () => {
+    const { items } = await mockWords.list({ page: 1, pageSize: 50 })
+    const apple = items.find((item) => item.word === 'apple')
+    const story = items.find((item) => item.word === 'story')
+
+    // 数字与后端 data/word-ranks.json 一致
+    expect(apple.cocaRank).toBe(2718)
+    // 手填词是 null 而不是 0：0 会被当成「第 0 名」
+    expect(story.source).toBe('manual')
+    expect(story.cocaRank).toBeNull()
+  })
+
+  it('should reject editing the rank through the update endpoint', async () => {
+    await expect(mockWords.update('w1', { cocaRank: 1 })).rejects.toMatchObject({
+      error: { code: 'READONLY_FIELD', field: 'cocaRank' },
+    })
+  })
+})
+
 describe('mockWords.list', () => {
   it('should paginate words and return counts from the whole library', async () => {
     const result = await mockWords.list({ page: 1, pageSize: 10 })
@@ -95,6 +115,8 @@ describe('mockWords mutations', () => {
     expect(updated.source).toBe('manual')
     expect(updated.dictionaryId).toBeNull()
     expect(updated.phonetic).toBeNull()
+    // 词频跟着词条走，降级后没有名次可查
+    expect(updated.cocaRank).toBeNull()
     expect(updated.senses).toEqual([])
   })
 

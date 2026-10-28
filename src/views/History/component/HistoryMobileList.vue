@@ -60,7 +60,7 @@ function rowDelay(index) {
         </span>
 
         <span class="card-meta">
-          <span>{{ formatDate(item.createdAt) }}</span>
+          <span>{{ formatDate(item.submittedAt || item.createdAt) }}</span>
           <span aria-hidden="true">·</span>
           <span>{{ item.questionCount }} 题</span>
           <template v-if="item.tokenUsage?.totalTokens">

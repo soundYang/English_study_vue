@@ -9,7 +9,38 @@
  * 命中词库的条目带 phonetic 与多条 senses；手填条目 phonetic 为 null、senses 只有一条且无词性。
  * 末尾 4 条刻意保留为 manual，用于验证列表与表单的降级展示。
  */
-const WORDS = [
+/*
+ * COCA 词频名次，取自后端 data/word-ranks.json（同一份数据，数字必须对得上）。
+ * 只列种子词库里出现过的词；手填条目不在词库里，名次为 null。
+ */
+const COCA_RANKS = {
+  apple: 2718,
+  happy: 748,
+  angry: 1717,
+  tired: 1973,
+  sunny: 4921,
+  park: 1233,
+  book: 242,
+  read: 338,
+  study: 241,
+  garden: 1047,
+  friend: 266,
+  morning: 358,
+  quiet: 1442,
+  gentle: 3421,
+  journey: 2431,
+  memory: 894,
+  courage: 3355,
+  curious: 3139,
+  patient: 573,
+  simple: 764,
+  story: 234,
+  language: 723,
+  practice: 565,
+  wonder: 791,
+}
+
+const RAW_WORDS = [
   {
     id: 'w1',
     word: 'apple',
@@ -307,6 +338,12 @@ const WORDS = [
   },
 ]
 
+// 名次按词形一次性补上：手填条目即使词在表里也不给（它们没有词库快照）
+const WORDS = RAW_WORDS.map((item) => ({
+  ...item,
+  cocaRank: item.source === 'dictionary' ? (COCA_RANKS[item.word] ?? null) : null,
+}))
+
 const READINGS = [
   {
     id: 'r1',
@@ -541,7 +578,8 @@ const READINGS = [
     questionCount: 8,
     status: 'submitted',
     createdAt: '2026-10-19T10:40:00.000Z',
-    submittedAt: '2026-10-19T11:02:00.000Z',
+    // 隔天提交：让历史页的「提交时间优先」在本地就能看出来（其余记录当天提交）
+    submittedAt: '2026-10-20T09:15:00.000Z',
     newWords: [
       {
         word: 'fisherman',
@@ -1000,8 +1038,8 @@ function clone(value) {
 export function createSeedDatabase() {
   return {
     // 与 adapter.js 的 DB_VERSION 保持一致；v2 起单词带 source / phonetic / senses，
-    // v3 起练习带 newWords / tokenUsage
-    version: 3,
+    // v3 起练习带 newWords / tokenUsage，v4 起单词带 cocaRank
+    version: 4,
     words: clone(WORDS),
     readings: clone(READINGS),
     wordSeq: 25,

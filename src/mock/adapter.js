@@ -19,8 +19,9 @@ import {
   VOCABULARY_THRESHOLD,
 } from '../unit/validators'
 
-// v3：练习新增 newWords / tokenUsage（视图要用），旧库判为无效并重建，保证本地能看到新 UI
-const DB_VERSION = 3
+// v4：单词新增 cocaRank（词频徽标要用）；v3 起练习带 newWords / tokenUsage。
+// 旧库判为无效并重建，保证本地能看到新 UI
+const DB_VERSION = 4
 const DEFAULT_LATENCY = 300
 const MAX_PAGE_SIZE = 100
 const DEFAULT_PAGE_SIZE = 10
@@ -173,6 +174,8 @@ function toWordDto(item) {
     status: item.status,
     createdAt: item.createdAt,
     source: item.source,
+    // 手填词没有词库名次：null 而不是 0（0 会被当成「第 0 名」= 最高频）
+    cocaRank: item.cocaRank ?? null,
     dictionaryId: item.dictionaryId ?? null,
     phonetic: item.phonetic ? normalizePhonetic(item.phonetic) : null,
     senses: normalizeSenses(item.senses),
@@ -410,6 +413,7 @@ export const mockWords = {
       createdAt: new Date().toISOString(),
       source,
       // 词库快照只对命中条目生效；手填条目一律为 null
+      cocaRank: source === 'dictionary' ? (payload.cocaRank ?? null) : null,
       dictionaryId: source === 'dictionary' ? (payload.dictionaryId ?? null) : null,
       phonetic: source === 'dictionary' ? normalizePhonetic(payload.phonetic) : null,
       senses: source === 'dictionary' ? senses : meaning ? [{ pos: '', meaning }] : [],
@@ -436,8 +440,8 @@ export const mockWords = {
     const isDictionary = current.source === 'dictionary'
 
     // 词条信息由词库维护：来源、词条 id、音标、义项都不允许经编辑接口改动
-    const readonlyField = ['source', 'dictionaryId', 'phonetic', 'senses'].find((field) =>
-      Object.prototype.hasOwnProperty.call(patch, field),
+    const readonlyField = ['source', 'dictionaryId', 'phonetic', 'senses', 'cocaRank'].find(
+      (field) => Object.prototype.hasOwnProperty.call(patch, field),
     )
     if (readonlyField) {
       throw new MockApiError(
@@ -479,6 +483,8 @@ export const mockWords = {
       updated.source = 'manual'
       updated.dictionaryId = null
       updated.phonetic = null
+      // 词频跟着词条走：不再对应词库后就没有名次可查
+      updated.cocaRank = null
       // 与手填空释义的形态保持一致，列表据此显示占位符
       updated.senses = []
     } else if (!isDictionary) {
