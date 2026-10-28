@@ -63,6 +63,23 @@ describe('reading store generation', () => {
     expect(store.error.code).toBe('INVALID_REQUEST')
   })
 
+  // 缺少 details 时覆盖层只能说「词不够」，说不出差多少、该缩篇幅还是加词
+  it('should keep the structured details of a vocabulary gate', async () => {
+    const store = useReadingStore()
+
+    await store.generate({ level: 'easy', targetWords: 200, questionCount: 3 }, { minDuration: 0 })
+
+    expect(store.phase).toBe('error')
+    expect(store.error.code).toBe('VOCABULARY_TOO_SMALL')
+    expect(store.error.field).toBe('targetWords')
+    expect(store.error.details).toMatchObject({
+      kind: 'target_words',
+      required: 30,
+      available: 20,
+      targetWords: 200,
+    })
+  })
+
   it('should abort an in-flight generation and return to idle', async () => {
     setMockLatency(50)
     const store = useReadingStore()

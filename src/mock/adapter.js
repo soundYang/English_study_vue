@@ -34,11 +34,12 @@ export function getMockLatency() {
 
 /** Mock 接口错误：同时具备 Error 语义与真实接口的错误负载 */
 export class MockApiError extends Error {
-  constructor(code, message, status = 400, field = '') {
+  constructor(code, message, status = 400, field = '', details = null) {
     super(message)
     this.name = 'MockApiError'
     this.status = status
-    this.error = { code, message, field }
+    // details 与后端一致：只在业务显式给了才出现，没给的错误响应体保持不变
+    this.error = { code, message, field, ...(details && { details }) }
   }
 }
 
@@ -499,6 +500,27 @@ export const mockReadings = {
         'INSUFFICIENT_VOCABULARY',
         `当前可用于生成的学习中 / 已掌握单词只有 ${available.length} 个，至少需要 ${VOCABULARY_THRESHOLD} 个。`,
         422,
+      )
+    }
+
+    // A 门：这次篇幅凑不齐目标词。与后端 vocabularyTooSmall 同口径，
+    // 数字用近似值（目标词数 ≈ 篇幅的 15%），前端只消费 details 的字段形状
+    const required = Math.max(1, Math.round(targetWords * 0.15))
+
+    if (available.length < required) {
+      throw new MockApiError(
+        'VOCABULARY_TOO_SMALL',
+        `按当前词库，${targetWords} 词的文章还差 ${required - available.length} 个可用词。`,
+        422,
+        'targetWords',
+        {
+          kind: 'target_words',
+          required,
+          available: available.length,
+          targetWords,
+          scope: ['all'],
+          level,
+        },
       )
     }
 

@@ -55,7 +55,12 @@ export function normalizeApiError(error) {
   const message = payload?.message || ''
 
   if (payload?.code) {
-    return new BusinessError(message || '请求失败', payload.code, { field: payload.field || '' })
+    // details 是后端 422 的结构化上下文（required / available / kind…），
+    // 丢了它覆盖层就只能说「词不够」，说不出差多少、该缩篇幅还是加词
+    return new BusinessError(message || '请求失败', payload.code, {
+      field: payload.field || '',
+      details: payload.details || {},
+    })
   }
 
   if (!error?.response && !error?.error) {

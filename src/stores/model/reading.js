@@ -312,6 +312,9 @@ export const useReadingStore = defineStore('reading', () => {
       error.value = {
         code: normalized?.code || 'GENERATION_FAILED',
         message: normalized?.message || '这次生成没有成功，请稍后重试。',
+        // 覆盖层靠这两项判断「差多少、该缩篇幅还是加词」
+        field: normalized?.field || '',
+        details: normalized?.details || {},
       }
       phase.value = 'error'
       return null

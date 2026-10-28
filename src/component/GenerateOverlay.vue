@@ -19,6 +19,7 @@ import { AlertCircle, BookOpen } from 'lucide-vue-next'
 import BaseButton from './BaseButton.vue'
 import { useGenerateReading } from '../composables/useGenerateReading'
 import { useSettingsStore } from '../stores/model/settings'
+import { describeVocabShortage } from '../unit/error-text'
 import { TARGET_WORDS_MIN } from '../unit/validators'
 
 const TIPS = ['文章只会使用你学过的词', '正在检查词汇范围', '马上就好']
@@ -53,13 +54,20 @@ const basisText = computed(() =>
     ? '基于你的词汇库'
     : `基于你的 ${summary.value.availableWords} 个单词`,
 )
+// 两个入口：老的 20 词兜底没有 details，其余业务错误一律靠 details.kind 识别
+const hasVocabDetails = computed(() => Boolean(error.value?.details?.kind))
+
+const vocabShortage = computed(() =>
+  isInsufficient.value || hasVocabDetails.value
+    ? describeVocabShortage({ code: errorCode.value, details: error.value?.details })
+    : null,
+)
+
 const errorTitle = computed(() =>
-  isInsufficient.value ? '词汇还不够生成这篇文章' : '这次生成没有成功',
+  vocabShortage.value ? vocabShortage.value.title : '这次生成没有成功',
 )
 const errorHint = computed(() =>
-  isInsufficient.value
-    ? '可以先添加单词，或把文章改短、难度调低后再试。'
-    : '可以稍后再试，或返回设置调整参数。',
+  vocabShortage.value ? vocabShortage.value.hint : '可以稍后再试，或返回设置调整参数。',
 )
 
 function startTips() {
@@ -218,17 +226,28 @@ onBeforeUnmount(() => {
             </div>
 
             <h2 id="generate-title" class="generate-title">{{ errorTitle }}</h2>
-            <p class="generate-subtitle">{{ error?.message }}</p>
+            <!-- 命中词汇类错误时后端 message 与 hint 说的是同一件事，只留 hint -->
+            <p v-if="!vocabShortage" class="generate-subtitle">{{ error?.message }}</p>
             <p class="generate-hint">{{ errorHint }}</p>
 
-            <div v-if="isInsufficient" class="generate-actions">
-              <BaseButton v-if="canShorten" variant="secondary" @click="shortenArticle">
+            <div v-if="vocabShortage" class="generate-actions">
+              <BaseButton
+                v-if="vocabShortage.actions.includes('shorten') && canShorten"
+                variant="secondary"
+                @click="shortenArticle"
+              >
                 缩短文章
               </BaseButton>
-              <BaseButton v-if="canLower" variant="secondary" @click="lowerDifficulty">
+              <BaseButton
+                v-if="vocabShortage.actions.includes('lower') && canLower"
+                variant="secondary"
+                @click="lowerDifficulty"
+              >
                 降低难度
               </BaseButton>
-              <BaseButton @click="goAddWords">去添加单词</BaseButton>
+              <BaseButton v-if="vocabShortage.actions.includes('add')" @click="goAddWords">
+                去添加单词
+              </BaseButton>
             </div>
             <div v-else class="generate-actions">
               <BaseButton variant="secondary" @click="backToSettings">返回修改</BaseButton>
