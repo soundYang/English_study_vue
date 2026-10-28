@@ -167,7 +167,8 @@ describe('LengthPicker', () => {
   })
 
   it('should disable the increase button at the upper bound', () => {
-    const wrapper = mount(LengthPicker, { props: { modelValue: 600 } })
+    // 契约上限已是 1000（最终模式），600 只是 hard 的常规上限
+    const wrapper = mount(LengthPicker, { props: { modelValue: 1000, max: 1000 } })
 
     expect(wrapper.get('[aria-label="增加 10 词"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[aria-label="减少 10 词"]').attributes('disabled')).toBeUndefined()
@@ -177,6 +178,58 @@ describe('LengthPicker', () => {
     const wrapper = mount(LengthPicker, { props: { modelValue: 300, max: 300 } })
 
     expect(wrapper.get('[aria-label="增加 10 词"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('should draw the locked final-mode segment above the level cap', () => {
+    const wrapper = mount(LengthPicker, {
+      props: {
+        modelValue: 600,
+        max: 600,
+        finalMode: {
+          supported: true,
+          unlocked: false,
+          unlockAt: 3000,
+          shortage: 2980,
+          maxTargetWords: 1000,
+        },
+      },
+    })
+    const bounds = wrapper.findAll('.slider-bound')
+
+    // 滑杆画到 1000，但可拖的上限仍是 600
+    expect(wrapper.get('.slider-input').attributes('max')).toBe('600')
+    expect(bounds[bounds.length - 1].text()).toBe('1000')
+    expect(wrapper.get('.slider-locked').text()).toBe('最终模式')
+    expect(wrapper.get('.final-note').text()).toContain('还差 2980 个')
+  })
+
+  it('should merge the unlocked final-mode range into the slider', () => {
+    const wrapper = mount(LengthPicker, {
+      props: {
+        modelValue: 800,
+        max: 1000,
+        finalMode: {
+          supported: true,
+          unlocked: true,
+          unlockAt: 3000,
+          shortage: 0,
+          maxTargetWords: 1000,
+        },
+      },
+    })
+
+    expect(wrapper.find('.slider-locked').exists()).toBe(false)
+    expect(wrapper.get('.slider-input').attributes('max')).toBe('1000')
+    expect(wrapper.get('.final-note').text()).toBe('已解锁最终模式：可以写 601–1000 词。')
+  })
+
+  it('should hide final mode for levels that do not support it', () => {
+    const wrapper = mount(LengthPicker, {
+      props: { modelValue: 150, max: 300, finalMode: { supported: false, unlocked: false } },
+    })
+
+    expect(wrapper.find('.slider-locked').exists()).toBe(false)
+    expect(wrapper.find('.final-note').exists()).toBe(false)
   })
 })
 

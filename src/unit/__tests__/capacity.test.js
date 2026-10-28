@@ -4,7 +4,13 @@
  * 以及设置页 / 难度卡各自的文案，不锁具体数字的来源。
  */
 import { describe, expect, it } from 'vitest'
-import { blockReasonOf, capacityNoteOf, difficultyNoteOf, knownShortageOf } from '../capacity'
+import {
+  blockReasonOf,
+  capacityNoteOf,
+  difficultyNoteOf,
+  finalModeNoteOf,
+  knownShortageOf,
+} from '../capacity'
 
 // 与后端 levels[level] 同形：已知词 638、写 100 词的下限 633、上限 300
 const GATE = {
@@ -122,5 +128,30 @@ describe('difficultyNoteOf', () => {
     // 三张卡同时写「还差 10 个可用词」只会制造噪音，A 门由设置页整句说明
     expect(difficultyNoteOf({ ...GATE, sufficient: false, shortage: 10 })).toBe('')
     expect(difficultyNoteOf(null)).toBe('')
+  })
+})
+
+describe('finalModeNoteOf', () => {
+  it('should say nothing for levels that do not support final mode', () => {
+    expect(finalModeNoteOf({ supported: false, unlocked: false })).toBe('')
+    expect(finalModeNoteOf(null)).toBe('')
+  })
+
+  it('should spell out the personal-words gap when locked', () => {
+    expect(
+      finalModeNoteOf({ supported: true, unlocked: false, unlockAt: 3000, shortage: 500 }),
+    ).toBe('601–1000 词属最终模式，需个人词库 3000 个单词（还差 500 个）。')
+  })
+
+  it('should drop the gap when the numbers are missing', () => {
+    expect(finalModeNoteOf({ supported: true, unlocked: false })).toBe(
+      '601–1000 词属最终模式，需个人词库 3000 个单词。',
+    )
+  })
+
+  it('should acknowledge the unlocked state', () => {
+    expect(finalModeNoteOf({ supported: true, unlocked: true })).toBe(
+      '已解锁最终模式：可以写 601–1000 词。',
+    )
   })
 })

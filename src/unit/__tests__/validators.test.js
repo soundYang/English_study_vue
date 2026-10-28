@@ -30,8 +30,13 @@ describe('validateSettings', () => {
     expect(validateSettings({ ...VALID_SETTINGS, targetWords: TARGET_WORDS_MAX }).valid).toBe(true)
   })
 
-  it('should reject 650 words because the backend maximum is 600', () => {
-    expect(validateSettings({ ...VALID_SETTINGS, targetWords: 650 }).valid).toBe(false)
+  // 601–1000 是 hard 的最终模式；本地只认契约范围，能否写到这么长由 /capacity 判
+  it('should accept final-mode lengths up to the contract maximum', () => {
+    expect(validateSettings({ ...VALID_SETTINGS, targetWords: 700 }).valid).toBe(true)
+  })
+
+  it('should reject 1010 words because the backend maximum is 1000', () => {
+    expect(validateSettings({ ...VALID_SETTINGS, targetWords: 1010 }).valid).toBe(false)
   })
 
   it('should reject a length that is not a multiple of 10', () => {
@@ -80,7 +85,7 @@ describe('normalizeVocabScope', () => {
 describe('target word constants', () => {
   it('should stay in sync with the backend schema', () => {
     expect(TARGET_WORDS_MIN).toBe(100)
-    expect(TARGET_WORDS_MAX).toBe(600)
+    expect(TARGET_WORDS_MAX).toBe(1000)
     expect(TARGET_WORDS_STEP).toBe(10)
   })
 

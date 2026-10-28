@@ -722,6 +722,46 @@ export const mockReadings = {
     const db = readDb()
     const scope = normalizeVocabScope(payload.vocabScope)
     const available = filterByScope(usableWords(db.words), scope)
+    const personalWords = usableWords(db.words).length
+    // 与后端同口径：600 是 hard 的常规上限，601+ 要么已解锁最终模式，要么 400
+    const levelCap = LEVEL_LIMITS[level]?.maxTargetWords ?? TARGET_WORDS_MAX
+    const finalModeActivated =
+      level === 'hard' && targetWords > levelCap && personalWords >= FINAL_MODE_PERSONAL_WORDS
+
+    if (targetWords > levelCap && !finalModeActivated) {
+      if (level === 'hard') {
+        const shortage = Math.max(0, FINAL_MODE_PERSONAL_WORDS - personalWords)
+
+        throw new MockApiError(
+          'INVALID_REQUEST',
+          `写 ${targetWords} 词的长文属于「最终模式」，需要个人词库里有 ${FINAL_MODE_PERSONAL_WORDS} 个单词才能解锁，当前有 ${personalWords} 个（还差 ${shortage} 个）。请缩短篇幅，或继续添加单词。`,
+          400,
+          'targetWords',
+          {
+            kind: 'final_mode_locked',
+            targetWords,
+            metric: 'personal_words',
+            unlockAt: FINAL_MODE_PERSONAL_WORDS,
+            available: personalWords,
+            shortage,
+          },
+        )
+      }
+
+      throw new MockApiError(
+        'INVALID_REQUEST',
+        `当前难度最多写 ${levelCap} 词，请缩短篇幅或提高难度。`,
+        400,
+        'targetWords',
+        {
+          kind: 'target_words_cap',
+          level,
+          targetWords,
+          maxTargetWords: levelCap,
+          finalModeUnlocked: false,
+        },
+      )
+    }
 
     if (available.length < VOCABULARY_THRESHOLD) {
       throw new MockApiError(
@@ -732,10 +772,11 @@ export const mockReadings = {
     }
 
     // A 门：这次篇幅凑不齐目标词。与后端 vocabularyTooSmall 同口径，
-    // 数字用近似值（目标词数 ≈ 篇幅的 15%），前端只消费 details 的字段形状
+    // 数字用近似值（目标词数 ≈ 篇幅的 15%），前端只消费 details 的字段形状。
+    // 最终模式不挑目标词，跳过这道门（后端 freeForm 同一取舍，md/30 §7.4）
     const required = Math.max(1, Math.round(targetWords * 0.15))
 
-    if (available.length < required) {
+    if (!finalModeActivated && available.length < required) {
       throw new MockApiError(
         'VOCABULARY_TOO_SMALL',
         `按当前词库，${targetWords} 词的文章还差 ${required - available.length} 个可用词。`,

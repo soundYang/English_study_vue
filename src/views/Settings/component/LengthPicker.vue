@@ -4,18 +4,21 @@
  *
  * 用途：横向滑杆 + 可输入的词数 + 10 词步进按钮；
  *       滑杆与步进实时更新，手动输入在回车 / 失焦时取整到 10，
- *       范围 100～当前难度上限，与后端 targetWordsRules 一致。
- * 用法：<LengthPicker v-model="draft.targetWords" :max="lengthMax" :disabled="isGenerating" />
+ *       范围 100～当前难度上限；hard 未解锁最终模式时，滑杆尾部把
+ *       601–1000 画成一段不可拖的灰区，并写明解锁条件。
+ * 用法：<LengthPicker v-model="draft.targetWords" :max="lengthMax" :final-mode="levelFinalMode" />
  *
  * props:
  *   modelValue — 当前目标词数（10 的倍数）
  *   disabled   — 生成中禁用
- *   max        — 当前难度的篇幅上限，缺省时用全局上限
+ *   max        — 当前难度**当前可用**的篇幅上限（未解锁最终模式时是 600）
+ *   finalMode  — levels[level].finalMode + 顶层 maxTargetWords；null 表示不展示最终模式
  * emits:
  *   update:modelValue — 词数变化（输入框只在回车 / 失焦时发出）
  */
 import { computed, ref, watch } from 'vue'
 import { Minus, Plus } from 'lucide-vue-next'
+import { finalModeNoteOf } from '../../../unit/capacity'
 import { TARGET_WORDS_MAX, TARGET_WORDS_MIN, TARGET_WORDS_STEP } from '../../../unit/validators'
 
 // 四位足够覆盖 1000 词的最终模式；超出的按键直接丢掉
@@ -26,6 +29,8 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   // 难度上限，由设置页从 /capacity 传入；未传时用全局上限
   max: { type: Number, default: TARGET_WORDS_MAX },
+  // 最终模式：supported / unlocked / unlockAt / shortage / maxTargetWords（1000）
+  finalMode: { type: Object, default: null },
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -46,6 +51,27 @@ const fillPercent = computed(() => {
   const percent = ((currentValue.value - TARGET_WORDS_MIN) / span) * 100
   return Math.min(100, Math.max(0, percent))
 })
+
+// 最终模式的契约上限（1000）；没解锁时 max 还是 600，这段差值就是要画灰区的部分
+const finalMax = computed(() => {
+  const value = Number(props.finalMode?.maxTargetWords)
+
+  return Number.isFinite(value) && value > props.max ? value : 0
+})
+// 只有 hard 支持最终模式；easy / medium 的 finalMode.supported 是 false
+const lockedFinal = computed(
+  () => Boolean(props.finalMode?.supported) && !props.finalMode?.unlocked && finalMax.value > 0,
+)
+const sliderMax = computed(() => (lockedFinal.value ? finalMax.value : props.max))
+// 可拖段占整条滑杆的比例：未解锁时 100–600 只占一段，其余是灰区
+const livePercent = computed(() => {
+  const span = sliderMax.value - TARGET_WORDS_MIN
+  if (span <= 0) return 100
+
+  return Math.min(100, Math.max(0, ((props.max - TARGET_WORDS_MIN) / span) * 100))
+})
+// 文案统一在 unit/capacity.js，支持 / 未解锁 / 已解锁三种情况都在那里分好
+const finalNote = computed(() => finalModeNoteOf(props.finalMode))
 
 watch(
   () => props.modelValue,
@@ -202,21 +228,33 @@ function handleSpinKeydown(event) {
 
       <div class="slider">
         <span class="slider-bound" aria-hidden="true">{{ TARGET_WORDS_MIN }}</span>
-        <input
-          class="slider-input"
-          type="range"
-          :min="TARGET_WORDS_MIN"
-          :max="max"
-          :step="TARGET_WORDS_STEP"
-          :value="currentValue"
-          :disabled="disabled"
-          :style="{ '--fill': `${fillPercent}%` }"
-          :aria-valuetext="`约 ${currentValue} 词`"
-          aria-labelledby="length-label"
-          @input="handleSlide"
-        />
-        <span class="slider-bound" aria-hidden="true">{{ max }}</span>
+
+        <div class="slider-track">
+          <div class="slider-live" :style="{ flexBasis: `${livePercent}%` }">
+            <input
+              class="slider-input"
+              type="range"
+              :min="TARGET_WORDS_MIN"
+              :max="max"
+              :step="TARGET_WORDS_STEP"
+              :value="currentValue"
+              :disabled="disabled"
+              :style="{ '--fill': `${fillPercent}%` }"
+              :aria-valuetext="`约 ${currentValue} 词`"
+              :aria-describedby="finalNote ? 'length-final-note' : undefined"
+              aria-labelledby="length-label"
+              @input="handleSlide"
+            />
+          </div>
+
+          <!-- 601–1000 的入口：存在但当前拖不到，等个人词库攒够 3000 词 -->
+          <span v-if="lockedFinal" class="slider-locked" aria-hidden="true">最终模式</span>
+        </div>
+
+        <span class="slider-bound" aria-hidden="true">{{ sliderMax }}</span>
       </div>
+
+      <p v-if="finalNote" id="length-final-note" class="final-note">{{ finalNote }}</p>
     </div>
   </div>
 </template>
@@ -323,6 +361,46 @@ function handleSpinKeydown(event) {
   align-items: center;
   gap: var(--space-2);
   min-width: 140px;
+}
+
+/* 可拖段与灰区共用一条视觉轨道；两段的比例由内联 flex-basis 决定 */
+.slider-track {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+}
+
+.slider-live {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* 601–1000：画出来但不接受拖动，避免用户以为「拖不过去是坏了」 */
+.slider-locked {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  height: 20px;
+  margin-left: 6px;
+  overflow: hidden;
+  border: 1px dashed var(--color-line-strong);
+  border-radius: var(--radius-pill);
+  color: var(--color-muted);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: not-allowed;
+}
+
+.final-note {
+  /* 整行换到滑杆下方，不挤在步进器与滑杆之间 */
+  flex: 0 0 100%;
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 
 .slider-bound {

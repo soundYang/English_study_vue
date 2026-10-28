@@ -15,9 +15,11 @@ export const VOCAB_SCOPE_LABELS = Object.freeze({
   today_reviewed: '今天复习',
   all: '全部词汇',
 })
-// 与后端 reading.schema.js 的 targetWordsRules 对齐：100–600，10 的倍数
+// 与后端 reading.schema.js 的 targetWordsRules 对齐：100–1000，10 的倍数。
+// 1000 是契约上限；各档实际能写到多少由 /capacity 的 maxTargetWords 决定，
+// hard 只有在个人词库 ≥ 3000 时才会放开到 601–1000（最终模式，md/30 §7）
 export const TARGET_WORDS_MIN = 100
-export const TARGET_WORDS_MAX = 600
+export const TARGET_WORDS_MAX = 1000
 export const TARGET_WORDS_STEP = 10
 
 /**
@@ -103,7 +105,9 @@ export function normalizeVocabScope(scope) {
 }
 
 /**
- * 校验阅读设置；文章长度必须是 10 的倍数且在 100～600 之间
+ * 校验阅读设置；文章长度必须是 10 的倍数且在 100～1000 之间
+ * 这里只管契约范围：能不能写到这么长由 /capacity 与后端判定——hard 的最终模式
+ * （601–1000）取决于个人词库，本地拿不到解锁状态，所以不在这里按难度卡上限。
  * vocabScope 缺省视为合法（老数据没有这个字段），显式传空数组或未知值算错——
  * 后端对空数组回 400，前端不该把它发出去。
  */

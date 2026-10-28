@@ -118,3 +118,22 @@ export function difficultyNoteOf(gate) {
 
   return ''
 }
+
+/**
+ * 最终模式的解锁说明
+ * supported=false（easy / medium）返回空串，不在页面占位置。
+ * 这里用的是**个人词库**口径（finalMode.shortage），与 lengths[].shortage
+ * （已知词口径）不是同一个数，不能合并成一句「还差 N 个词」（后端 md/22 §7）。
+ */
+export function finalModeNoteOf(finalMode) {
+  if (!finalMode?.supported) return ''
+
+  if (finalMode.unlocked) return '已解锁最终模式：可以写 601–1000 词。'
+
+  const unlockAt = toNumber(finalMode.unlockAt) ?? 3000
+  const shortage = Math.max(0, toNumber(finalMode.shortage) ?? 0)
+
+  return shortage > 0
+    ? `601–1000 词属最终模式，需个人词库 ${unlockAt} 个单词（还差 ${shortage} 个）。`
+    : `601–1000 词属最终模式，需个人词库 ${unlockAt} 个单词。`
+}

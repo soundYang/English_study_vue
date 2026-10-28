@@ -71,6 +71,17 @@ const availableWords = computed(() => capacity.value?.levels?.[draft.level]?.ava
 const lengthMax = computed(
   () => maxOf(draft.level) || LEVEL_MAX_TARGET_WORDS[draft.level] || TARGET_WORDS_MAX,
 )
+// 最终模式只挂在 hard 上（不是第四档难度）；预检回来之前不画灰区，避免闪一下又收回。
+// maxTargetWords 在顶层 finalMode 里，每档的 finalMode 只说明支不支持、解没解锁
+const levelFinalMode = computed(() => {
+  const mode = gateOf(draft.level)?.finalMode
+  if (!mode?.supported) return null
+
+  return {
+    ...mode,
+    maxTargetWords: capacity.value?.finalMode?.maxTargetWords || TARGET_WORDS_MAX,
+  }
+})
 // 门禁解释统一在 unit/capacity.js：后端按「上限 → 已知词 → 候选池」的顺序拦截，
 // 这里按同一顺序说明，避免两处各写一套判断（md/30 §7 删掉 knownSufficient 后尤其如此）
 const capacityNote = computed(() =>
@@ -162,7 +173,12 @@ async function handleGenerate() {
           <h2 class="section-title">3. 设置文章参数</h2>
 
           <div class="params-table">
-            <LengthPicker v-model="draft.targetWords" :max="lengthMax" :disabled="isGenerating" />
+            <LengthPicker
+              v-model="draft.targetWords"
+              :max="lengthMax"
+              :final-mode="levelFinalMode"
+              :disabled="isGenerating"
+            />
             <QuestionCountPicker v-model="draft.questionCount" :disabled="isGenerating" />
           </div>
 

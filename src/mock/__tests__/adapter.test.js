@@ -158,6 +158,39 @@ describe('mockReadings', () => {
     expect(serialized).not.toContain('explanation')
   })
 
+  it('should expose the final-mode ladder without widening the effective cap', async () => {
+    const data = await mockReadings.capacity({ targetWords: 700 })
+
+    expect(data.finalMode).toMatchObject({ unlocked: false, unlockAt: 3000, maxTargetWords: 1000 })
+    expect(data.levels.hard.finalMode.supported).toBe(true)
+    expect(data.levels.easy.finalMode.supported).toBe(false)
+    // 种子词库远不到 3000，hard 的上限仍然是 600
+    expect(data.levels.hard.maxTargetWords).toBe(600)
+    expect(data.levels.hard.lengths).toHaveLength(10)
+  })
+
+  it('should reject final-mode lengths until the personal library reaches 3000', async () => {
+    await expect(
+      mockReadings.generate({ level: 'hard', targetWords: 700, questionCount: 3 }),
+    ).rejects.toMatchObject({
+      error: {
+        code: 'INVALID_REQUEST',
+        details: { kind: 'final_mode_locked', metric: 'personal_words' },
+      },
+    })
+  })
+
+  it('should reject lengths above the level cap', async () => {
+    await expect(
+      mockReadings.generate({ level: 'easy', targetWords: 400, questionCount: 3 }),
+    ).rejects.toMatchObject({
+      error: {
+        code: 'INVALID_REQUEST',
+        details: { kind: 'target_words_cap', maxTargetWords: 300 },
+      },
+    })
+  })
+
   it('should reject generation when available vocabulary is insufficient', async () => {
     const all = await mockWords.list({ page: 1, pageSize: 50 })
     for (const item of all.items) {
@@ -250,10 +283,11 @@ describe('mockReadings vocabScope', () => {
   })
 
   it('should report the normalized scope in the failure details', async () => {
-    // 600 词要 90 个目标词，全量池子只有 20 个：落进 A 门的 details
+    // 600 词要 90 个目标词，全量池子只有 20 个：落进 A 门的 details。
+    // 用 hard 而不是 easy——600 已经超过 easy 的 300 上限，会先被篇幅门拦下
     await expect(
       mockReadings.generate({
-        level: 'easy',
+        level: 'hard',
         targetWords: 600,
         questionCount: 3,
         vocabScope: ['all', 'today_new'],
