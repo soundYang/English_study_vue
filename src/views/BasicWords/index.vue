@@ -3,18 +3,26 @@
  * 基础词库视图
  * 三张词表（基础词 / 日历词 / 缩写）的分页浏览，数字卡与分组标签读接口 counts。
  * 请求、筛选与分页状态都在 basic-words store，本页只负责交互、空态与提示。
+ * 「标为不认识」需二次确认，「恢复」不可撤销但影响小，直接执行。
  */
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import BaseButton from '../../component/BaseButton.vue'
+import ConfirmDialog from '../../component/ConfirmDialog.vue'
 import EmptyState from '../../component/EmptyState.vue'
 import PaginationBar from '../../component/PaginationBar.vue'
 import BasicStats from './component/BasicStats.vue'
 import GroupTabs from './component/GroupTabs.vue'
 import WordCardGrid from './component/WordCardGrid.vue'
 import WordIndexToolbar from './component/WordIndexToolbar.vue'
+import { useToast } from '../../composables/useToast'
 import { useBasicWordsStore } from '../../stores/model/basic-words'
 
 const store = useBasicWordsStore()
+const toast = useToast()
+
+// 待确认的「标为不认识」目标；为空即对话框关闭
+const removeTarget = ref(null)
+const removing = ref(false)
 
 const groupModel = computed({
   get: () => store.group,
@@ -58,6 +66,8 @@ const emptyMeta = computed(() => {
   }
 })
 
+const confirmTitle = computed(() => `标记 “${removeTarget.value?.word || ''}” 为不认识？`)
+
 onMounted(() => store.fetchList())
 
 // 离开页面就清空：下次进来从第 1 页、基础词、全部状态开始，不继承上次的筛选
@@ -75,6 +85,34 @@ function handleEmptyAction() {
   }
 
   store.setGroup('basic')
+}
+
+function handleRemove(item) {
+  removeTarget.value = item
+}
+
+function handleDialogOpen(value) {
+  if (!value && !removing.value) removeTarget.value = null
+}
+
+async function handleConfirmRemove() {
+  if (!removeTarget.value || removing.value) return
+
+  const word = removeTarget.value.word
+  removing.value = true
+  const result = await store.markRemoved(word)
+  removing.value = false
+  removeTarget.value = null
+
+  if (result.ok) toast.success(`已标记 “${word}” 为不认识`)
+  else toast.error(result.message)
+}
+
+async function handleRestore(item) {
+  const result = await store.restore(item.word)
+
+  if (result.ok) toast.success(`已恢复 “${item.word}”`)
+  else toast.error(result.message)
 }
 </script>
 
@@ -105,7 +143,10 @@ function handleEmptyAction() {
         :items="store.items"
         :loading="store.loading"
         :error="store.error"
+        :pending-word="store.pendingWord"
         @retry="store.fetchList()"
+        @remove="handleRemove"
+        @restore="handleRestore"
       />
 
       <EmptyState
@@ -134,6 +175,17 @@ function handleEmptyAction() {
         @update:page="store.goToPage"
       />
     </footer>
+
+    <ConfirmDialog
+      :open="Boolean(removeTarget)"
+      :title="confirmTitle"
+      description="它会从阅读生成的基础词里移除，可以随时在本页恢复。"
+      confirm-text="标记不认识"
+      danger
+      :loading="removing"
+      @update:open="handleDialogOpen"
+      @confirm="handleConfirmRemove"
+    />
   </section>
 </template>
 

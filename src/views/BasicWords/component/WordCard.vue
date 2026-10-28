@@ -5,19 +5,27 @@
  * 用途：一张卡展示一个词条，四个槽位固定——单词 / 音标或英文全称 / 释义或中文全称 /
  *       底部类型徽标 + 状态。四类词（实词、功能词、日历词、缩写）只换内容不换版式，
  *       这样同一行的卡片高度一致、状态标签能对成一条线（md/16 §6.1）。
- * 用法：<WordCard :item="item" />
+ * 用法：<WordCard :item="item" :pending="pendingWord === item.word"
+ *          @remove="onRemove" @restore="onRestore" />
  *
  * props:
- *   item — 基础词表接口返回的单条记录
+ *   item    — 基础词表接口返回的单条记录
+ *   pending — 该词的写请求进行中
+ * emits:
+ *   remove / restore — 菜单动作，是否二次确认由页面决定
  */
 import { computed } from 'vue'
 import StatusPill from '../../../component/StatusPill.vue'
 import { meaningOf, metaOf, statusOf } from '../../../unit/basic-words'
 import { phoneticParts } from '../../../unit/phonetic'
+import WordCardMenu from './WordCardMenu.vue'
 
 const props = defineProps({
   item: { type: Object, required: true },
+  pending: { type: Boolean, default: false },
 })
+
+const emit = defineEmits(['remove', 'restore'])
 
 const isAbbreviation = computed(() => Boolean(props.item.kinds?.includes('abbreviation')))
 const isFunctionWord = computed(() => Boolean(props.item.isFunctionWord))
@@ -33,8 +41,20 @@ const status = computed(() => statusOf(props.item))
 </script>
 
 <template>
-  <article class="word-card" :class="{ 'is-function': isFunctionWord }">
-    <h3 class="card-word">{{ item.word }}</h3>
+  <article
+    class="word-card"
+    :class="{ 'is-function': isFunctionWord }"
+    :aria-busy="pending || undefined"
+  >
+    <header class="card-head">
+      <h3 class="card-word">{{ item.word }}</h3>
+      <WordCardMenu
+        :item="item"
+        :pending="pending"
+        @remove="emit('remove', $event)"
+        @restore="emit('restore', $event)"
+      />
+    </header>
 
     <p v-if="expansion" class="card-line is-expansion" lang="en">{{ expansion }}</p>
     <p v-else-if="phonetics.length" class="card-line is-phonetic" lang="en">
@@ -70,7 +90,22 @@ const status = computed(() => statusOf(props.item))
   border-color: var(--color-line-strong);
 }
 
+/* 写请求在飞：卡片降透明度，和菜单的 progress 光标一起表示「正在处理」 */
+.word-card[aria-busy='true'] {
+  opacity: 0.72;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 .card-word {
+  flex: 1;
+  min-width: 0;
   color: var(--color-ink);
   font-family: var(--font-display);
   font-size: 20px;

@@ -7,7 +7,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import BasicWordsView from '../index.vue'
-import { fetchBasicWords } from '../../../api/basic-words'
+import { fetchBasicWords, removeBasicWord, restoreBasicWord } from '../../../api/basic-words'
+import { useToastStore } from '../../../stores/model/toast'
 
 vi.mock('../../../api/basic-words', () => ({
   fetchBasicWords: vi.fn(),
@@ -164,6 +165,79 @@ describe('Basic words page · 筛选', () => {
     expect(fetchBasicWords).toHaveBeenLastCalledWith(
       expect.objectContaining({ pageSize: 50, page: 1 }),
     )
+  })
+})
+
+describe('Basic words page · 标记与恢复', () => {
+  async function chooseFirstAction(wrapper) {
+    await wrapper.get('.menu-trigger').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[role="menuitem"]').trigger('click')
+    await flushPromises()
+  }
+
+  it('should confirm before marking a word as unknown', async () => {
+    removeBasicWord.mockResolvedValue({ item: makeItem({ removed: true }), counts: COUNTS })
+    const wrapper = await mountPage()
+
+    await chooseFirstAction(wrapper)
+
+    expect(wrapper.get('.modal-title').text()).toBe('标记 “abandon” 为不认识？')
+    expect(removeBasicWord).not.toHaveBeenCalled()
+
+    const confirm = wrapper.findAll('.modal-footer button').at(-1)
+    expect(confirm.text()).toBe('标记不认识')
+
+    await confirm.trigger('click')
+    await flushPromises()
+
+    expect(removeBasicWord).toHaveBeenCalledWith('abandon')
+    // 写成功后静默对账一次，拿到新的数字与列表
+    expect(fetchBasicWords).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('.modal-dialog').exists()).toBe(false)
+  })
+
+  it('should not mark anything when the dialog is cancelled', async () => {
+    const wrapper = await mountPage()
+
+    await chooseFirstAction(wrapper)
+
+    const cancel = wrapper.findAll('.modal-footer button').at(0)
+    await cancel.trigger('click')
+    await flushPromises()
+
+    expect(removeBasicWord).not.toHaveBeenCalled()
+    expect(wrapper.find('.modal-dialog').exists()).toBe(false)
+  })
+
+  it('should restore a removed word without asking', async () => {
+    fetchBasicWords.mockResolvedValue(
+      makePage({ items: [makeItem({ word: 'ai', removed: true })] }),
+    )
+    restoreBasicWord.mockResolvedValue({ item: makeItem({ word: 'ai' }), counts: COUNTS })
+    const wrapper = await mountPage()
+
+    await chooseFirstAction(wrapper)
+
+    expect(wrapper.find('.modal-dialog').exists()).toBe(false)
+    expect(restoreBasicWord).toHaveBeenCalledWith('ai')
+  })
+
+  it('should surface the backend message when marking fails', async () => {
+    const message = '这个单词已经在你的词库里了'
+    removeBasicWord.mockRejectedValue({
+      response: { status: 409, data: { error: { code: 'BASIC_WORD_ALREADY_LEARNED', message } } },
+    })
+    const wrapper = await mountPage()
+
+    await chooseFirstAction(wrapper)
+    await wrapper.findAll('.modal-footer button').at(-1).trigger('click')
+    await flushPromises()
+
+    // 失败也关掉对话框，错误交给 toast；列表回到服务端的样子
+    expect(wrapper.find('.modal-dialog').exists()).toBe(false)
+    expect(useToastStore().items.at(-1)).toMatchObject({ type: 'error', message })
   })
 })
 
