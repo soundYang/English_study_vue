@@ -126,6 +126,10 @@ describe('mockReadings', () => {
     expect(reading.questions).toHaveLength(3)
     expect(reading.status).toBe('generated')
     expect(reading.translation).toBeUndefined()
+    // A1 / A2 / A3：真实后端由 DTO 直接给出，mock 必须补齐，否则本地看不到新 UI
+    expect(reading.actualWords).toBeGreaterThan(0)
+    expect(reading.newWords.length).toBeGreaterThan(0)
+    expect(reading.tokenUsage.totalTokens).toBeGreaterThan(0)
 
     const serialized = JSON.stringify(reading)
     expect(serialized).not.toContain('correctAnswer')
@@ -196,6 +200,9 @@ describe('mockReadings.history', () => {
 
     expect(history.total).toBe(5)
     expect(history.items[0]).toMatchObject({ id: 'r5', status: 'generated', accuracy: null })
+    // 列表只给总量，不拆 prompt / completion（与后端 toHistoryItem 一致）
+    expect(history.items[0].tokenUsage).toEqual({ totalTokens: 1550 })
+    expect(history.items[1].tokenUsage.totalTokens).toBeGreaterThan(0)
     expect(history.stats).toEqual({
       totalCount: 4,
       averageAccuracy: 82,

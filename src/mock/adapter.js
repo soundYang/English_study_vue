@@ -19,8 +19,8 @@ import {
   VOCABULARY_THRESHOLD,
 } from '../unit/validators'
 
-// v2：单词新增 source / dictionaryId / phonetic / senses，旧库会被判为无效并重建
-const DB_VERSION = 2
+// v3：练习新增 newWords / tokenUsage（视图要用），旧库判为无效并重建，保证本地能看到新 UI
+const DB_VERSION = 3
 const DEFAULT_LATENCY = 300
 const MAX_PAGE_SIZE = 100
 const DEFAULT_PAGE_SIZE = 10
@@ -180,6 +180,11 @@ function toWordDto(item) {
   }
 }
 
+/** 每次返回新对象：DTO 里的默认值不能被调用方顺手改掉 */
+function emptyTokenUsage() {
+  return { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+}
+
 /** 可用于生成的词：学习中 / 已掌握；预检与生成共用，避免两处口径漂移 */
 function usableWords(words) {
   return words.filter((item) => item.status === 'learning' || item.status === 'mastered')
@@ -225,6 +230,10 @@ function toSafeReading(reading) {
     level: reading.level,
     targetWords: reading.targetWords,
     questionCount: reading.questionCount,
+    // 与后端同算法（按空白切分）；老数据缺 newWords / tokenUsage 时给空值，视图据此不渲染
+    actualWords: countWords(reading.article),
+    newWords: reading.newWords || [],
+    tokenUsage: reading.tokenUsage || emptyTokenUsage(),
     createdAt: reading.createdAt,
     status: reading.status,
     questions: reading.questions.map((question) => ({
@@ -245,6 +254,9 @@ function toFullResult(reading) {
     level: reading.level,
     targetWords: reading.targetWords,
     questionCount: reading.questionCount,
+    actualWords: countWords(reading.article),
+    newWords: reading.newWords || [],
+    tokenUsage: reading.tokenUsage || emptyTokenUsage(),
     createdAt: reading.createdAt,
     submittedAt: reading.submittedAt,
     status: 'submitted',
@@ -277,6 +289,8 @@ function toHistoryItem(reading) {
     accuracy: summary ? summary.score : null,
     createdAt: reading.createdAt,
     submittedAt: reading.submittedAt,
+    // 与后端 toHistoryItem 一致：列表只给总量，不拆 prompt / completion
+    tokenUsage: { totalTokens: reading.tokenUsage?.totalTokens ?? 0 },
   }
 }
 
@@ -623,6 +637,9 @@ export const mockReadings = {
       targetWords,
       questionCount,
       vocabulary: available.slice(0, 10).map((item) => item.word),
+      // 模板上带的这两项就是真实后端由 AI 返回、再经 DTO 输出的部分
+      newWords: template.newWords || [],
+      tokenUsage: template.tokenUsage || emptyTokenUsage(),
       questions,
       status: 'generated',
       userAnswers: null,

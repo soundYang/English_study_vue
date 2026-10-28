@@ -105,6 +105,11 @@ describe('Result page', () => {
     expect(wrapper.findAll('.review-card')).toHaveLength(5)
     expect(wrapper.text()).toContain('每天下午，汤姆都会走到那座旧花园的门前。')
 
+    // 结果页同样带词数、生词面板与本次生成的 token 数
+    expect(wrapper.get('.article-meta').text()).toMatch(/^\d+ 词$/)
+    expect(wrapper.text()).toContain('本文含 2 个未学单词')
+    expect(wrapper.get('.result-time').text()).toContain('本次生成消耗 904 tokens')
+
     const wrongCard = wrapper.findAll('.review-card')[3]
     expect(wrongCard.classes()).toContain('is-wrong')
     expect(wrongCard.text()).toContain('回答错误')

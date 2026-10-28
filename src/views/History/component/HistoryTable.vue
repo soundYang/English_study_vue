@@ -80,7 +80,13 @@ function rowDelay(index) {
           :style="rowDelay(index)"
           @click="open(item)"
         >
-          <td class="cell-date">{{ formatDate(item.createdAt) }}</td>
+          <td class="cell-date">
+            {{ formatDate(item.createdAt) }}
+            <!-- token 挂在日期下方，不额外占一列；老数据没有该字段就不显示 -->
+            <span v-if="item.tokenUsage?.totalTokens" class="cell-token">
+              {{ item.tokenUsage.totalTokens }} tok
+            </span>
+          </td>
           <td class="cell-title">
             <span :title="item.title">{{ item.title }}</span>
           </td>
@@ -190,6 +196,13 @@ function rowDelay(index) {
 .cell-date {
   color: var(--color-muted);
   font-size: var(--text-small);
+}
+
+.cell-token {
+  display: block;
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 
 .cell-title span {

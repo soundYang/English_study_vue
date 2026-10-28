@@ -73,6 +73,17 @@ describe('Reading page', () => {
     expect(page.html()).not.toContain('explanation')
   })
 
+  it('should show the actual word count and the new-words panel', async () => {
+    const page = await mountPage()
+    const store = useReadingStore()
+
+    // 词数以 DTO 给的 actualWords 为准，不在视图里重新数一遍
+    expect(page.get('.article-meta').text()).toBe(`${store.reading.actualWords} 词`)
+    expect(page.text()).toContain('本文含 2 个未学单词')
+    // 生词面板是原生 details，默认折叠
+    expect(page.get('.new-words').attributes('open')).toBeUndefined()
+  })
+
   it('should store a selection in the store and sessionStorage', async () => {
     const page = await mountPage()
     const store = useReadingStore()

@@ -6,15 +6,18 @@
  * 用法：<ArticleCard :title="reading.title" :article="reading.article" />
  *
  * props:
- *   title    — 文章标题
- *   article  — 英文正文（不含答案与翻译）
- *   titleTag — 标题标签，默认 h1；结果页已有页面级 h1 时传 h2
+ *   title     — 文章标题
+ *   article   — 英文正文（不含答案与翻译）
+ *   wordCount — 后端 actualWords（真实词数）；为 0 时不渲染，兼容没有该字段的老数据
+ *   titleTag  — 标题标签，默认 h1；结果页已有页面级 h1 时传 h2
  */
 import { computed } from 'vue'
+import { formatWordCount } from '../../../unit/format'
 
 const props = defineProps({
   title: { type: String, default: '' },
   article: { type: String, default: '' },
+  wordCount: { type: Number, default: 0 },
   titleTag: {
     type: String,
     default: 'h1',
@@ -32,7 +35,10 @@ const paragraphs = computed(() =>
 
 <template>
   <article class="article-card">
-    <component :is="titleTag" class="article-title">{{ title }}</component>
+    <header class="article-head">
+      <component :is="titleTag" class="article-title">{{ title }}</component>
+      <p v-if="wordCount > 0" class="article-meta">{{ formatWordCount(wordCount) }}</p>
+    </header>
     <div class="article-body">
       <p v-for="(paragraph, index) in paragraphs" :key="index" class="article-paragraph">
         {{ paragraph }}
@@ -49,6 +55,14 @@ const paragraphs = computed(() =>
   background: var(--color-surface);
 }
 
+/* 标题与词数成组，间距挂在整组上，正文不再自带 margin-top */
+.article-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+}
+
 .article-title {
   max-width: 34ch;
   color: var(--color-ink);
@@ -59,12 +73,17 @@ const paragraphs = computed(() =>
   letter-spacing: 0.01em;
 }
 
+.article-meta {
+  color: var(--color-muted);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+}
+
 .article-body {
   display: flex;
   flex-direction: column;
   gap: 18px;
   max-width: 68ch;
-  margin-top: var(--space-6);
 }
 
 .article-paragraph {
@@ -87,8 +106,8 @@ const paragraphs = computed(() =>
     line-height: 34px;
   }
 
-  .article-body {
-    margin-top: var(--space-4);
+  .article-head {
+    margin-bottom: var(--space-4);
   }
 
   .article-paragraph {

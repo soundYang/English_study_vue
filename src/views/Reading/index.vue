@@ -12,6 +12,7 @@ import BaseModal from '../../component/BaseModal.vue'
 import ConfirmDialog from '../../component/ConfirmDialog.vue'
 import SegmentedControl from '../../component/SegmentedControl.vue'
 import ArticleCard from './component/ArticleCard.vue'
+import NewWordsPanel from './component/NewWordsPanel.vue'
 import QuestionList from './component/QuestionList.vue'
 import ReadingHeader from './component/ReadingHeader.vue'
 import ReadingSkeleton from './component/ReadingSkeleton.vue'
@@ -204,6 +205,9 @@ function goHome() {
     <div v-if="store.loadError" class="state-card" role="alert">
       <h1 class="state-title">{{ loadTitle }}</h1>
       <p class="state-desc">{{ loadDescription }}</p>
+      <p v-if="store.loadError?.requestId" class="state-id">
+        错误编号：{{ store.loadError.requestId }}
+      </p>
       <BaseButton v-if="isNotFound" @click="goHome">返回首页</BaseButton>
       <BaseButton v-else variant="secondary" @click="retryLoad">重新加载</BaseButton>
     </div>
@@ -233,7 +237,12 @@ function goHome() {
 
       <div class="reading-layout" :class="`show-${activePanel}`">
         <div class="article-column">
-          <ArticleCard :title="reading.title" :article="reading.article" />
+          <ArticleCard
+            :title="reading.title"
+            :article="reading.article"
+            :word-count="reading.actualWords"
+          />
+          <NewWordsPanel :words="reading.newWords" />
         </div>
 
         <div ref="questionColumn" class="question-column">
@@ -363,6 +372,14 @@ function goHome() {
   color: var(--color-muted);
   font-size: var(--text-small);
   line-height: var(--leading-small);
+  overflow-wrap: anywhere;
+}
+
+.state-id {
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 

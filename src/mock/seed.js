@@ -317,6 +317,21 @@ const READINGS = [
     status: 'submitted',
     createdAt: '2026-10-05T09:20:00.000Z',
     submittedAt: '2026-10-05T09:34:00.000Z',
+    newWords: [
+      {
+        word: 'gentle',
+        phonetic: { uk: '/ˈdʒen.tl/', us: '/ˈdʒen.tl/' },
+        senses: [{ pos: 'adj.', meaning: '温和的' }],
+        source: 'dictionary',
+      },
+      {
+        word: 'fence',
+        phonetic: { uk: '/fens/', us: '/fens/' },
+        senses: [{ pos: 'n.', meaning: '篱笆' }],
+        source: 'dictionary',
+      },
+    ],
+    tokenUsage: { promptTokens: 640, completionTokens: 214, totalTokens: 854 },
     vocabulary: [
       'quiet',
       'morning',
@@ -366,6 +381,21 @@ const READINGS = [
     status: 'submitted',
     createdAt: '2026-10-09T15:10:00.000Z',
     submittedAt: '2026-10-09T15:26:00.000Z',
+    newWords: [
+      {
+        word: 'path',
+        phonetic: { uk: '/pɑːθ/', us: '/pæθ/' },
+        senses: [{ pos: 'n.', meaning: '小路' }],
+        source: 'dictionary',
+      },
+      {
+        word: 'goodbye',
+        phonetic: { uk: '/ˌɡʊdˈbaɪ/', us: '/ˌɡʊdˈbaɪ/' },
+        senses: [{ pos: 'n.', meaning: '告别' }],
+        source: 'dictionary',
+      },
+    ],
+    tokenUsage: { promptTokens: 668, completionTokens: 236, totalTokens: 904 },
     vocabulary: ['afternoon', 'garden', 'wood', 'park', 'book', 'friend', 'sun', 'quiet', 'simple'],
     article:
       'Every afternoon, Tom walks to the old garden gate. The gate is made of wood and it is always open. Behind it, there is a small park with tall trees and a quiet path. Tom brings his book and sits under the tallest tree. He reads about a boy who travels to far places. Sometimes a friend joins him, and they talk about the story. When the sun goes down, the air becomes cool. Tom closes his book, says goodbye to the trees, and walks home. It is a simple day, but it is a good day.',
@@ -424,6 +454,21 @@ const READINGS = [
     status: 'submitted',
     createdAt: '2026-10-14T11:05:00.000Z',
     submittedAt: '2026-10-14T11:27:00.000Z',
+    newWords: [
+      {
+        word: 'narrow',
+        phonetic: { uk: '/ˈnær.əʊ/', us: '/ˈnær.oʊ/' },
+        senses: [{ pos: 'adj.', meaning: '狭窄的' }],
+        source: 'dictionary',
+      },
+      {
+        word: 'rainy',
+        phonetic: { uk: '/ˈreɪ.ni/', us: '/ˈreɪ.ni/' },
+        senses: [{ pos: 'adj.', meaning: '下雨的' }],
+        source: 'dictionary',
+      },
+    ],
+    tokenUsage: { promptTokens: 712, completionTokens: 288, totalTokens: 1000 },
     vocabulary: [
       'street',
       'river',
@@ -497,6 +542,21 @@ const READINGS = [
     status: 'submitted',
     createdAt: '2026-10-19T10:40:00.000Z',
     submittedAt: '2026-10-19T11:02:00.000Z',
+    newWords: [
+      {
+        word: 'fisherman',
+        phonetic: { uk: '/ˈfɪʃ.ə.mən/', us: '/ˈfɪʃ.ɚ.mən/' },
+        senses: [{ pos: 'n.', meaning: '渔夫' }],
+        source: 'dictionary',
+      },
+      {
+        word: 'notebook',
+        phonetic: { uk: '/ˈnəʊt.bʊk/', us: '/ˈnoʊt.bʊk/' },
+        senses: [{ pos: 'n.', meaning: '笔记本' }],
+        source: 'dictionary',
+      },
+    ],
+    tokenUsage: { promptTokens: 905, completionTokens: 352, totalTokens: 1257 },
     vocabulary: [
       'summer',
       'sea',
@@ -586,6 +646,21 @@ const READINGS = [
     status: 'generated',
     createdAt: '2026-10-26T08:30:00.000Z',
     submittedAt: null,
+    newWords: [
+      {
+        word: 'dramatic',
+        phonetic: { uk: '/drəˈmæt.ɪk/', us: '/drəˈmæt̬.ɪk/' },
+        senses: [{ pos: 'adj.', meaning: '戏剧性的' }],
+        source: 'dictionary',
+      },
+      {
+        word: 'uncertain',
+        phonetic: { uk: '/ʌnˈsɜː.tən/', us: '/ʌnˈsɝː.tən/' },
+        senses: [{ pos: 'adj.', meaning: '不确定的' }],
+        source: 'dictionary',
+      },
+    ],
+    tokenUsage: { promptTokens: 1080, completionTokens: 470, totalTokens: 1550 },
     vocabulary: ['courage', 'quiet', 'study', 'language', 'story', 'practice', 'patient', 'fear'],
     article:
       'Everyone talks about courage as if it were a loud thing—a brave jump, a bold speech, a bright victory. But most courage is quiet. It is the student who opens a book after failing a test. It is the friend who says sorry first. It is the woman who begins again after a long, difficult year. Marla learned this in a small classroom at the edge of town. She had always wanted to learn another language, but she was afraid of sounding foolish. For months she waited for the right moment. Then one evening, she opened a simple story and read the first line out loud. Her voice was slow and uncertain. The words did not come easily. But she read the next line, and then the next. Nothing dramatic happened. No one clapped. Yet something in her changed. She understood that courage is not the absence of fear. It is the decision to practice anyway, one patient page at a time.',
@@ -658,6 +733,21 @@ const READING_TEMPLATES = {
         'Lina likes to walk by the river after study. The path is quiet, and the water moves slowly under the bridge. On sunny days, she brings an apple and a small book. She reads a few pages, then watches the birds near the water. An old man often sits on the same bench. He says hello, and Lina says hello back. They do not talk much, but the morning feels gentle and simple. One day, Lina sees a young boy reading by the river. He looks happy and curious. She remembers her first story, and she smiles. A small walk can hold a whole memory.',
       translation:
         '莉娜喜欢在课后沿着河边散步。小路很安静，河水在桥下缓缓流动。晴天时，她会带一个苹果和一本小书。她读上几页，然后看水边的鸟。一位老人常常坐在同一张长椅上。他打招呼，莉娜也回应。他们不怎么交谈，但早晨显得温和而简单。有一天，莉娜看见一个年轻男孩在河边读书。他看起来快乐又好奇。她想起自己的第一个故事，笑了。一次短短的散步也能装下一整段回忆。',
+      newWords: [
+        {
+          word: 'gentle',
+          phonetic: { uk: '/ˈdʒen.tl/', us: '/ˈdʒen.tl/' },
+          senses: [{ pos: 'adj.', meaning: '温和的' }],
+          source: 'dictionary',
+        },
+        {
+          word: 'curious',
+          phonetic: { uk: '/ˈkjʊə.ri.əs/', us: '/ˈkjʊr.i.əs/' },
+          senses: [{ pos: 'adj.', meaning: '好奇的' }],
+          source: 'dictionary',
+        },
+      ],
+      tokenUsage: { promptTokens: 812, completionTokens: 356, totalTokens: 1168 },
       questions: [
         {
           id: 1,
@@ -725,6 +815,21 @@ const READING_TEMPLATES = {
         'In the small town of Bell, there is a workshop where kites are made by hand. The owner, Mr. Park, is a patient man with gentle hands. He uses paper, wood, and string, and he says that a good kite must be light but strong. Children come to his shop after school. They watch him work and ask curious questions. Mr. Park answers each one, even when the question is simple. He tells them that a kite is like a story: it needs a clear shape and a little wind. Every spring, the town holds a kite day. People bring their kites to the park near the river. When the wind rises, the sky fills with color. Mr. Park stands at the edge of the field and smiles. He does not fly a kite himself. He likes to watch the others, and that is enough.',
       translation:
         '在贝尔小镇上，有一间手工制作风筝的作坊。店主帕克先生是个有耐心的人，双手温和。他用纸、木条和细线做风筝，他说一只好风筝必须轻而结实。孩子们放学后会来他的店里。他们看他干活，问出各种好奇的问题。帕克先生每一个都回答，哪怕问题很简单。他告诉他们，风筝就像故事：需要清晰的形状，还需要一点风。每年春天，小镇都会举办风筝节。人们带着风筝来到河边的公园。风起时，天空就充满了颜色。帕克先生站在场地边缘微笑。他自己不放风筝。他喜欢看着别人放，这就足够了。',
+      newWords: [
+        {
+          word: 'workshop',
+          phonetic: { uk: '/ˈwɜːk.ʃɒp/', us: '/ˈwɝːk.ʃɑːp/' },
+          senses: [{ pos: 'n.', meaning: '作坊；工作间' }],
+          source: 'dictionary',
+        },
+        {
+          word: 'string',
+          phonetic: { uk: '/strɪŋ/', us: '/strɪŋ/' },
+          senses: [{ pos: 'n.', meaning: '细线' }],
+          source: 'dictionary',
+        },
+      ],
+      tokenUsage: { promptTokens: 1240, completionTokens: 512, totalTokens: 1752 },
       questions: [
         {
           id: 1,
@@ -797,6 +902,21 @@ const READING_TEMPLATES = {
         'For as long as she could remember, Elsa had lived in the lighthouse on the northern rock. Her father kept the light burning, and her mother kept the small kitchen warm. The work was not dramatic. Every evening, her father climbed the stairs, cleaned the glass, and checked the oil. In winter, the wind pushed against the windows and the sea turned dark and loud. Elsa was afraid of the sound, but her father told her that fear was only a signal, not a command. When Elsa was sixteen, her father became ill. For three weeks, she climbed the stairs herself. She was tired and uncertain, but the light never went out. Ships passed safely in the night, and no one knew her name. Years later, Elsa left the island to study. In the city, people asked her what it was like to grow up in a lighthouse. She always said the same thing: the most important work is often the work nobody sees. A light does not need to be famous to guide someone home.',
       translation:
         '在厄尔莎的记忆里，她一直住在北方礁石上的灯塔里。父亲负责让灯一直亮着，母亲负责让小厨房保持温暖。这份工作并不戏剧化。每天傍晚，父亲都会爬上楼梯，擦净玻璃，检查灯油。冬天，风推着窗户，海变得又黑又响。厄尔莎害怕那种声音，但父亲告诉她，恐惧只是一个信号，而不是命令。厄尔莎十六岁那年，父亲病倒了。有三个星期，是她自己爬上楼梯。她疲惫又不确定，但灯从未熄灭。船只在夜里安全驶过，没有人知道她的名字。多年以后，厄尔莎离开小岛去求学。在城市里，人们问她，在灯塔长大是什么感觉。她总是回答同一句话：最重要的工作，往往是没人看见的工作。一盏灯不必出名，也能指引一个人回家。',
+      newWords: [
+        {
+          word: 'lighthouse',
+          phonetic: { uk: '/ˈlaɪt.haʊs/', us: '/ˈlaɪt.haʊs/' },
+          senses: [{ pos: 'n.', meaning: '灯塔' }],
+          source: 'dictionary',
+        },
+        {
+          word: 'signal',
+          phonetic: { uk: '/ˈsɪɡ.nəl/', us: '/ˈsɪɡ.nəl/' },
+          senses: [{ pos: 'n.', meaning: '信号' }],
+          source: 'dictionary',
+        },
+      ],
+      tokenUsage: { promptTokens: 1680, completionTokens: 705, totalTokens: 2385 },
       questions: [
         {
           id: 1,
@@ -879,8 +999,9 @@ function clone(value) {
  */
 export function createSeedDatabase() {
   return {
-    // 与 adapter.js 的 DB_VERSION 保持一致；v2 起单词带 source / phonetic / senses
-    version: 2,
+    // 与 adapter.js 的 DB_VERSION 保持一致；v2 起单词带 source / phonetic / senses，
+    // v3 起练习带 newWords / tokenUsage
+    version: 3,
     words: clone(WORDS),
     readings: clone(READINGS),
     wordSeq: 25,

@@ -229,6 +229,8 @@ onBeforeUnmount(() => {
             <!-- 命中词汇类错误时后端 message 与 hint 说的是同一件事，只留 hint -->
             <p v-if="!vocabShortage" class="generate-subtitle">{{ error?.message }}</p>
             <p class="generate-hint">{{ errorHint }}</p>
+            <!-- 只有真实后端才带 requestId，mock 时这一行自然不出现 -->
+            <p v-if="error?.requestId" class="generate-id">错误编号：{{ error.requestId }}</p>
 
             <div v-if="vocabShortage" class="generate-actions">
               <BaseButton
@@ -328,6 +330,14 @@ onBeforeUnmount(() => {
   color: var(--color-ink-2);
   font-size: var(--text-small);
   line-height: var(--leading-small);
+}
+
+.generate-id {
+  margin-top: var(--space-2);
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+  font-variant-numeric: tabular-nums;
 }
 
 .progress {

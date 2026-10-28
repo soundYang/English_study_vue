@@ -4,7 +4,10 @@
  * Mock 与真实接口共用同一套错误类型，切换后端时视图层无需改动。
  */
 
-/** 业务异常 — 用户可理解的预期错误，带错误码与可选字段名 */
+/**
+ * 业务异常 — 用户可理解的预期错误，带错误码与可选字段名
+ * requestId 来自响应体顶层（后端 errorHandler 加的排查号），mock 没有，为空串
+ */
 export class BusinessError extends Error {
   constructor(message, code = 'BUSINESS_ERROR', options = {}) {
     super(message)
@@ -12,6 +15,7 @@ export class BusinessError extends Error {
     this.code = code
     this.field = options.field || ''
     this.details = options.details || {}
+    this.requestId = options.requestId || ''
   }
 }
 
@@ -53,6 +57,8 @@ export function normalizeApiError(error) {
   const payload = error?.error || error?.response?.data?.error
   const status = error?.status || error?.response?.status || 0
   const message = payload?.message || ''
+  // 后端把 requestId 放在响应体顶层，不在 error 里；400 JSON 解析失败与 413 没有这个字段
+  const requestId = error?.response?.data?.requestId || ''
 
   if (payload?.code) {
     // details 是后端 422 的结构化上下文（required / available / kind…），
@@ -60,6 +66,7 @@ export function normalizeApiError(error) {
     return new BusinessError(message || '请求失败', payload.code, {
       field: payload.field || '',
       details: payload.details || {},
+      requestId,
     })
   }
 
@@ -68,9 +75,11 @@ export function normalizeApiError(error) {
   }
   if (status === 401) return new AuthError()
   if (status >= 500) {
-    return new ServerError(message || '服务器错误', status, error?.response?.data?.requestId || '')
+    return new ServerError(message || '服务器错误', status, requestId)
   }
-  if (status >= 400) return new BusinessError(message || '请求失败', 'INVALID_REQUEST')
+  if (status >= 400) {
+    return new BusinessError(message || '请求失败', 'INVALID_REQUEST', { requestId })
+  }
 
   return new NetworkError(message || '网络出了点问题，请稍后重试。', status)
 }

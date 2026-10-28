@@ -100,6 +100,9 @@ describe('History page', () => {
     expect(rows[0].text()).toContain('继续答题')
     expect(rows[3].text()).toContain('The Garden Gate')
     expect(rows[3].text()).toContain('80%')
+    // token 挂在日期格下方：生成过就有消耗，与是否提交无关
+    expect(rows[3].get('.cell-token').text()).toBe('904 tok')
+    expect(rows[0].get('.cell-token').text()).toBe('1550 tok')
 
     expect(wrapper.findAll('.stat-value').map((node) => node.text())).toEqual([
       '4次',

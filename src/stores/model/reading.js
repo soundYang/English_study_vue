@@ -172,6 +172,8 @@ export const useReadingStore = defineStore('reading', () => {
       loadError.value = {
         code: normalized?.code || 'LOAD_FAILED',
         message: normalized?.message || '网络出了点问题，请稍后重试。',
+        // 排查号：用户报错时念出来，日志里能直接检索
+        requestId: normalized?.requestId || '',
       }
       return { ok: false, code: loadError.value.code, message: loadError.value.message }
     }
@@ -315,6 +317,7 @@ export const useReadingStore = defineStore('reading', () => {
         // 覆盖层靠这两项判断「差多少、该缩篇幅还是加词」
         field: normalized?.field || '',
         details: normalized?.details || {},
+        requestId: normalized?.requestId || '',
       }
       phase.value = 'error'
       return null

@@ -11,6 +11,7 @@ import { ArrowLeft } from 'lucide-vue-next'
 import BaseButton from '../../component/BaseButton.vue'
 import SkeletonBlock from '../../component/SkeletonBlock.vue'
 import ArticleCard from '../Reading/component/ArticleCard.vue'
+import NewWordsPanel from '../Reading/component/NewWordsPanel.vue'
 import QuestionReview from './component/QuestionReview.vue'
 import ScoreSummary from './component/ScoreSummary.vue'
 import TranslationPanel from './component/TranslationPanel.vue'
@@ -129,6 +130,7 @@ function goHome() {
     <div v-else-if="loadError || !hasReadingId" class="state-card" role="alert">
       <h1 class="state-title">{{ errorTitle }}</h1>
       <p class="state-desc">{{ errorDescription }}</p>
+      <p v-if="loadError?.requestId" class="state-id">错误编号：{{ loadError.requestId }}</p>
       <BaseButton v-if="isNotFound" @click="goHistory">返回历史</BaseButton>
       <BaseButton v-else variant="secondary" :loading="store.loading" @click="retryLoad">
         重新加载
@@ -142,7 +144,12 @@ function goHome() {
           <span>返回历史</span>
         </button>
         <h1 class="result-title">练习结果</h1>
-        <p class="result-time">提交于 {{ formatDateTime(result.submittedAt) }}</p>
+        <p class="result-time">
+          提交于 {{ formatDateTime(result.submittedAt) }}
+          <template v-if="result.tokenUsage?.totalTokens">
+            · 本次生成消耗 {{ result.tokenUsage.totalTokens }} tokens
+          </template>
+        </p>
       </header>
 
       <ScoreSummary
@@ -157,7 +164,13 @@ function goHome() {
 
       <div class="result-layout">
         <div class="article-area">
-          <ArticleCard :title="result.title" :article="result.article" title-tag="h2" />
+          <ArticleCard
+            :title="result.title"
+            :article="result.article"
+            :word-count="result.actualWords"
+            title-tag="h2"
+          />
+          <NewWordsPanel :words="result.newWords" />
         </div>
 
         <TranslationPanel class="translation-area" :translation="result.translation" />
@@ -329,6 +342,14 @@ function goHome() {
   color: var(--color-muted);
   font-size: var(--text-small);
   line-height: var(--leading-small);
+  overflow-wrap: anywhere;
+}
+
+.state-id {
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 

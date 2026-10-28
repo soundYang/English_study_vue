@@ -35,6 +35,8 @@ const stats = ref(null)
 // 挂载即请求，初值设为 true 让首帧就是骨架而不是占位横线
 const loading = ref(true)
 const error = ref('')
+// 错误文案与排查号分开存：文案要留给读屏，编号只是给用户念给客服的
+const errorRequestId = ref('')
 
 let requestSeq = 0
 
@@ -70,6 +72,7 @@ async function load() {
   const current = (requestSeq += 1)
   loading.value = true
   error.value = ''
+  errorRequestId.value = ''
 
   try {
     const data = await fetchHistory({
@@ -94,6 +97,7 @@ async function load() {
 
     const normalized = normalizeApiError(caught)
     error.value = normalized?.message || '网络出了点问题，请稍后重试。'
+    errorRequestId.value = normalized?.requestId || ''
     items.value = []
     total.value = 0
   } finally {
@@ -165,6 +169,7 @@ function handleEmptyAction() {
       <div v-if="error" class="state-card" role="alert">
         <p class="state-title">历史记录加载失败</p>
         <p class="state-desc">{{ error }}</p>
+        <p v-if="errorRequestId" class="state-id">错误编号：{{ errorRequestId }}</p>
         <BaseButton variant="secondary" :loading="loading" @click="load">重试</BaseButton>
       </div>
 
@@ -275,6 +280,14 @@ function handleEmptyAction() {
   color: var(--color-muted);
   font-size: var(--text-small);
   line-height: var(--leading-small);
+  overflow-wrap: anywhere;
+}
+
+.state-id {
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
