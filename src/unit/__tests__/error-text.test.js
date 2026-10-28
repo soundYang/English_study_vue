@@ -4,7 +4,7 @@
  * 改这里等于改用户能点的东西，所以三种 kind 各锁一条。
  */
 import { describe, expect, it } from 'vitest'
-import { describeRateLimit, describeVocabShortage } from '../error-text'
+import { describeQuotaExceeded, describeRateLimit, describeVocabShortage } from '../error-text'
 
 describe('describeVocabShortage', () => {
   it('should explain known-words shortage with the gap', () => {
@@ -89,5 +89,36 @@ describe('describeRateLimit', () => {
 
     expect(result.hint).toContain('等一会儿再试')
     expect(result.hint).not.toContain('分钟')
+  })
+})
+
+describe('describeQuotaExceeded', () => {
+  const resetAt = '2026-10-29T16:00:00.000Z'
+
+  it('should name the exhausted scope and the Beijing reset time', () => {
+    const result = describeQuotaExceeded({
+      details: { scope: 'device', limit: 3, used: 3, resetAt },
+    })
+
+    expect(result.title).toBe('今天的生成次数用完了')
+    expect(result.hint).toBe('设备每天最多生成 3 次，10月30日 00:00（北京时间）重置。')
+  })
+
+  // 三档额度文案必须能区分开：用户要知道是换账号有用，还是整个网络都被限了
+  it('should word the account and network scopes differently', () => {
+    expect(
+      describeQuotaExceeded({ details: { scope: 'account', limit: 3, resetAt } }).hint,
+    ).toContain('账号每天最多生成 3 次')
+    expect(
+      describeQuotaExceeded({ details: { scope: 'network', limit: 10, resetAt } }).hint,
+    ).toContain('网络每天最多生成 10 次')
+  })
+
+  // resetAt 缺失或被改坏时不能显示 NaN / Invalid Date
+  it('should fall back to tomorrow midnight without a usable resetAt', () => {
+    const result = describeQuotaExceeded({ details: { scope: 'network', resetAt: 'oops' } })
+
+    expect(result.hint).toContain('明天 00:00')
+    expect(result.hint).not.toContain('Invalid')
   })
 })

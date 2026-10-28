@@ -43,6 +43,51 @@ export function describeRateLimit({ details = {} } = {}) {
   }
 }
 
+const QUOTA_SCOPE_LABELS = { account: '账号', device: '设备', network: '网络' }
+
+// 额度的重置点由后端算好（北京时间次日 0 点），这里只负责按同一时区展示，
+// 不依赖用户本机时区——否则出国后会看到「明天 15:00 重置」这种怪话
+const resetFormatter = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  month: 'long',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+
+function resetPhraseOf(resetAt) {
+  const date = new Date(resetAt)
+  if (Number.isNaN(date.getTime())) return '明天 00:00'
+
+  return `${resetFormatter.format(date)}（北京时间）`
+}
+
+/**
+ * 429 QUOTA_EXCEEDED 的文案（md/35 §7.2 / §9 第 3 条）
+ *
+ * 与 RATE_LIMITED 分开：限流是「等一分钟」，额度是「等明天」，按钮也不同。
+ * scope 说明哪一档先用尽——换账号或换浏览器都绕不过剩下的那档。
+ *
+ * @param {{ details?: { scope?: string, limit?: number, used?: number, resetAt?: string } }} error
+ * @returns {{ scope: string, title: string, hint: string }}
+ */
+export function describeQuotaExceeded({ details = {} } = {}) {
+  const scope = details.scope || 'device'
+  const label = QUOTA_SCOPE_LABELS[scope] || '设备'
+  const limit = toNumber(details.limit)
+  const reset = resetPhraseOf(details.resetAt)
+
+  return {
+    scope,
+    title: '今天的生成次数用完了',
+    hint:
+      limit !== null
+        ? `${label}每天最多生成 ${limit} 次，${reset}重置。`
+        : `${label}今天的次数已经用完，${reset}重置。`,
+  }
+}
+
 /**
  * 四种「生成被挡下」的语义不同，用户能做的补救也不同：
  *   target_words     —— 422 这次参数凑不齐目标词：缩篇幅 / 换词源

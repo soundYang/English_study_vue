@@ -24,7 +24,7 @@ import BaseButton from './BaseButton.vue'
 import { useGenerateReading } from '../composables/useGenerateReading'
 import { useReadingStore } from '../stores/model/reading'
 import { useSettingsStore } from '../stores/model/settings'
-import { describeRateLimit, describeVocabShortage } from '../unit/error-text'
+import { describeQuotaExceeded, describeRateLimit, describeVocabShortage } from '../unit/error-text'
 import { TARGET_WORDS_MIN } from '../unit/validators'
 
 const TIPS = ['文章只会使用你学过的词', '正在检查词汇范围', '马上就好']
@@ -79,9 +79,15 @@ const rateLimit = computed(() =>
   isRateLimited.value ? describeRateLimit({ details: error.value?.details }) : null,
 )
 
-// retryable === false 的（词不够、参数错）重试只会再失败一次，按钮不该给；
+// 429 QUOTA_EXCEEDED 与分钟级限流分开：恢复时间是明天 0 点，文案按 scope 说清是哪一档
+const isQuotaExceeded = computed(() => errorCode.value === 'QUOTA_EXCEEDED')
+const quotaExceeded = computed(() =>
+  isQuotaExceeded.value ? describeQuotaExceeded({ details: error.value?.details }) : null,
+)
+
+// retryable === false 的（词不够、参数错、额度用完）重试只会再失败一次，按钮不该给；
 // 本地建任务失败（网络 / 429）没有这个字段，按可重试处理
-const canRetry = computed(() => error.value?.retryable !== false)
+const canRetry = computed(() => error.value?.retryable !== false && !isQuotaExceeded.value)
 // retryCount 只用于标题区分第几次尝试，不参与「复用了几段」的数量计算（md/22 §8.5 ②）
 const attemptTitle = computed(() => {
   const retryCount = Number(task.value?.retryCount) || 0
@@ -90,6 +96,7 @@ const attemptTitle = computed(() => {
 
 const errorTitle = computed(() => {
   if (vocabShortage.value) return vocabShortage.value.title
+  if (quotaExceeded.value) return quotaExceeded.value.title
   if (rateLimit.value) return rateLimit.value.title
   if (attemptTitle.value) return attemptTitle.value
 
@@ -97,6 +104,7 @@ const errorTitle = computed(() => {
 })
 const errorHint = computed(() => {
   if (vocabShortage.value) return vocabShortage.value.hint
+  if (quotaExceeded.value) return quotaExceeded.value.hint
   if (rateLimit.value) return rateLimit.value.hint
 
   return '可以稍后再试，或返回设置调整参数。'
@@ -271,8 +279,8 @@ onBeforeUnmount(() => {
 
             <h2 id="generate-title" class="generate-title">{{ errorTitle }}</h2>
             <!-- 命中词汇类错误时后端 message 与 hint 说的是同一件事，只留 hint；
-                 429 同样按 code 给文案，后端 message 会重复一遍 -->
-            <p v-if="!vocabShortage && !rateLimit" class="generate-subtitle">
+                 429（限流 / 额度）同样按 code 给文案，后端 message 会重复一遍 -->
+            <p v-if="!vocabShortage && !rateLimit && !quotaExceeded" class="generate-subtitle">
               {{ error?.message }}
             </p>
             <p class="generate-hint">{{ errorHint }}</p>
@@ -298,7 +306,7 @@ onBeforeUnmount(() => {
                 去添加单词
               </BaseButton>
             </div>
-            <div v-else-if="rateLimit" class="generate-actions">
+            <div v-else-if="rateLimit || quotaExceeded" class="generate-actions">
               <BaseButton variant="secondary" @click="backToSettings">返回修改</BaseButton>
               <BaseButton @click="dismiss">知道了</BaseButton>
             </div>
@@ -306,7 +314,10 @@ onBeforeUnmount(() => {
               <BaseButton variant="secondary" @click="backToSettings">返回修改</BaseButton>
               <BaseButton v-if="canRetry" @click="handleRetry">重试</BaseButton>
             </div>
-            <p v-if="canRetry && !vocabShortage && !rateLimit" class="generate-note">
+            <p
+              v-if="canRetry && !vocabShortage && !rateLimit && !quotaExceeded"
+              class="generate-note"
+            >
               会从上次中断的地方继续，已经写好的部分不会重来
             </p>
           </template>

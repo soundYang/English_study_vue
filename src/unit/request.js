@@ -7,6 +7,7 @@
 import axios from 'axios'
 import { config } from '../config'
 import { normalizeApiError } from '../errors'
+import { getDeviceId } from './device'
 import { localStore, storageKeys } from './storage'
 
 // 运行中收到 401 AUTH_REQUIRED 时广播，由 App.vue 负责清会话并导航到登录页；
@@ -22,6 +23,9 @@ const http = axios.create({
 http.interceptors.request.use((requestConfig) => {
   const token = localStore.get(storageKeys.accessToken, '')
   if (token) requestConfig.headers.Authorization = `Bearer ${token}`
+
+  // 设备维度的每日额度靠它识别；同一个浏览器只生成一次（md/35 §9 第 2 条）
+  requestConfig.headers['X-Device-Id'] = getDeviceId()
 
   // GET 附加时间戳，避免浏览器或代理缓存旧数据
   if (requestConfig.method === 'get') {

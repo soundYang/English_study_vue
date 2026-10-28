@@ -72,6 +72,24 @@ describe('GenerateOverlay', () => {
     expect(store.phase).toBe('idle')
   })
 
+  // 额度用完是「等明天」，不是「等一分钟」：文案按 scope 区分，也不给重试
+  it('should explain the exhausted daily quota without a retry button', async () => {
+    await mountOverlay({
+      code: 'QUOTA_EXCEEDED',
+      message: '今天的 3 次生成额度已用完，明天 00:00 重置',
+      details: { scope: 'device', limit: 3, used: 3, resetAt: '2026-10-29T16:00:00.000Z' },
+      retryable: false,
+    })
+
+    expect(wrapper.get('.generate-title').text()).toBe('今天的生成次数用完了')
+    expect(wrapper.get('.generate-hint').text()).toContain('设备每天最多生成 3 次')
+    expect(wrapper.get('.generate-hint').text()).toContain('北京时间')
+    // 后端 message 与 hint 重复，不展示 subtitle
+    expect(wrapper.find('.generate-subtitle').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('重试')
+    expect(wrapper.text()).toContain('知道了')
+  })
+
   it('should keep the retry button for other failures', async () => {
     await mountOverlay({ code: 'AI_PROVIDER_ERROR', message: '暂时没有可用的生成模板' })
 

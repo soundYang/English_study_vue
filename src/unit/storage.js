@@ -99,6 +99,8 @@ export const storageKeys = {
   // Mock 的账号表与会话：真实后端没有这两个键（md/33 §6）
   mockAuthUsers: 'wr.mock.auth.users.v1',
   mockAuthSession: 'wr.mock.auth.session.v1',
+  // 设备标识：生成一次后长期复用，随每个请求带 X-Device-Id（md/35 §3.3）
+  deviceId: 'wr_device_id',
   answers: (readingId) => `wr.answers:${readingId}`,
   timer: (readingId) => `wr.timer:${readingId}`,
 }

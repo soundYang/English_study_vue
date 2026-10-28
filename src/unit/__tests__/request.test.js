@@ -72,6 +72,28 @@ describe('request rate limit headers', () => {
   })
 })
 
+describe('request device header', () => {
+  // 后端按 X-Device-Id 做设备维度的每日额度（md/35 §7）；格式不对会被静默忽略，
+  // 所以这里连形状一起断言
+  it('should send the device id on every request', async () => {
+    let headers = null
+    http.defaults.adapter = async (requestConfig) => {
+      headers = requestConfig.headers
+      return {
+        data: { ok: true },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: requestConfig,
+      }
+    }
+
+    await apiGet('/words')
+
+    expect(headers['X-Device-Id']).toMatch(/^[A-Za-z0-9_-]{16,64}$/)
+  })
+})
+
 describe('request auth expiry', () => {
   it('should broadcast and clear the token on 401 AUTH_REQUIRED', async () => {
     localStore.set(storageKeys.accessToken, 'sess_expired')

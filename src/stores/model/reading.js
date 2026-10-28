@@ -46,7 +46,13 @@ function delay(ms) {
 }
 
 /** 原样重试只会再失败一次的错误码：覆盖层据此不显示「重试」（后端 md/32 §9） */
-const NON_RETRYABLE_CODES = ['INSUFFICIENT_VOCABULARY', 'VOCABULARY_TOO_SMALL', 'INVALID_REQUEST']
+// QUOTA_EXCEEDED 也在此列：额度要到明天才恢复，原样重试只会再吃一次 429（md/35 §7.2）
+const NON_RETRYABLE_CODES = [
+  'INSUFFICIENT_VOCABULARY',
+  'VOCABULARY_TOO_SMALL',
+  'INVALID_REQUEST',
+  'QUOTA_EXCEEDED',
+]
 
 function isDocumentHidden() {
   return typeof document !== 'undefined' && document.hidden
