@@ -13,10 +13,27 @@ export function fetchWords(params = {}) {
   return apiGet('/words', params)
 }
 
-/** 新增单词；重复单词由后端返回 WORD_EXISTS */
+/**
+ * 新增单词
+ *
+ * 重复词默认走合并（`onDuplicate: auto`，返回 action / duplicate），
+ * 只有显式传 `onDuplicate: 'error'` 才会得到 409 WORD_EXISTS。
+ */
 export function createWord(payload) {
   if (config.useMock) return mockWords.create(payload)
   return apiPost('/words', payload)
+}
+
+/** 预检：只判断是否已存在、会走哪个合并动作，不落库 */
+export function checkWords(words, options = {}) {
+  if (config.useMock) return mockWords.check({ words }, options)
+  return apiPost('/words/check', { words }, options)
+}
+
+/** 批量导入：`dryRun` 只取预览，正式执行返回逐条结果 */
+export function batchWords(payload = {}) {
+  if (config.useMock) return mockWords.batch(payload)
+  return apiPost('/words/batch', payload)
 }
 
 /** 局部更新单词：单词、释义或学习状态 */

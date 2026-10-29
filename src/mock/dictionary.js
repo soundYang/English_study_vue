@@ -587,4 +587,25 @@ export async function search(q, { signal } = {}) {
   }))
 }
 
-export const mockDictionary = { search }
+/**
+ * 按词头精确取词条
+ *
+ * 预检与批量导入需要「是否收录 / 释义摘要」，不能靠 search 的前缀结果反推：
+ * search('app') 里可能有 apple，但 search('apple') 为空不代表没收录（大小写、空格已归一）。
+ * 返回副本，避免调用方改到词表常量。
+ */
+export function findEntry(word) {
+  const keyword = String(word ?? '')
+    .trim()
+    .toLowerCase()
+  const entry = ENTRIES.find((item) => item.headword === keyword)
+  if (!entry) return null
+
+  return {
+    ...entry,
+    phonetic: { ...entry.phonetic },
+    senses: entry.senses.map((sense) => ({ ...sense })),
+  }
+}
+
+export const mockDictionary = { search, findEntry }

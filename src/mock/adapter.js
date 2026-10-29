@@ -5,6 +5,7 @@
  * 修改写入 localStorage 的 wr.mock.db.v2；调用 resetMockDb() 可恢复初始数据。
  */
 import { createSeedDatabase, READING_TEMPLATES } from './seed'
+import { findEntry } from './dictionary'
 import { localStore, storageKeys } from '../unit/storage'
 import { countWords } from '../unit/format'
 import {
@@ -54,6 +55,10 @@ const USER_API_KEY_MAX = 128
 const USER_API_KEY_PATTERN = /^sk-[A-Za-z0-9_-]{16,120}$/
 const USER_API_KEY_MASK_PREFIX = 'sk-****'
 const USER_API_KEY_PROVIDERS = ['deepseek']
+// 添加单词优化（md/44）：上限、批量条数与文本长度都与后端 schema 同口径
+const WORD_LIBRARY_LIMIT = 5000
+const WORD_BATCH_MAX = 200
+const WORD_BATCH_TEXT_MAX = 32768
 
 /** 写 targetWords 词至少要认识多少词；与后端 capacity-table.js 的 minKnownFor 同构 */
 function mockMinKnown(targetWords, level) {
@@ -193,7 +198,7 @@ function isValidWord(item) {
   return Boolean(
     item &&
     typeof item.word === 'string' &&
-    (item.source === 'dictionary' || item.source === 'manual') &&
+    ['dictionary', 'manual', 'basic-removed'].includes(item.source) &&
     Array.isArray(item.senses),
   )
 }
@@ -1248,6 +1253,154 @@ export const mockAuth = {
   },
 }
 
+/** 预检响应里的词库摘要；没收录时也返回固定形状，视图不用判 null */
+function toDictionaryBrief(entry) {
+  return entry
+    ? {
+        found: true,
+        id: entry.id,
+        summary: buildSummary(entry.senses),
+        senseCount: entry.senses.length,
+      }
+    : { found: false, id: null, summary: '', senseCount: 0 }
+}
+
+/**
+ * 合并重复词（md/44 §5.3）
+ *
+ * 优先级 reactivated > updated > enriched > kept。
+ * 只在「原来没有义项」时补内容，任何情况下都不覆盖非空的手填释义；
+ * 请求自带 meaning 时优先用它，没带才落到词库快照（md/44 §16.2）。
+ * createdAt / 学习进度字段原样保留，所以这里只复制再改 status / source / 快照。
+ *
+ * @returns {{ next: object, action: string, changed: boolean }}
+ */
+function mergeDuplicateWord(
+  existing,
+  { status, source, dictionaryId, phonetic, senses, meaning = '' },
+) {
+  const wantsStatus = status === 'learning' || status === 'mastered'
+  const next = { ...existing }
+  const nextSenses = meaning ? [{ pos: '', meaning }] : senses
+  let action = 'kept'
+
+  if (existing.source === 'basic-removed' && wantsStatus) {
+    next.status = status
+    next.source = source === 'dictionary' ? 'dictionary' : 'manual'
+    action = 'reactivated'
+  } else if (existing.status === 'new' && wantsStatus) {
+    next.status = status
+    action = 'reactivated'
+  } else if (existing.status !== status) {
+    next.status = status
+    action = 'updated'
+  } else if (
+    existing.source === 'manual' &&
+    (!existing.senses || existing.senses.length === 0) &&
+    nextSenses.length > 0
+  ) {
+    // 手填释义不需要词库快照；只有没给 meaning、又命中词库时才升级为 dictionary
+    if (!meaning && source === 'dictionary') {
+      next.source = 'dictionary'
+      next.dictionaryId = dictionaryId ?? null
+      next.phonetic = normalizePhonetic(phonetic)
+    }
+    next.senses = nextSenses
+    action = 'enriched'
+  }
+
+  if (action === 'kept') return { next: existing, action, changed: false }
+
+  next.updatedAt = new Date().toISOString()
+  return { next, action, changed: true }
+}
+
+/** 新建词条；与后端的 buildCreatePayload 同口径，词库快照只对命中条目生效 */
+function makeWordRecord(
+  db,
+  { word, status, source, dictionaryId, phonetic, senses, meaning, cocaRank },
+) {
+  const isDictionary = source === 'dictionary'
+
+  return {
+    id: `w${db.wordSeq}`,
+    word,
+    status,
+    createdAt: new Date().toISOString(),
+    source,
+    cocaRank: isDictionary ? (cocaRank ?? null) : null,
+    dictionaryId: isDictionary ? (dictionaryId ?? null) : null,
+    phonetic: isDictionary ? normalizePhonetic(phonetic) : null,
+    senses: isDictionary ? senses : meaning ? [{ pos: '', meaning }] : [],
+  }
+}
+
+/** 写操作响应：创建 / 合并时附带 action、duplicate，只有显式要求才带 counts */
+function withWordMutationMeta(dto, action, duplicate, db, includeCounts) {
+  const result = { ...dto, action, duplicate }
+
+  if (includeCounts === true) {
+    result.counts = countWordsByStatus(db.words)
+    result.total = db.words.length
+  }
+
+  return result
+}
+
+const CJK_CHAR = /[一-鿿]/
+
+/**
+ * 解析粘贴导入的文本（md/44 §5.4）
+ *
+ * 每行一条，index 保留原始行号（0 基），错误提示才能指回用户看到的那一行。
+ * 分隔优先级：制表符 / 全角空格 → 两侧带空格的 `- – — : =` → 首个中文字符。
+ * 先切显式分隔符，`abandon - 放弃` 才不会把 `abandon -` 当成单词。
+ * 注释行与空行跳过。
+ */
+function parseWordBatchText(text) {
+  const lines = String(text ?? '')
+    .replace(/^﻿/, '')
+    .split(/\r?\n/)
+  const entries = []
+
+  lines.forEach((line, index) => {
+    const value = line.trim()
+    if (!value || value.startsWith('#') || value.startsWith('//')) return
+
+    let splitAt = -1
+    for (let i = 0; i < value.length; i += 1) {
+      const char = value[i]
+      const before = value[i - 1] || ''
+      const after = value[i + 1] || ''
+
+      if (char === '\t' || char === '　' || CJK_CHAR.test(char)) {
+        splitAt = i
+        break
+      }
+      if ('-–—:='.includes(char) && /\s/.test(before) && /\s/.test(after)) {
+        splitAt = i
+        break
+      }
+    }
+
+    if (splitAt < 0) {
+      entries.push({ index, word: value, meaning: '' })
+      return
+    }
+
+    entries.push({
+      index,
+      word: value.slice(0, splitAt).trim(),
+      meaning: value
+        .slice(splitAt)
+        .replace(/^[\t　\s\-–—:=]+/, '')
+        .trim(),
+    })
+  })
+
+  return entries
+}
+
 export const mockWords = {
   async list({ q = '', status = 'all', page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
     await wait(latency)
@@ -1282,6 +1435,12 @@ export const mockWords = {
     }
   },
 
+  /**
+   * 新建单词（md/44 §5）
+   *
+   * 默认 `onDuplicate=auto`：重复词不再抛 409，而是按合并优先级返回 200 + action。
+   * `skip` 保留原词、`error` 维持旧 409 行为，供调用方显式选择。
+   */
   async create(payload = {}) {
     await wait(latency)
 
@@ -1299,29 +1458,383 @@ export const mockWords = {
       const { field, message } = firstError(errors)
       throw new MockApiError('INVALID_REQUEST', message, 400, field)
     }
-    if (db.words.some((item) => item.word === word)) {
-      throw new MockApiError('WORD_EXISTS', '这个单词已经在词库中了', 409, 'word')
-    }
 
     const status = isValidWordStatus(payload.status) ? payload.status : 'learning'
-    const item = {
-      id: `w${db.wordSeq}`,
-      word,
-      status,
-      createdAt: new Date().toISOString(),
-      source,
+    const onDuplicate = ['auto', 'skip', 'error'].includes(payload.onDuplicate)
+      ? payload.onDuplicate
+      : 'auto'
+    const index = db.words.findIndex((item) => item.word === word)
+    let item
+    let action
+    let duplicate = false
+
+    if (index >= 0) {
+      duplicate = true
+
+      if (onDuplicate === 'error') {
+        throw new MockApiError('WORD_EXISTS', '这个单词已经在词库中了', 409, 'word')
+      }
+
+      if (onDuplicate === 'skip') {
+        item = db.words[index]
+        action = 'kept'
+      } else {
+        const merged = mergeDuplicateWord(db.words[index], {
+          status,
+          source,
+          dictionaryId: payload.dictionaryId,
+          phonetic: payload.phonetic,
+          senses,
+          meaning,
+        })
+        action = merged.action
+        item = merged.next
+
+        if (merged.changed) {
+          db.words[index] = item
+          writeDb(db)
+        }
+      }
+    } else {
+      if (db.words.length >= WORD_LIBRARY_LIMIT) {
+        throw new MockApiError(
+          'WORD_LIMIT_REACHED',
+          `词库最多保存 ${WORD_LIBRARY_LIMIT} 个单词`,
+          409,
+          '',
+          { limit: WORD_LIBRARY_LIMIT },
+        )
+      }
+
       // 词库快照只对命中条目生效；手填条目一律为 null
-      cocaRank: source === 'dictionary' ? (payload.cocaRank ?? null) : null,
-      dictionaryId: source === 'dictionary' ? (payload.dictionaryId ?? null) : null,
-      phonetic: source === 'dictionary' ? normalizePhonetic(payload.phonetic) : null,
-      senses: source === 'dictionary' ? senses : meaning ? [{ pos: '', meaning }] : [],
+      item = makeWordRecord(db, {
+        word,
+        status,
+        source,
+        dictionaryId: payload.dictionaryId,
+        phonetic: payload.phonetic,
+        senses,
+        meaning,
+        cocaRank: payload.cocaRank,
+      })
+      db.wordSeq += 1
+      db.words.push(item)
+      writeDb(db)
+      action = 'created'
     }
 
-    db.wordSeq += 1
-    db.words.push(item)
-    writeDb(db)
+    return withWordMutationMeta(toWordDto(item), action, duplicate, db, payload.includeCounts)
+  },
 
-    return toWordDto(item)
+  /**
+   * 预检（md/44 §6）：只判断、不落库，用于粘贴导入前的确认
+   *
+   * 返回顺序与入参一致，调用方按 index 对齐；`action` 与真实创建时的合并动作保持同口径。
+   */
+  async check({ words = [], status } = {}) {
+    await wait(latency)
+
+    if (!Array.isArray(words) || words.length === 0 || words.length > WORD_BATCH_MAX) {
+      throw new MockApiError(
+        'INVALID_REQUEST',
+        `一次可检查 1–${WORD_BATCH_MAX} 个单词`,
+        400,
+        'words',
+      )
+    }
+
+    const db = readDb()
+    const targetStatus = isValidWordStatus(status) ? status : 'learning'
+
+    return {
+      items: words.map((raw) => {
+        const value = String(raw ?? '').trim()
+        const { valid, errors, word } = validateWordInput({
+          word: value,
+          meaning: '',
+          mode: 'manual',
+          senses: [],
+        })
+
+        if (!valid) {
+          return {
+            word: value,
+            valid: false,
+            reason: firstError(errors).message,
+            exists: false,
+            dictionary: null,
+            action: 'invalid',
+          }
+        }
+
+        const existing = db.words.find((item) => item.word === word)
+        const entry = findEntry(word)
+        const senses = entry ? normalizeSenses(entry.senses) : []
+        const action = existing
+          ? mergeDuplicateWord(existing, {
+              status: targetStatus,
+              source: entry ? 'dictionary' : 'manual',
+              dictionaryId: entry?.id,
+              phonetic: entry?.phonetic,
+              senses,
+            }).action
+          : 'create'
+
+        return {
+          word,
+          valid: true,
+          exists: Boolean(existing),
+          wordId: existing?.id ?? null,
+          status: existing?.status ?? null,
+          source: existing?.source ?? null,
+          dictionary: toDictionaryBrief(entry),
+          action,
+        }
+      }),
+    }
+  },
+
+  /**
+   * 批量导入（md/44 §7）
+   *
+   * `dryRun=true` 只返回预览；否则落库并返回逐条结果。
+   * 任何一条失败都不影响其他条，errors[].index 指回原始输入下标 / 行号。
+   */
+  async batch(payload = {}) {
+    await wait(latency)
+
+    const db = readDb()
+    const dryRun = payload.dryRun === true
+    const onDuplicate = ['auto', 'skip', 'error'].includes(payload.onDuplicate)
+      ? payload.onDuplicate
+      : 'auto'
+    const defaultStatus = isValidWordStatus(payload.status) ? payload.status : 'learning'
+    let entries
+
+    if (Array.isArray(payload.words) && payload.words.length > 0) {
+      if (payload.words.length > WORD_BATCH_MAX) {
+        throw new MockApiError(
+          'INVALID_REQUEST',
+          `一次最多导入 ${WORD_BATCH_MAX} 个单词`,
+          400,
+          'words',
+        )
+      }
+
+      entries = payload.words.map((raw, index) => {
+        if (typeof raw === 'string') return { index, word: raw, meaning: '', status: defaultStatus }
+        return {
+          index,
+          word: String(raw?.word ?? ''),
+          meaning: String(raw?.meaning ?? ''),
+          status: isValidWordStatus(raw?.status) ? raw.status : defaultStatus,
+        }
+      })
+    } else if (typeof payload.text === 'string' && payload.text.trim()) {
+      if (payload.text.length > WORD_BATCH_TEXT_MAX) {
+        throw new MockApiError(
+          'INVALID_REQUEST',
+          `粘贴内容最多 ${WORD_BATCH_TEXT_MAX} 个字符`,
+          400,
+          'text',
+        )
+      }
+
+      entries = parseWordBatchText(payload.text).map((entry) => ({
+        ...entry,
+        status: defaultStatus,
+      }))
+    } else {
+      throw new MockApiError('INVALID_REQUEST', '请提供 words 或 text', 400, 'words')
+    }
+
+    if (entries.length === 0) {
+      throw new MockApiError('INVALID_REQUEST', '没有可导入的内容', 400, 'words')
+    }
+    if (entries.length > WORD_BATCH_MAX) {
+      throw new MockApiError(
+        'INVALID_REQUEST',
+        `一次最多导入 ${WORD_BATCH_MAX} 个单词`,
+        400,
+        'words',
+      )
+    }
+
+    const errors = []
+    const planned = []
+    const skippedItems = []
+    const seen = new Set()
+    let skipped = 0
+    let remainingSlots = Math.max(0, WORD_LIBRARY_LIMIT - db.words.length)
+
+    entries.forEach((entry) => {
+      const {
+        valid,
+        errors: fieldErrors,
+        word,
+        meaning,
+      } = validateWordInput({
+        word: entry.word,
+        meaning: entry.meaning,
+        mode: 'manual',
+        senses: [],
+      })
+
+      if (!valid) {
+        errors.push({
+          index: entry.index,
+          word: String(entry.word ?? ''),
+          code: 'INVALID_REQUEST',
+          message: firstError(fieldErrors).message,
+        })
+        return
+      }
+
+      // 同一批里重复出现只处理第一条，后续按跳过计，并指回原输入下标
+      if (seen.has(word)) {
+        skipped += 1
+        skippedItems.push({ index: entry.index, word, reason: 'DUPLICATE_IN_REQUEST' })
+        return
+      }
+      seen.add(word)
+
+      const dictionaryEntry = findEntry(word)
+      const source = dictionaryEntry ? 'dictionary' : 'manual'
+      const senses = dictionaryEntry
+        ? normalizeSenses(dictionaryEntry.senses)
+        : meaning
+          ? [{ pos: '', meaning }]
+          : []
+      const existingIndex = db.words.findIndex((item) => item.word === word)
+
+      if (existingIndex >= 0) {
+        if (onDuplicate === 'error') {
+          errors.push({
+            index: entry.index,
+            word,
+            code: 'WORD_EXISTS',
+            message: '这个单词已经在词库中了',
+          })
+          return
+        }
+
+        if (onDuplicate === 'skip') {
+          skipped += 1
+          return
+        }
+
+        const existing = db.words[existingIndex]
+        const merged = mergeDuplicateWord(existing, {
+          status: entry.status,
+          source,
+          dictionaryId: dictionaryEntry?.id,
+          phonetic: dictionaryEntry?.phonetic,
+          senses,
+          meaning,
+        })
+
+        if (!merged.changed) {
+          skipped += 1
+          return
+        }
+
+        planned.push({
+          entry,
+          word,
+          existingIndex,
+          isNew: false,
+          next: merged.next,
+          preview: {
+            word,
+            action: merged.action,
+            status: merged.next.status,
+            // 与后端一致：预览展示「变更前」的来源，便于看出 reactivated 的变化
+            source: existing.source,
+            summary: buildSummary(merged.next.senses),
+          },
+        })
+        return
+      }
+
+      if (remainingSlots <= 0) {
+        errors.push({
+          index: entry.index,
+          word,
+          code: 'WORD_LIMIT_REACHED',
+          message: `词库最多保存 ${WORD_LIBRARY_LIMIT} 个单词`,
+        })
+        return
+      }
+      remainingSlots -= 1
+
+      planned.push({
+        entry,
+        word,
+        existingIndex: -1,
+        isNew: true,
+        source,
+        senses,
+        dictionaryId: dictionaryEntry?.id,
+        phonetic: dictionaryEntry?.phonetic,
+        meaning,
+        preview: {
+          word,
+          action: 'create',
+          status: entry.status,
+          source,
+          summary: buildSummary(senses),
+        },
+      })
+    })
+
+    const wouldCreate = planned.filter((plan) => plan.isNew).length
+    const wouldUpdate = planned.length - wouldCreate
+
+    if (dryRun) {
+      return {
+        dryRun: true,
+        wouldCreate,
+        wouldUpdate,
+        wouldSkip: skipped,
+        invalid: errors.length,
+        preview: planned.map((plan) => plan.preview),
+        skippedItems,
+        errors,
+      }
+    }
+
+    const items = planned.map((plan) => {
+      if (plan.isNew) {
+        const record = makeWordRecord(db, {
+          word: plan.word,
+          status: plan.entry.status,
+          source: plan.source,
+          dictionaryId: plan.dictionaryId,
+          phonetic: plan.phonetic,
+          senses: plan.senses,
+          meaning: plan.meaning,
+        })
+        db.wordSeq += 1
+        db.words.push(record)
+        return record
+      }
+
+      db.words[plan.existingIndex] = plan.next
+      return plan.next
+    })
+
+    if (items.length > 0) writeDb(db)
+
+    return {
+      created: wouldCreate,
+      updated: wouldUpdate,
+      skipped,
+      failed: errors.length,
+      total: entries.length,
+      items: items.map(toWordDto),
+      skippedItems,
+      errors,
+    }
   },
 
   async update(id, patch = {}) {

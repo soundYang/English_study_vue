@@ -62,10 +62,69 @@ describe('mockWords.list', () => {
 })
 
 describe('mockWords mutations', () => {
-  it('should reject duplicate words with WORD_EXISTS', async () => {
-    await expect(mockWords.create({ word: 'Apple', meaning: '苹果' })).rejects.toMatchObject({
+  it('should merge duplicate words by default and report the action', async () => {
+    const created = await mockWords.create({ word: 'Apple', meaning: '苹果', status: 'learning' })
+
+    expect(created).toMatchObject({
+      word: 'apple',
+      status: 'learning',
+      action: 'updated',
+      duplicate: true,
+    })
+
+    const result = await mockWords.list({ pageSize: 50 })
+    expect(result.total).toBe(24)
+  })
+
+  it('should keep the original when onDuplicate is skip', async () => {
+    const result = await mockWords.create({
+      word: 'apple',
+      status: 'learning',
+      onDuplicate: 'skip',
+    })
+
+    expect(result).toMatchObject({
+      word: 'apple',
+      status: 'mastered',
+      action: 'kept',
+      duplicate: true,
+    })
+  })
+
+  it('should still reject duplicates when onDuplicate is error', async () => {
+    await expect(
+      mockWords.create({ word: 'Apple', meaning: '苹果', onDuplicate: 'error' }),
+    ).rejects.toMatchObject({
       error: { code: 'WORD_EXISTS', field: 'word' },
     })
+  })
+
+  it('should report kept when the duplicate already has the same status', async () => {
+    const result = await mockWords.create({ word: 'apple', status: 'mastered' })
+
+    expect(result).toMatchObject({ action: 'kept', duplicate: true, status: 'mastered' })
+  })
+
+  it('should include counts only when requested', async () => {
+    const plain = await mockWords.create({ word: 'orchid' })
+    const withCounts = await mockWords.create({ word: 'violet', includeCounts: true })
+
+    expect(plain.counts).toBeUndefined()
+    expect(withCounts.counts).toEqual({ all: 26, mastered: 11, learning: 11, new: 4 })
+    expect(withCounts.total).toBe(26)
+  })
+
+  it('should enrich an empty manual entry without pretending it came from the dictionary', async () => {
+    await mockWords.create({ word: 'orchid' })
+    const enriched = await mockWords.create({ word: 'orchid', meaning: '兰花' })
+
+    expect(enriched).toMatchObject({
+      word: 'orchid',
+      source: 'manual',
+      action: 'enriched',
+      duplicate: true,
+    })
+    expect(enriched.senses[0].meaning).toBe('兰花')
   })
 
   it('should reject invalid characters and keep the field name', async () => {
@@ -134,6 +193,132 @@ describe('mockWords mutations', () => {
     expect(reading.vocabulary).toContain('apple')
     await expect(mockWords.remove('w1')).rejects.toMatchObject({
       error: { code: 'WORD_NOT_FOUND' },
+    })
+  })
+})
+
+describe('mockWords.check', () => {
+  it('should report validity, existence, dictionary hit and merge action', async () => {
+    const result = await mockWords.check({ words: ['apple', 'orchid', '123'] })
+    const [apple, orchid, invalid] = result.items
+
+    expect(apple).toMatchObject({
+      valid: true,
+      exists: true,
+      wordId: 'w1',
+      status: 'mastered',
+      dictionary: { found: true, id: 'dict_apple', senseCount: 2 },
+      // 默认把状态改成 learning，因此已掌握的 apple 会被更新
+      action: 'updated',
+    })
+    expect(orchid).toMatchObject({
+      valid: true,
+      exists: false,
+      dictionary: { found: false },
+      action: 'create',
+    })
+    expect(invalid).toMatchObject({ valid: false, exists: false, action: 'invalid' })
+    expect(invalid.reason).toBeTruthy()
+    expect(invalid.dictionary).toBeNull()
+  })
+
+  it('should report kept when the target status matches', async () => {
+    const result = await mockWords.check({ words: ['apple'], status: 'mastered' })
+
+    expect(result.items[0].action).toBe('kept')
+  })
+
+  it('should reject empty or oversized batches', async () => {
+    await expect(mockWords.check({ words: [] })).rejects.toMatchObject({
+      error: { code: 'INVALID_REQUEST', field: 'words' },
+    })
+
+    const words = Array.from({ length: 201 }, (_, index) => `word${index}`)
+    await expect(mockWords.check({ words })).rejects.toMatchObject({
+      error: { code: 'INVALID_REQUEST', field: 'words' },
+    })
+  })
+})
+
+describe('mockWords.batch', () => {
+  const TEXT = ['zebra 斑马', 'orchid', 'apple', '# 注释不是单词', '123', 'zebra'].join('\n')
+
+  it('should preview a pasted list without touching the library', async () => {
+    const preview = await mockWords.batch({ text: TEXT, dryRun: true })
+
+    expect(preview).toMatchObject({
+      dryRun: true,
+      wouldCreate: 2,
+      wouldUpdate: 1,
+      wouldSkip: 1,
+      invalid: 1,
+    })
+    expect(preview.preview.map((item) => [item.word, item.action])).toEqual([
+      ['zebra', 'create'],
+      ['orchid', 'create'],
+      ['apple', 'updated'],
+    ])
+    // 行号是原始文本下标：123 在第 5 行
+    expect(preview.errors[0]).toMatchObject({ index: 4, word: '123' })
+
+    const list = await mockWords.list({ pageSize: 50 })
+    expect(list.total).toBe(24)
+  })
+
+  it('should create and merge entries, keeping per-item errors', async () => {
+    const result = await mockWords.batch({ text: TEXT })
+
+    expect(result).toMatchObject({
+      created: 2,
+      updated: 1,
+      skipped: 1,
+      failed: 1,
+      total: 5,
+    })
+    expect(result.items.map((item) => item.word)).toEqual(['zebra', 'orchid', 'apple'])
+    expect(result.errors[0]).toMatchObject({ index: 4, word: '123' })
+    expect(result.skippedItems).toEqual([
+      { index: 5, word: 'zebra', reason: 'DUPLICATE_IN_REQUEST' },
+    ])
+
+    const list = await mockWords.list({ pageSize: 50 })
+    expect(list.total).toBe(26)
+    expect(list.items.find((item) => item.word === 'apple').status).toBe('learning')
+    expect(list.items.find((item) => item.word === 'zebra').senses[0].meaning).toBe('斑马')
+  })
+
+  it('should honor onDuplicate skip and error for array input', async () => {
+    const skipped = await mockWords.batch({
+      words: ['apple', 'orchid'],
+      onDuplicate: 'skip',
+    })
+    expect(skipped).toMatchObject({ created: 1, updated: 0, skipped: 1 })
+
+    const rejected = await mockWords.batch({
+      words: ['apple'],
+      onDuplicate: 'error',
+    })
+    expect(rejected).toMatchObject({ created: 0, failed: 1 })
+    expect(rejected.errors[0].code).toBe('WORD_EXISTS')
+  })
+
+  it('should split on explicit separators before the first Chinese character', async () => {
+    const preview = await mockWords.batch({
+      text: 'abandon - 放弃\norchid　兰花',
+      dryRun: true,
+    })
+
+    expect(preview.preview.map((item) => item.word)).toEqual(['abandon', 'orchid'])
+    expect(preview.wouldCreate).toBe(2)
+  })
+
+  it('should reject empty payloads and oversized text', async () => {
+    await expect(mockWords.batch({})).rejects.toMatchObject({
+      error: { code: 'INVALID_REQUEST', field: 'words' },
+    })
+
+    await expect(mockWords.batch({ text: 'a'.repeat(32769) })).rejects.toMatchObject({
+      error: { code: 'INVALID_REQUEST', field: 'text' },
     })
   })
 })

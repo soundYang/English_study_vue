@@ -96,16 +96,53 @@ describe('words store', () => {
     expect(store.items[0].word).toBe('zebra')
   })
 
-  it('should return a field error when the word already exists', async () => {
+  it('should merge a duplicate word and report the action', async () => {
     const store = useWordsStore()
     await store.fetchList()
 
     const result = await store.addWord({ word: 'APPLE', meaning: '苹果', status: 'learning' })
 
-    expect(result.ok).toBe(false)
-    expect(result.errors.word).toBe('这个单词已经在词库中了')
-    expect(result.code).toBe('WORD_EXISTS')
+    expect(result).toMatchObject({ ok: true, action: 'updated', duplicate: true })
+    expect(result.item.word).toBe('apple')
     expect(store.total).toBe(24)
+    expect(store.counts.learning).toBe(10)
+  })
+
+  it('should not refetch when the duplicate is kept unchanged', async () => {
+    const store = useWordsStore()
+    await store.fetchList()
+
+    const result = await store.addWord({ word: 'APPLE', status: 'mastered' })
+
+    expect(result).toMatchObject({ ok: true, action: 'kept', duplicate: true })
+    expect(result.item.status).toBe('mastered')
+    expect(store.page).toBe(1)
+    expect(store.total).toBe(24)
+  })
+
+  it('should preview a batch without creating words', async () => {
+    const store = useWordsStore()
+    await store.fetchList()
+
+    const result = await store.previewBatch({ text: 'zebra\norchid', status: 'learning' })
+
+    expect(result.ok).toBe(true)
+    expect(result.data).toMatchObject({ wouldCreate: 2, wouldUpdate: 0, wouldSkip: 0 })
+    expect(store.total).toBe(24)
+  })
+
+  it('should import a batch and refresh the list', async () => {
+    const store = useWordsStore()
+    await store.fetchList()
+
+    const result = await store.importBatch({ text: 'zebra\norchid', status: 'learning' })
+
+    expect(result.ok).toBe(true)
+    expect(result.data).toMatchObject({ created: 2, updated: 0, failed: 0 })
+    expect(store.total).toBe(26)
+    expect(store.items.map((item) => item.word)).toEqual(
+      expect.arrayContaining(['zebra', 'orchid']),
+    )
   })
 
   it('should update a word and keep counts in sync', async () => {

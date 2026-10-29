@@ -7,6 +7,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import {
+  batchWords,
   createWord,
   deleteWord as deleteWordRequest,
   fetchWords,
@@ -115,12 +116,16 @@ export const useWordsStore = defineStore('words', () => {
   }
 
   /**
-   * 新增单词；成功后回到第 1 页，新词按创建时间排在最前
-   * 命中词库时透传整条快照，手填时只有 word / status / meaning 有意义
+   * 新增单词
+   *
+   * 后端对重复词默认做合并，返回 `action` 说明实际发生了什么：
+   * created / reactivated / updated / enriched 会改变列表，回到第 1 页静默刷新；
+   * kept 表示词库原样保留，跳过刷新，避免用户当前页无意义地跳动。
+   * 命中词库时透传整条快照，手填时只有 word / status / meaning 有意义。
    */
   async function addWord(payload = {}) {
     try {
-      const item = await createWord({
+      const result = await createWord({
         word: payload.word,
         status: payload.status,
         source: payload.source,
@@ -128,11 +133,20 @@ export const useWordsStore = defineStore('words', () => {
         phonetic: payload.phonetic ?? null,
         senses: payload.senses ?? [],
         meaning: payload.meaning,
+        includeCounts: true,
       })
 
-      page.value = 1
-      await fetchList({ quiet: true })
-      return { ok: true, item }
+      const action = result?.action || 'created'
+      const duplicate = result?.duplicate === true
+
+      if (action !== 'kept') {
+        page.value = 1
+        await fetchList({ quiet: true })
+      } else if (result?.counts) {
+        counts.value = result.counts
+      }
+
+      return { ok: true, item: result, action, duplicate }
     } catch (caught) {
       return toFailure(caught)
     }
@@ -184,6 +198,37 @@ export const useWordsStore = defineStore('words', () => {
     }
   }
 
+  /** 批量导入预览：只返回将新增 / 更新 / 跳过多少条，不落库 */
+  async function previewBatch(payload = {}) {
+    try {
+      const data = await batchWords({ ...payload, dryRun: true })
+      return { ok: true, data }
+    } catch (caught) {
+      return toFailure(caught)
+    }
+  }
+
+  /**
+   * 正式批量导入
+   *
+   * 单条失败不会让整个请求失败（后端仍返回 200 + errors），
+   * 这里只在确实有新增 / 更新时刷新列表，避免「全部跳过」也把页码打回第 1 页。
+   */
+  async function importBatch(payload = {}) {
+    try {
+      const data = await batchWords({ ...payload, dryRun: false })
+
+      if ((data?.created || 0) + (data?.updated || 0) > 0) {
+        page.value = 1
+        await fetchList({ quiet: true })
+      }
+
+      return { ok: true, data }
+    } catch (caught) {
+      return toFailure(caught)
+    }
+  }
+
   function reset() {
     requestSeq += 1
     items.value = []
@@ -220,6 +265,8 @@ export const useWordsStore = defineStore('words', () => {
     addWord,
     updateWord,
     removeWord,
+    previewBatch,
+    importBatch,
     reset,
   }
 })

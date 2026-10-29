@@ -259,6 +259,48 @@ describe('Words page', () => {
     expect(toasts.items.map((item) => item.message)).toContain('已添加 zebra')
   })
 
+  it('should say the word was updated when adding a duplicate', async () => {
+    const wrapper = await mountPage()
+    const toasts = useToastStore()
+
+    await wrapper.get('input[name="word"]').setValue('APPLE')
+    await wrapper.get('form.word-form').trigger('submit')
+    await flushPromises()
+
+    const store = useWordsStore()
+    expect(store.total).toBe(24)
+    expect(toasts.items.map((item) => item.message)).toContain('已更新 apple 的学习状态')
+  })
+
+  it('should paste a list, preview it and import it', async () => {
+    const wrapper = await mountPage()
+    const store = useWordsStore()
+    const toasts = useToastStore()
+
+    const batchButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('批量导入'))
+    await batchButton.trigger('click')
+    await flushPromises()
+
+    await wrapper.get('textarea.batch-textarea').setValue('zebra 斑马\norchid')
+
+    const previewButton = wrapper.findAll('button').find((button) => button.text() === '预览')
+    await previewButton.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('将新增 2 个')
+    expect(wrapper.findAll('.preview-item')).toHaveLength(2)
+
+    const importButton = wrapper.findAll('button').find((button) => button.text() === '确认导入')
+    await importButton.trigger('click')
+    await flushPromises()
+
+    expect(store.total).toBe(26)
+    expect(wrapper.text()).toContain('新增 2 个，更新 0 个')
+    expect(toasts.items.map((item) => item.message)).toContain('批量导入完成：新增 2 个')
+  })
+
   it('should confirm before deleting a word', async () => {
     const wrapper = await mountPage()
     const store = useWordsStore()

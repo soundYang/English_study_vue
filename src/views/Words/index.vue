@@ -12,6 +12,7 @@ import EmptyState from '../../component/EmptyState.vue'
 import PaginationBar from '../../component/PaginationBar.vue'
 import StatusPill from '../../component/StatusPill.vue'
 import WordDetailPopover from '../../component/WordDetailPopover.vue'
+import WordBatchImport from './component/WordBatchImport.vue'
 import WordEditModal from './component/WordEditModal.vue'
 import WordFormPanel from './component/WordFormPanel.vue'
 import WordStatusTabs from './component/WordStatusTabs.vue'
@@ -31,6 +32,7 @@ const store = useWordsStore()
 const isWide = useMediaQuery('(min-width: 1200px)')
 
 const addModalOpen = ref(false)
+const batchOpen = ref(false)
 const editOpen = ref(false)
 const editingWord = ref(null)
 const deleteOpen = ref(false)
@@ -198,6 +200,16 @@ function handleEmptyAction() {
   openAddPanel()
 }
 
+// 添加与合并共用同一个接口，用 action 告诉用户这次到底发生了什么：
+// 重复词被合并时如果仍提示「已添加」，用户会以为词库里多了一条。
+const ADD_MESSAGES = {
+  created: (word) => ['success', `已添加 ${word}`],
+  reactivated: (word) => ['success', `已恢复 ${word}`],
+  updated: (word) => ['success', `已更新 ${word} 的学习状态`],
+  enriched: (word) => ['success', `已补全 ${word} 的释义`],
+  kept: (word) => ['info', `词库里已经有 ${word}，这次未改动`],
+}
+
 async function handleAdd(payload) {
   const result = await store.addWord(payload)
 
@@ -207,9 +219,26 @@ async function handleAdd(payload) {
   }
 
   detailTarget.value = null
-  toast.success(`已添加 ${result.item.word}`)
-  flashRow(result.item.id, TOAST_HIGHLIGHT_DURATION)
+  const word = result.item.word
+  const [level, message] = (ADD_MESSAGES[result.action] || ADD_MESSAGES.created)(word)
+  toast[level](message)
+
+  if (result.action !== 'kept') flashRow(result.item.id, TOAST_HIGHLIGHT_DURATION)
   return { ok: true }
+}
+
+function handleBatchImported(result) {
+  detailTarget.value = null
+
+  const parts = []
+  if (result.created) parts.push(`新增 ${result.created} 个`)
+  if (result.updated) parts.push(`更新 ${result.updated} 个`)
+  if (result.skipped) parts.push(`跳过 ${result.skipped} 个`)
+  if (result.failed) parts.push(`未导入 ${result.failed} 个`)
+
+  const message = parts.length ? `批量导入完成：${parts.join('，')}` : '批量导入完成'
+  if (result.failed) toast.info(message)
+  else toast.success(message)
 }
 
 async function handleUpdate(id, patch) {
@@ -274,7 +303,12 @@ function reload() {
       <div class="words-main" :aria-busy="store.loading ? 'true' : 'false'">
         <span v-if="store.loading" class="sr-only" role="status">正在加载生词本</span>
 
-        <WordToolbar :value="store.query" @search="handleSearch" @add="openAddPanel" />
+        <WordToolbar
+          :value="store.query"
+          @search="handleSearch"
+          @add="openAddPanel"
+          @batch="batchOpen = true"
+        />
 
         <WordStatusTabs v-model="statusModel" :counts="store.counts" />
 
@@ -332,6 +366,13 @@ function reload() {
     <BaseModal v-model:open="addModalOpen" title="添加单词" :max-width="520" sheet-on-mobile>
       <WordFormPanel v-if="addModalOpen" ref="modalPanel" compact :submit-word="handleAdd" />
     </BaseModal>
+
+    <WordBatchImport
+      v-model:open="batchOpen"
+      :preview-batch="store.previewBatch"
+      :submit-batch="store.importBatch"
+      @imported="handleBatchImported"
+    />
 
     <WordEditModal v-model:open="editOpen" :word="editingWord" :save-word="handleUpdate" />
 

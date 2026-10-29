@@ -2,17 +2,19 @@
 /**
  * 词汇工具行
  *
- * 用途：搜索框（防抖 300ms、回车立即查询、Esc 清空）与“添加单词”按钮
- * 用法：<WordToolbar :value="store.query" @search="handleSearch" @add="openAddPanel" />
+ * 用途：搜索框（防抖 300ms、回车立即查询、Esc 清空）、“批量导入”与“添加单词”按钮
+ * 用法：<WordToolbar :value="store.query" @search="handleSearch" @add="openAddPanel"
+ *                     @batch="batchOpen = true" />
  *
  * props:
  *   value — 当前生效的搜索词；由父级在“清除搜索”时回写
  * emits:
  *   search — 搜索词（已去首尾空格，可能为空字符串）
  *   add    — 点击“添加单词”
+ *   batch  — 点击“批量导入”
  */
 import { onBeforeUnmount, ref, watch } from 'vue'
-import { Plus, Search, X } from 'lucide-vue-next'
+import { FileUp, Plus, Search, X } from 'lucide-vue-next'
 import BaseButton from '../../../component/BaseButton.vue'
 
 const DEBOUNCE_DELAY = 300
@@ -21,7 +23,7 @@ const props = defineProps({
   value: { type: String, default: '' },
 })
 
-const emit = defineEmits(['search', 'add'])
+const emit = defineEmits(['search', 'add', 'batch'])
 
 const keyword = ref(props.value)
 
@@ -104,10 +106,16 @@ onBeforeUnmount(cancelTimer)
       </button>
     </div>
 
-    <BaseButton class="add-button" @click="emit('add')">
-      <Plus :size="16" :stroke-width="2" aria-hidden="true" />
-      添加单词
-    </BaseButton>
+    <div class="toolbar-actions">
+      <BaseButton variant="secondary" class="batch-button" @click="emit('batch')">
+        <FileUp :size="16" :stroke-width="2" aria-hidden="true" />
+        批量导入
+      </BaseButton>
+      <BaseButton class="add-button" @click="emit('add')">
+        <Plus :size="16" :stroke-width="2" aria-hidden="true" />
+        添加单词
+      </BaseButton>
+    </div>
   </div>
 </template>
 
@@ -184,9 +192,17 @@ onBeforeUnmount(cancelTimer)
   color: var(--color-ink);
 }
 
-.add-button {
+.toolbar-actions {
+  display: flex;
   flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
   margin-left: auto;
+}
+
+.add-button,
+.batch-button {
+  flex: 0 0 auto;
 }
 
 @media (max-width: 767px) {
@@ -199,8 +215,12 @@ onBeforeUnmount(cancelTimer)
     font-size: 16px;
   }
 
-  .add-button {
-    flex: 0 0 auto;
+  .toolbar-actions {
+    gap: var(--space-1);
+  }
+
+  .add-button,
+  .batch-button {
     padding: 0 var(--space-3);
   }
 }
