@@ -13,12 +13,14 @@
  *   - 失败：纸页停下，错误详情与重试由全局 GenerateOverlay 给出
  *   - 取消：调 /cancel 后继续轮询，等服务端确认 cancelled 再返回来处
  *   - 任务过期回 idle：直接退回来处，不在空白纸页上干等
+ *   - 有自备 API Key 时在纸页上常驻「本篇使用我的 API Key」，不额外影响生成流程
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import PaperStage from './component/PaperStage.vue'
 import { useGenerateReading } from '../../composables/useGenerateReading'
 import { takeGenerationHandoff } from '../../composables/useGenerationHandoff'
+import { useUserApiKey } from '../../composables/useUserApiKey'
 import { useReadingStore } from '../../stores/model/reading'
 
 // 成功文案要在纸页上停一下，让占位线退场、标题换成「准备好了」，再替换到阅读页
@@ -29,6 +31,8 @@ const CANCEL_DELAY = 360
 const router = useRouter()
 const store = useReadingStore()
 const { phase, summary, task, cancelling, cancel, dismiss, resume } = useGenerateReading()
+// 只影响纸页上的标识：失败后仍要能看出这次花的是自己的 Key
+const { hasKey: usingOwnKey, load: loadOwnKey } = useUserApiKey()
 
 const handoff = takeGenerationHandoff()
 let fallbackPath = handoff?.from || '/settings'
@@ -77,6 +81,9 @@ function goBack() {
 function handleCancel() {
   cancel()
 }
+
+// 与生成同时进行，读不到就只是不显示标识，不阻塞建任务
+onMounted(loadOwnKey)
 
 onMounted(() => {
   if (handoff) {
@@ -153,6 +160,7 @@ onBeforeUnmount(() => {
       :selected-words="selectedWords"
       :cancelling="cancelling"
       :skip-entrance="skipEntrance"
+      :using-own-key="usingOwnKey"
       @cancel="handleCancel"
       @back="goBack"
     />

@@ -48,6 +48,12 @@ const FEEDBACK_CONTENT_MIN = 10
 const FEEDBACK_CONTENT_MAX = 2000
 const FEEDBACK_FIELD_MAX = 100
 const FEEDBACK_CATEGORIES = ['bug', 'feature', 'content', 'data', 'privacy', 'other']
+// 用户自备 API Key（md/43 §5.2）：与后端 zod schema 同口径
+const USER_API_KEY_MIN = 24
+const USER_API_KEY_MAX = 128
+const USER_API_KEY_PATTERN = /^sk-[A-Za-z0-9_-]{16,120}$/
+const USER_API_KEY_MASK_PREFIX = 'sk-****'
+const USER_API_KEY_PROVIDERS = ['deepseek']
 
 /** 写 targetWords 词至少要认识多少词；与后端 capacity-table.js 的 minKnownFor 同构 */
 function mockMinKnown(targetWords, level) {
@@ -223,6 +229,8 @@ export function resetMockDb() {
   generationTaskSeq = 0
   // 资料与阅读库分开存，重置种子数据时也要一起回到默认昵称
   localStore.remove(storageKeys.mockProfile)
+  // 自备 API Key 属于账号数据，重置演示数据时一并清掉
+  localStore.remove(storageKeys.mockApiKey)
   // 账号与会话一并回到演示账号，避免重置后还停在某个已注册账号上
   localStore.remove(storageKeys.mockAuthSession)
   localStore.remove(storageKeys.mockAuthUsers)
@@ -874,6 +882,160 @@ export const mockProfile = {
   async stats() {
     await wait(latency)
     return buildProfileStats(readDb().readings)
+  },
+}
+
+// ——— 用户自备 API Key（md/43） ———
+// 真实后端会加密落库并调用 DeepSeek /models 校验；mock 只存掩码与校验结果，
+// 用两个特殊片段模拟两种上游失败，方便本地把错误分支走一遍：
+//   · 含 invalid → 400 USER_API_KEY_INVALID（Key 被上游拒绝）
+//   · 含 offline → 502 USER_API_KEY_VERIFY_FAILED（上游连不上）
+// 这只影响 mock，真实后端仍按 Key 的真实有效性判断。
+const MOCK_KEY_INVALID_HINT = 'invalid'
+const MOCK_KEY_OFFLINE_HINT = 'offline'
+
+/** 当前 API Key 归属的用户 id；未登录时与个人资料一样回落到 local-user */
+function apiKeyOwnerId() {
+  return activeMockUser()?.id || 'local-user'
+}
+
+function readApiKeyStore() {
+  const stored = localStore.get(storageKeys.mockApiKey, null)
+  return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {}
+}
+
+function readStoredApiKey() {
+  return readApiKeyStore()[apiKeyOwnerId()] || null
+}
+
+function writeStoredApiKey(record) {
+  const store = readApiKeyStore()
+  localStore.set(storageKeys.mockApiKey, { ...store, [apiKeyOwnerId()]: record })
+}
+
+function removeStoredApiKey() {
+  const store = readApiKeyStore()
+  if (!store[apiKeyOwnerId()]) return
+  const next = { ...store }
+  delete next[apiKeyOwnerId()]
+  localStore.set(storageKeys.mockApiKey, next)
+}
+
+function maskApiKey(value) {
+  return `${USER_API_KEY_MASK_PREFIX}${String(value).slice(-4)}`
+}
+
+/** 与 GET 同形状；enabled 在 mock 里恒为 true，真实后端缺 Secret 时会给 false */
+function toApiKeyDto(record) {
+  return {
+    enabled: true,
+    supportedProviders: [...USER_API_KEY_PROVIDERS],
+    key: record
+      ? {
+          provider: record.provider,
+          maskedKey: record.maskedKey,
+          status: record.status,
+          createdAt: record.createdAt,
+          updatedAt: record.updatedAt,
+          lastVerifiedAt: record.lastVerifiedAt,
+          lastUsedAt: record.lastUsedAt,
+        }
+      : null,
+  }
+}
+
+function assertApiKeyFormat(value) {
+  const apiKey = String(value ?? '').trim()
+  if (apiKey.length < USER_API_KEY_MIN || apiKey.length > USER_API_KEY_MAX) {
+    throw new MockApiError('INVALID_REQUEST', 'API Key 格式不正确', 400, 'apiKey')
+  }
+  if (!USER_API_KEY_PATTERN.test(apiKey)) {
+    throw new MockApiError('INVALID_REQUEST', 'API Key 格式不正确', 400, 'apiKey')
+  }
+  return apiKey
+}
+
+/** 模拟上游 /models 校验：只对 mock 的两个特殊片段报错 */
+function verifyMockApiKey(apiKey) {
+  if (apiKey.includes(MOCK_KEY_OFFLINE_HINT)) {
+    throw new MockApiError(
+      'USER_API_KEY_VERIFY_FAILED',
+      '暂时无法验证这把 API Key，请稍后再试',
+      502,
+    )
+  }
+  if (apiKey.includes(MOCK_KEY_INVALID_HINT)) {
+    throw new MockApiError(
+      'USER_API_KEY_INVALID',
+      '这把 API Key 无效或已过期，请检查后重新导入',
+      400,
+      'apiKey',
+    )
+  }
+}
+
+export const mockApiKey = {
+  async get() {
+    await wait(latency)
+    return toApiKeyDto(readStoredApiKey())
+  },
+
+  async save({ provider = 'deepseek', apiKey = '' } = {}) {
+    await wait(latency)
+
+    if (!USER_API_KEY_PROVIDERS.includes(provider)) {
+      throw new MockApiError('INVALID_REQUEST', '暂不支持这个模型服务', 400, 'provider')
+    }
+
+    const value = assertApiKeyFormat(apiKey)
+    verifyMockApiKey(value)
+
+    const previous = readStoredApiKey()
+    const now = new Date().toISOString()
+    const record = {
+      provider,
+      maskedKey: maskApiKey(value),
+      status: 'active',
+      valid: true,
+      // 替换时保留首次导入时间，只推进 updatedAt（与后端 upsert 一致）
+      createdAt: previous?.createdAt || now,
+      updatedAt: now,
+      lastVerifiedAt: now,
+      lastUsedAt: previous?.lastUsedAt || null,
+    }
+
+    writeStoredApiKey(record)
+    return toApiKeyDto(record)
+  },
+
+  async remove() {
+    await wait(latency)
+    // 幂等：没有 Key 也返回成功
+    removeStoredApiKey()
+    return { ok: true, key: null }
+  },
+
+  async verify() {
+    await wait(latency)
+
+    const record = readStoredApiKey()
+    if (!record) {
+      throw new MockApiError('USER_API_KEY_MISSING', '还没有导入 API Key', 409)
+    }
+    if (record.valid === false) {
+      writeStoredApiKey({ ...record, status: 'invalid', updatedAt: new Date().toISOString() })
+      throw new MockApiError(
+        'USER_API_KEY_INVALID',
+        '这把 API Key 无效或已过期，请检查后重新导入',
+        400,
+        'apiKey',
+      )
+    }
+
+    const now = new Date().toISOString()
+    const next = { ...record, status: 'active', lastVerifiedAt: now }
+    writeStoredApiKey(next)
+    return toApiKeyDto(next)
   },
 }
 

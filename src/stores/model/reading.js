@@ -48,12 +48,16 @@ function delay(ms) {
 /** 原样重试只会再失败一次的错误码：覆盖层据此不显示「重试」（后端 md/32 §9） */
 // QUOTA_EXCEEDED 也在此列：额度要到明天才恢复，原样重试只会再吃一次 429（md/35 §7.2）
 // FREE_BUDGET_EXHAUSTED 同理且更彻底：全局免费池不会自己恢复，重试必定还是 503（md/36 §6.2）
+// USER_API_KEY_INVALID / USER_API_KEY_MISSING：自备 Key 被上游拒绝或已被删除，
+// Key 不变时重试必定再失败；出口是去个人中心换 Key（md/43 §9）
 const NON_RETRYABLE_CODES = [
   'INSUFFICIENT_VOCABULARY',
   'VOCABULARY_TOO_SMALL',
   'INVALID_REQUEST',
   'QUOTA_EXCEEDED',
   'FREE_BUDGET_EXHAUSTED',
+  'USER_API_KEY_INVALID',
+  'USER_API_KEY_MISSING',
 ]
 
 function isDocumentHidden() {

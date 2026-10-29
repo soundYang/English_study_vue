@@ -11,6 +11,7 @@ import Home from '../index.vue'
 import { fetchWords } from '../../../api/words'
 import { fetchCapacity, generateReading } from '../../../api/readings'
 import { fetchQuota } from '../../../api/quota'
+import { fetchApiKey } from '../../../api/profile'
 import {
   clearGenerationHandoff,
   takeGenerationHandoff,
@@ -24,6 +25,8 @@ vi.mock('../../../api/readings', () => ({
   generateReading: vi.fn(),
 }))
 vi.mock('../../../api/quota', () => ({ fetchQuota: vi.fn() }))
+// useQuota 会先确认有没有自备 Key；这里固定为没有，额度成为唯一判据
+vi.mock('../../../api/profile', () => ({ fetchApiKey: vi.fn() }))
 
 const WORDS_RESPONSE = {
   total: 24,
@@ -84,6 +87,7 @@ beforeEach(() => {
   // 首页只用预检的 available 覆盖词表口径的数字，其余字段不消费
   fetchCapacity.mockResolvedValue({ available: 20 })
   fetchQuota.mockResolvedValue(QUOTA_ALLOWED)
+  fetchApiKey.mockResolvedValue({ enabled: true, supportedProviders: ['deepseek'], key: null })
 })
 
 describe('home entry branches', () => {

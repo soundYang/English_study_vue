@@ -21,6 +21,7 @@ function createTestRouter() {
       { path: '/', name: 'home', component: EmptyStub },
       { path: '/settings', name: 'settings', component: EmptyStub },
       { path: '/generating', name: 'generating', component: EmptyStub },
+      { path: '/profile', name: 'profile', component: EmptyStub },
     ],
   })
 }
@@ -163,6 +164,40 @@ describe('GenerateOverlay', () => {
 
     expect(wrapper.get('.generate-title').text()).toBe('第 2 次尝试没有成功')
     expect(wrapper.text()).not.toContain('复用')
+  })
+
+  // 自备 Key 失效不是登录问题，也不是重试能解决的：唯一出口是去个人中心换 Key（md/43 §9）
+  it('should send an invalid api key to the profile page without retry', async () => {
+    const { router } = await mountOverlay({
+      code: 'USER_API_KEY_INVALID',
+      message: '这把 API Key 无效或已过期，请检查后重新导入',
+    })
+
+    expect(wrapper.get('.generate-title').text()).toBe('你的 API Key 被拒绝了')
+    expect(wrapper.get('.generate-hint').text()).toContain('个人中心')
+    // 后端 message 与 hint 说的是同一件事，不重复展示
+    expect(wrapper.find('.generate-subtitle').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('重试')
+    expect(wrapper.text()).not.toContain('返回修改')
+
+    const button = wrapper.findAll('button').find((item) => item.text() === '去设置')
+    await button.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('profile')
+  })
+
+  // 任务创建时用了 Key、执行前被删：409，同样不给重试
+  it('should ask for a re-import when the key disappeared mid-task', async () => {
+    await mountOverlay({
+      code: 'USER_API_KEY_MISSING',
+      message: '生成时使用的 API Key 已被删除',
+    })
+
+    expect(wrapper.get('.generate-title').text()).toBe('这次用的 API Key 已经不在了')
+    expect(wrapper.get('.generate-hint').text()).toContain('重新导入')
+    expect(wrapper.text()).not.toContain('重试')
+    expect(wrapper.text()).toContain('去设置')
   })
 
   it('should hand the retry to the store and go back to the paper stage', async () => {

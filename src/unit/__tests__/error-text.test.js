@@ -8,6 +8,7 @@ import {
   describeFreeBudgetExhausted,
   describeQuotaExceeded,
   describeRateLimit,
+  describeUserApiKeyProblem,
   describeVocabShortage,
 } from '../error-text'
 
@@ -147,5 +148,24 @@ describe('describeFreeBudgetExhausted', () => {
     expect(result.title).toBe('免费生成额度用完了')
     expect(result.title).not.toContain('明天')
     expect(result.title).not.toContain('稍后')
+  })
+})
+
+describe('describeUserApiKeyProblem', () => {
+  // 不是登录过期：不要把用户往登录页引（md/43 §9）
+  it('should point an invalid key at the profile page, not the login page', () => {
+    const result = describeUserApiKeyProblem({ code: 'USER_API_KEY_INVALID' })
+
+    expect(result.kind).toBe('invalid')
+    expect(result.hint).toContain('个人中心')
+    expect(result.hint).not.toContain('登录')
+  })
+
+  it('should explain the missing key as a deleted key, not an invalid one', () => {
+    const result = describeUserApiKeyProblem({ code: 'USER_API_KEY_MISSING' })
+
+    expect(result.kind).toBe('missing')
+    expect(result.title).toContain('已经不在了')
+    expect(result.hint).toContain('重新导入')
   })
 })

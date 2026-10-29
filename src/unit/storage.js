@@ -92,6 +92,8 @@ export const storageKeys = {
   generationTask: 'wr.generation.task.v1',
   // 个人资料与 Mock 阅读库分开存：改昵称不需要让整套种子数据重建（md/33 §6）
   mockProfile: 'wr.mock.profile.v1',
+  // 自备 API Key 的本地模拟（md/43）：按用户 id 分桶，只存掩码不存明文
+  mockApiKey: 'wr.mock.apikey.v1',
   // 会话令牌：request.js 请求拦截器直接读这个键（键名沿用历史，勿改）
   accessToken: 'accessToken',
   // 缓存最近一次的用户资料，刷新页面时顶栏先显示昵称，不必等接口

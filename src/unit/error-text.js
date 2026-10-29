@@ -102,6 +102,33 @@ export function describeFreeBudgetExhausted() {
 }
 
 /**
+ * 自备 API Key 在生成时失效（md/43 §9）
+ *
+ * 两种情况用户做的事一样——去个人中心把 Key 换掉，但原因不同：
+ *   USER_API_KEY_INVALID —— 上游拒绝了这把 Key（403，不是登录过期）
+ *   USER_API_KEY_MISSING —— 建任务时用了 Key，执行前被删掉了（任务 failed，409）
+ * 两者都不该给「重试」：Key 不变，重试必然再失败一次。也不要把人踢回登录页。
+ *
+ * @param {{ code?: string }} error
+ * @returns {{ kind: string, title: string, hint: string }}
+ */
+export function describeUserApiKeyProblem({ code = '' } = {}) {
+  if (code === 'USER_API_KEY_MISSING') {
+    return {
+      kind: 'missing',
+      title: '这次用的 API Key 已经不在了',
+      hint: '在个人中心重新导入 API Key，再回到设置页生成一次。',
+    }
+  }
+
+  return {
+    kind: 'invalid',
+    title: '你的 API Key 被拒绝了',
+    hint: '这不是账号问题；请到个人中心替换这把 Key，再回来生成。',
+  }
+}
+
+/**
  * 五种「生成被挡下」的语义不同，用户能做的补救也不同：
  *   too_few_words    —— 422 个人词库不足 20 词的总闸：加词 / 先写 100–200 词
  *   target_words     —— 422 这次参数凑不齐目标词：缩篇幅 / 换词源

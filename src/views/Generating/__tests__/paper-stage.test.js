@@ -168,6 +168,20 @@ describe('PaperStage', () => {
     expect(wrapper.get('.paper-hint').text()).toContain('正在停下这次生成')
   })
 
+  // 自备 Key 要常驻可见，用户才能知道这篇花的是自己的 Key（md/43 §12 / §14-4）
+  it('should keep the own-key note visible through the waiting stages', async () => {
+    mountStage({ usingOwnKey: true, stage: 'waiting' })
+    expect(wrapper.get('.paper-key-note').text()).toContain('本篇使用我的 API Key')
+
+    await wrapper.setProps({ stage: 'fetching' })
+    await nextTick()
+    expect(wrapper.get('.paper-key-note').exists()).toBe(true)
+
+    await wrapper.setProps({ usingOwnKey: false })
+    await nextTick()
+    expect(wrapper.find('.paper-key-note').exists()).toBe(false)
+  })
+
   it('should swap to the done copy without actions', async () => {
     mountStage()
     await wrapper.setProps({ stage: 'done' })

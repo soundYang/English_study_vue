@@ -9,15 +9,23 @@
  * 任一维度（账号 / 设备 / 网络）用尽都算 blocked——设备还有次数、但同一网络
  * 用完了，生成照样 429。查询失败按可生成处理（fail-open）：真没额度时后端
  * 建任务仍会返回 429，不能让一次查询失败把用户挡在入口外面。
+ *
+ * 自备 API Key（md/43 §12）：有 Key 的用户花自己的钱，不占免费额度，
+ * 所以额度用尽也不拦。先读 Key 状态再取额度，避免「额度 0 次」先闪一下禁用。
+ * 有 Key 时额度文案改成「使用我的 API Key」，不把免费口径说成「今天不能生成」。
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { fetchQuota } from '../api/quota'
 import { describeQuotaExceeded } from '../unit/error-text'
+import { useUserApiKey } from './useUserApiKey'
+
+const OWN_KEY_NOTE = '使用我的 API Key，不占用免费次数'
 
 export function useQuota() {
   const quota = ref(null)
   const loading = ref(false)
   const error = ref('')
+  const { hasKey: usingOwnKey, load: loadOwnKey } = useUserApiKey()
 
   let controller = null
   let seq = 0
@@ -46,7 +54,12 @@ export function useQuota() {
     }
   }
 
-  onMounted(refresh)
+  // 先确认有没有自备 Key，再取额度：顺序反过来时，额度用尽的用户会先看到
+  // 「今日剩余 0 次」和禁用按钮，随后才被 Key 状态解开，属于可见的闪动
+  onMounted(async () => {
+    await loadOwnKey()
+    await refresh()
+  })
 
   onBeforeUnmount(() => {
     controller?.abort()
@@ -66,11 +79,13 @@ export function useQuota() {
     return quota.value.primary?.remaining === 0 ? quota.value.primary : null
   })
 
-  const isBlocked = computed(() => blocking.value !== null)
+  // 有自备 Key 时额度不参与拦截：花的是用户自己的钱，免费额度到 0 也能生成
+  const isBlocked = computed(() => !usingOwnKey.value && blocking.value !== null)
 
   // 额度未知（接口失败）不拦；已知为 0 或任一项用尽都拦
   const canGenerate = computed(
-    () => !isBlocked.value && (remaining.value === null || remaining.value > 0),
+    () =>
+      usingOwnKey.value || (!isBlocked.value && (remaining.value === null || remaining.value > 0)),
   )
 
   const remainingText = computed(() =>
@@ -79,15 +94,18 @@ export function useQuota() {
 
   // 复用 429 的文案：scope 说明是哪一档用尽，resetAt 固定按北京时间展示
   const blockedHint = computed(() => {
-    if (!blocking.value) return ''
+    if (usingOwnKey.value || !blocking.value) return ''
 
     return describeQuotaExceeded({
       details: { ...blocking.value, resetAt: quota.value?.resetAt },
     }).hint
   })
 
-  // 入口只放一句：有额度时说剩余，没额度时说为什么、什么时候恢复
-  const quotaNote = computed(() => blockedHint.value || remainingText.value)
+  // 入口只放一句：有自备 Key 时说清不占免费额度；否则有额度说剩余，没额度说为什么
+  const quotaNote = computed(() => {
+    if (usingOwnKey.value) return OWN_KEY_NOTE
+    return blockedHint.value || remainingText.value
+  })
 
   return {
     quota,
@@ -95,6 +113,7 @@ export function useQuota() {
     error,
     remaining,
     blocking,
+    usingOwnKey,
     isBlocked,
     canGenerate,
     remainingText,

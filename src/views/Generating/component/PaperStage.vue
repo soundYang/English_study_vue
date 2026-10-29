@@ -6,7 +6,8 @@
  *       成功 / 失败 / 取消过渡。组件只认 stage 与任务快照，不读 store、不发请求。
  * 用法：<PaperStage :stage="stage" :summary="summary" :progress="progress"
  *                   :selected-words="words" :cancelling="cancelling"
- *                   :skip-entrance="resumed" @cancel="..." @back="..." />
+ *                   :skip-entrance="resumed" :using-own-key="usingOwnKey"
+ *                   @cancel="..." @back="..." />
  *
  * props:
  *   stage         ('waiting' | 'reviewing' | 'fetching' | 'done' | 'failed' | 'cancelled')
@@ -17,6 +18,7 @@
  *   selectedWords (Array)                  — planning 之后抽到的词，逐个入场
  *   cancelling    (Boolean)                — 取消请求在飞行中
  *   skipEntrance  (Boolean)                — 刷新恢复时直接以运行态出现，不重播入场
+ *   usingOwnKey   (Boolean)                — 本篇使用用户自备的 API Key（md/43 §12）
  * emits:
  *   cancel — 等待中点了「取消生成」
  *   back   — 失败 / 取消后点了「返回设置」
@@ -25,7 +27,7 @@
  * 不伪造进度（不换算百分比）；卸载时 kill 全部时间线并 revert 样式。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Leaf } from 'lucide-vue-next'
+import { KeyRound, Leaf } from 'lucide-vue-next'
 import { gsap } from 'gsap'
 import BaseButton from '../../../component/BaseButton.vue'
 
@@ -119,6 +121,7 @@ const props = defineProps({
   selectedWords: { type: Array, default: () => [] },
   cancelling: { type: Boolean, default: false },
   skipEntrance: { type: Boolean, default: false },
+  usingOwnKey: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['cancel', 'back'])
@@ -535,6 +538,10 @@ onBeforeUnmount(() => {
       <h1 :key="copy.title" class="paper-title copy-in">{{ copy.title }}</h1>
       <p :key="copy.desc" class="paper-desc copy-in">{{ copy.desc }}</p>
       <p v-if="metaText" class="paper-meta">{{ metaText }}</p>
+      <p v-if="usingOwnKey" class="paper-key-note">
+        <KeyRound :size="12" :stroke-width="1.8" aria-hidden="true" />
+        本篇使用我的 API Key
+      </p>
     </header>
 
     <!-- 双栏对齐答题页：左边正文按段落墨，右边按题目数画题干与选项 -->
@@ -720,6 +727,20 @@ onBeforeUnmount(() => {
   font-size: var(--text-caption);
   line-height: var(--leading-caption);
   font-variant-numeric: tabular-nums;
+}
+
+/* 自备 Key 是常驻标识，不是一次性提示：用户要随时知道这篇花的是自己的 Key（md/43 §14-4） */
+.paper-key-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: var(--space-2);
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 
 /* 标题下面分两栏：正文占 58，题目占 42，和答题页的阅读布局同比例 */

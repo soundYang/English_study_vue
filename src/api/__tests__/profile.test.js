@@ -4,8 +4,21 @@
  * 使用真实 mock adapter（延迟 0），不触碰网络。
  */
 import { beforeEach, describe, expect, it } from 'vitest'
-import { changePassword, fetchProfile, fetchProfileStats, updateProfile } from '../profile'
+import {
+  changePassword,
+  deleteApiKey,
+  fetchApiKey,
+  fetchProfile,
+  fetchProfileStats,
+  saveApiKey,
+  updateProfile,
+  verifyApiKey,
+} from '../profile'
 import { resetMockDb, setMockLatency } from '../../mock/adapter'
+
+const VALID_KEY = `sk-${'a'.repeat(40)}`
+const INVALID_KEY = `sk-invalid-${'b'.repeat(40)}`
+const OFFLINE_KEY = `sk-offline-${'c'.repeat(40)}`
 
 beforeEach(() => {
   localStorage.clear()
@@ -74,5 +87,84 @@ describe('profile api', () => {
     await expect(
       changePassword({ oldPassword: 'oldpass1', newPassword: 'newpass12' }),
     ).resolves.toEqual({ ok: true })
+  })
+})
+
+describe('user api key api', () => {
+  it('should report an enabled feature with no key before importing', async () => {
+    const data = await fetchApiKey()
+
+    expect(data).toEqual({
+      enabled: true,
+      supportedProviders: ['deepseek'],
+      key: null,
+    })
+  })
+
+  it('should only return the masked key after a successful import', async () => {
+    const data = await saveApiKey({ apiKey: `  ${VALID_KEY}  ` })
+
+    expect(data.enabled).toBe(true)
+    expect(data.key).toMatchObject({
+      provider: 'deepseek',
+      maskedKey: `sk-****${VALID_KEY.slice(-4)}`,
+      status: 'active',
+      lastUsedAt: null,
+    })
+    // 任何响应都不带明文与密文
+    expect(JSON.stringify(data)).not.toContain(VALID_KEY)
+    expect(JSON.stringify(data)).not.toContain('cipher')
+
+    const again = await fetchApiKey()
+    expect(again.key.maskedKey).toBe(data.key.maskedKey)
+  })
+
+  it('should reject a malformed key on the apiKey field without storing it', async () => {
+    await expect(saveApiKey({ apiKey: 'not-a-key' })).rejects.toMatchObject({
+      error: { code: 'INVALID_REQUEST', field: 'apiKey' },
+    })
+
+    const data = await fetchApiKey()
+    expect(data.key).toBeNull()
+  })
+
+  it('should keep the previous key when the replacement is rejected upstream', async () => {
+    const first = await saveApiKey({ apiKey: VALID_KEY })
+
+    await expect(saveApiKey({ apiKey: INVALID_KEY })).rejects.toMatchObject({
+      error: { code: 'USER_API_KEY_INVALID', field: 'apiKey' },
+    })
+
+    const data = await fetchApiKey()
+    expect(data.key.maskedKey).toBe(first.key.maskedKey)
+  })
+
+  it('should report a verification failure separately from a bad key', async () => {
+    await expect(saveApiKey({ apiKey: OFFLINE_KEY })).rejects.toMatchObject({
+      error: { code: 'USER_API_KEY_VERIFY_FAILED' },
+    })
+  })
+
+  it('should refuse to verify when nothing was imported', async () => {
+    await expect(verifyApiKey()).rejects.toMatchObject({
+      error: { code: 'USER_API_KEY_MISSING' },
+    })
+  })
+
+  it('should refresh the verified time when verifying an imported key', async () => {
+    const first = await saveApiKey({ apiKey: VALID_KEY })
+    const verified = await verifyApiKey()
+
+    expect(verified.key.status).toBe('active')
+    expect(verified.key.createdAt).toBe(first.key.createdAt)
+    expect(verified.key.lastVerifiedAt >= first.key.lastVerifiedAt).toBe(true)
+  })
+
+  it('should delete idempotently and fall back to free generation', async () => {
+    await saveApiKey({ apiKey: VALID_KEY })
+
+    await expect(deleteApiKey()).resolves.toEqual({ ok: true, key: null })
+    await expect(deleteApiKey()).resolves.toEqual({ ok: true, key: null })
+    expect((await fetchApiKey()).key).toBeNull()
   })
 })

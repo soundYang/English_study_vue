@@ -15,6 +15,8 @@
  *   - 限流（429 RATE_LIMITED）：说「太频繁」，不给重试（窗口内重试必然还是 429）
  *   - 免费池用尽（503 FREE_BUDGET_EXHAUSTED）：不会自行恢复，没有倒计时，
  *     原样透传后端 message，只给「知道了」（md/36 §10）
+ *   - 自备 Key 失效（403 USER_API_KEY_INVALID / 409 USER_API_KEY_MISSING）：
+ *     Key 不变时重试没有意义，不给「重试」，只给「去设置」（md/43 §9）
  *   - 其他错误：retryable 为 false 时只给「返回修改」，否则「重试」走任务 /retry，
  *     复用已写好的段，不重新建任务
  *   - 打开时锁定背景滚动，焦点落到首个按钮，Esc 取消或关闭
@@ -30,6 +32,7 @@ import {
   describeFreeBudgetExhausted,
   describeQuotaExceeded,
   describeRateLimit,
+  describeUserApiKeyProblem,
   describeVocabShortage,
 } from '../unit/error-text'
 import { TARGET_WORDS_MIN } from '../unit/validators'
@@ -99,10 +102,23 @@ const freeBudgetExhausted = computed(() =>
   isFreeBudgetExhausted.value ? describeFreeBudgetExhausted() : null,
 )
 
+// 自备 Key 失效：登录状态正常，只是这把 Key 不能用了。出口在个人中心，
+// 留在这里点「重试」只会再失败一次（md/43 §9）
+const USER_KEY_CODES = ['USER_API_KEY_INVALID', 'USER_API_KEY_MISSING']
+const isApiKeyProblem = computed(() => USER_KEY_CODES.includes(errorCode.value))
+const apiKeyProblem = computed(() =>
+  isApiKeyProblem.value ? describeUserApiKeyProblem({ code: errorCode.value }) : null,
+)
+
 // retryable === false 的（词不够、参数错、额度用完、免费池用尽）重试只会再失败一次，按钮不该给；
 // 本地建任务失败（网络 / 429）没有这个字段，按可重试处理
+// Key 失效单独排除：后端任务失败可能不带 retryable，不能只靠这个字段
 const canRetry = computed(
-  () => error.value?.retryable !== false && !isQuotaExceeded.value && !isFreeBudgetExhausted.value,
+  () =>
+    error.value?.retryable !== false &&
+    !isQuotaExceeded.value &&
+    !isFreeBudgetExhausted.value &&
+    !isApiKeyProblem.value,
 )
 // retryCount 只用于标题区分第几次尝试，不参与「复用了几段」的数量计算（md/22 §8.5 ②）
 const attemptTitle = computed(() => {
@@ -112,6 +128,7 @@ const attemptTitle = computed(() => {
 
 const errorTitle = computed(() => {
   if (vocabShortage.value) return vocabShortage.value.title
+  if (apiKeyProblem.value) return apiKeyProblem.value.title
   if (freeBudgetExhausted.value) return freeBudgetExhausted.value.title
   if (quotaExceeded.value) return quotaExceeded.value.title
   if (rateLimit.value) return rateLimit.value.title
@@ -121,6 +138,7 @@ const errorTitle = computed(() => {
 })
 const errorHint = computed(() => {
   if (vocabShortage.value) return vocabShortage.value.hint
+  if (apiKeyProblem.value) return apiKeyProblem.value.hint
   // 免费池用尽没有可补的信息，后端 message 已经把「接入自己的 API Key」说清楚
   if (freeBudgetExhausted.value) return ''
   if (quotaExceeded.value) return quotaExceeded.value.hint
@@ -207,6 +225,12 @@ function shortenArticle() {
 function backToSettings() {
   dismiss()
   if (route.name !== 'settings') router.push('/settings')
+}
+
+/** Key 失效的唯一出口：换掉 Key 再回来重新生成 */
+function goApiSettings() {
+  dismiss()
+  if (route.name !== 'profile') router.push('/profile')
 }
 
 async function handleRetry() {
@@ -298,8 +322,11 @@ onBeforeUnmount(() => {
 
             <h2 id="generate-title" class="generate-title">{{ errorTitle }}</h2>
             <!-- 命中词汇类错误时后端 message 与 hint 说的是同一件事，只留 hint；
-                 429（限流 / 额度）同样按 code 给文案，后端 message 会重复一遍 -->
-            <p v-if="!vocabShortage && !rateLimit && !quotaExceeded" class="generate-subtitle">
+                 429（限流 / 额度）与 Key 失效同样按 code 给文案，后端 message 会重复一遍 -->
+            <p
+              v-if="!vocabShortage && !rateLimit && !quotaExceeded && !apiKeyProblem"
+              class="generate-subtitle"
+            >
               {{ error?.message }}
             </p>
             <p v-if="errorHint" class="generate-hint">{{ errorHint }}</p>
@@ -328,6 +355,10 @@ onBeforeUnmount(() => {
             <!-- 免费池用尽后改参数也没用（任何入口都会 503），只留「知道了」 -->
             <div v-else-if="isFreeBudgetExhausted" class="generate-actions">
               <BaseButton @click="dismiss">知道了</BaseButton>
+            </div>
+            <!-- Key 失效：改参数 / 重试都没用，先换 Key 再回来生成 -->
+            <div v-else-if="isApiKeyProblem" class="generate-actions">
+              <BaseButton @click="goApiSettings">去设置</BaseButton>
             </div>
             <div v-else-if="rateLimit || quotaExceeded" class="generate-actions">
               <BaseButton variant="secondary" @click="backToSettings">返回修改</BaseButton>

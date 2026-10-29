@@ -8,8 +8,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { useQuota } from '../useQuota'
 import { fetchQuota } from '../../api/quota'
+import { fetchApiKey } from '../../api/profile'
 
 vi.mock('../../api/quota', () => ({ fetchQuota: vi.fn() }))
+vi.mock('../../api/profile', () => ({ fetchApiKey: vi.fn() }))
 
 const ALLOWED = {
   day: '2026-10-29',
@@ -35,6 +37,8 @@ function mountQuota() {
 beforeEach(() => {
   state = null
   vi.clearAllMocks()
+  // 默认没有自备 Key：额度口径与原有用例一致
+  fetchApiKey.mockResolvedValue({ enabled: true, supportedProviders: ['deepseek'], key: null })
 })
 
 describe('useQuota', () => {
@@ -87,5 +91,62 @@ describe('useQuota', () => {
     expect(state.error.value).toBe('网络错误')
     expect(state.canGenerate.value).toBe(true)
     expect(state.quotaNote.value).toBe('')
+  })
+
+  // 有自备 Key 花的是用户自己的钱：免费额度到 0 也不拦（md/43 §12）
+  it('should let an own-key user generate when the free quota is exhausted', async () => {
+    fetchApiKey.mockResolvedValue({
+      enabled: true,
+      supportedProviders: ['deepseek'],
+      key: { provider: 'deepseek', maskedKey: 'sk-****9f3a', status: 'active' },
+    })
+    fetchQuota.mockResolvedValue({
+      ...ALLOWED,
+      primary: { scope: 'device', limit: 3, used: 3, remaining: 0 },
+      blocking: { scope: 'device', limit: 3, used: 3, remaining: 0 },
+    })
+
+    mountQuota()
+    await flushPromises()
+
+    expect(state.usingOwnKey.value).toBe(true)
+    expect(state.isBlocked.value).toBe(false)
+    expect(state.canGenerate.value).toBe(true)
+    // 额度数字仍是免费额度口径，文案改成「使用我的 API Key」，不说「今天不能生成」
+    expect(state.remaining.value).toBe(0)
+    expect(state.quotaNote.value).toBe('使用我的 API Key，不占用免费次数')
+  })
+
+  // 服务端关闭功能时存量 Key 不生效，仍按免费额度拦人
+  it('should ignore a stored key when the feature is disabled', async () => {
+    fetchApiKey.mockResolvedValue({
+      enabled: false,
+      supportedProviders: ['deepseek'],
+      key: { provider: 'deepseek', maskedKey: 'sk-****9f3a', status: 'active' },
+    })
+    fetchQuota.mockResolvedValue({
+      ...ALLOWED,
+      primary: { scope: 'device', limit: 3, used: 3, remaining: 0 },
+    })
+
+    mountQuota()
+    await flushPromises()
+
+    expect(state.usingOwnKey.value).toBe(false)
+    expect(state.isBlocked.value).toBe(true)
+    expect(state.canGenerate.value).toBe(false)
+  })
+
+  // Key 查询失败不能把入口锁死：按没有 Key 处理，额度查询照常决定
+  it('should fail open to the free quota when the key request fails', async () => {
+    fetchApiKey.mockRejectedValue(new Error('读取失败'))
+    fetchQuota.mockResolvedValue(ALLOWED)
+
+    mountQuota()
+    await flushPromises()
+
+    expect(state.usingOwnKey.value).toBe(false)
+    expect(state.canGenerate.value).toBe(true)
+    expect(state.quotaNote.value).toBe('今日剩余 2 次')
   })
 })

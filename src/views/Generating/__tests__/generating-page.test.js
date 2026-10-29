@@ -15,6 +15,7 @@ import {
   setGenerationHandoff,
 } from '../../../composables/useGenerationHandoff'
 import { useReadingStore } from '../../../stores/model/reading'
+import { mockApiKey, setMockLatency } from '../../../mock/adapter'
 import { storageKeys } from '../../../unit/storage'
 
 const EmptyStub = { template: '<div />' }
@@ -90,6 +91,24 @@ describe('GeneratingPage', () => {
       { level: 'hard', targetWords: 600, questionCount: 5 },
       { availableWords: 120, from: '/settings' },
     )
+  })
+
+  // 有自备 Key 时纸页要常驻标识（md/43 §12）；读取与生成并行，不阻塞建任务
+  it('should badge the paper when the user has an own api key', async () => {
+    setMockLatency(0)
+    await mockApiKey.save({ apiKey: `sk-${'a'.repeat(40)}` })
+    setGenerationHandoff(
+      { level: 'easy', targetWords: 100, questionCount: 3 },
+      { availableWords: 20, from: '/settings' },
+    )
+
+    await mountPage((reading) => {
+      reading.generate = vi.fn().mockResolvedValue(null)
+    })
+    await flushPromises()
+
+    expect(wrapper.findComponent(PaperStage).props('usingOwnKey')).toBe(true)
+    expect(wrapper.get('.paper-key-note').text()).toContain('本篇使用我的 API Key')
   })
 
   it('should resume from the stored task without replaying the entrance', async () => {

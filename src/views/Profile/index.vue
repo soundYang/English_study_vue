@@ -9,7 +9,8 @@
  * 行为：
  *   - 加载中显示与最终布局同尺寸的骨架，不先渲染假数字
  *   - 修改昵称 / 签名后原地更新头图；改密码成功后只提示，不改变当前会话
- *   - API 设置本期只读，个人密钥由服务端统一配置（md/33 §2.2）
+ *   - API 设置卡由自己读取自备 Key 状态；服务端未开启功能时整块隐藏，
+ *     只剩账户设置卡时让它占满两列（md/43 §5.1）
  */
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -165,6 +166,12 @@ async function handleLogout() {
   align-items: stretch;
   gap: var(--space-5);
   margin-top: var(--space-5);
+}
+
+/* API 设置卡在服务端关闭功能时整块不渲染；只剩账户设置时占满整行，
+   避免右半边留一块空白（注释节点不参与 :only-child 判断） */
+.settings-grid > .settings-card:only-child {
+  grid-column: 1 / -1;
 }
 
 .skeleton-hero {

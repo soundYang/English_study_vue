@@ -219,6 +219,35 @@ describe('reading store generation task', () => {
     expect(store.error.retryable).toBe(false)
   })
 
+  // 自备 Key 失效时重试只会再失败一次：403 与任务 failed 的 409 都不允许重试（md/43 §9）
+  it('should treat a rejected own api key as non-retryable', async () => {
+    createGenerationTask.mockRejectedValue(
+      apiError('USER_API_KEY_INVALID', { status: 403, message: 'API Key 无效' }),
+    )
+
+    await store.generate(SETTINGS)
+
+    expect(store.phase).toBe('error')
+    expect(store.error).toMatchObject({ code: 'USER_API_KEY_INVALID', retryable: false })
+  })
+
+  it('should treat a task that lost its own api key as non-retryable', async () => {
+    fetchGenerationTask.mockResolvedValue(
+      taskDto({
+        status: 'failed',
+        stage: 'done',
+        error: { code: 'USER_API_KEY_MISSING', message: 'API Key 已被删除', details: {} },
+        retryable: undefined,
+      }),
+    )
+
+    await store.generate(SETTINGS)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(store.phase).toBe('error')
+    expect(store.error.retryable).toBe(false)
+  })
+
   it('should go idle when the task has expired', async () => {
     fetchGenerationTask.mockRejectedValue(apiError('TASK_NOT_FOUND', { status: 404 }))
 
