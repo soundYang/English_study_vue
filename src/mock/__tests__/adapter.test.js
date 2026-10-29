@@ -4,7 +4,14 @@
  * 以及任务化生成的状态机（建任务 → 轮询 → 取消 / 重试 / 幂等）。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mockQuota, mockReadings, mockWords, resetMockDb, setMockLatency } from '../adapter'
+import {
+  mockApiKey,
+  mockQuota,
+  mockReadings,
+  mockWords,
+  resetMockDb,
+  setMockLatency,
+} from '../adapter'
 
 beforeEach(() => {
   setMockLatency(0)
@@ -774,6 +781,31 @@ describe('mockWords.extractImport', () => {
     await expect(mockWords.extractImport(legacy)).rejects.toMatchObject({
       error: { code: 'UNSUPPORTED_MEDIA_TYPE', message: expect.stringContaining('另存为 .docx') },
     })
+  })
+
+  it('should require a user API key before AI extraction', async () => {
+    const file = new File(['apple'], 'words.txt', { type: 'text/plain' })
+
+    await expect(mockWords.extractImport(file, { mode: 'ai' })).rejects.toMatchObject({
+      error: { code: 'USER_API_KEY_REQUIRED' },
+    })
+  })
+
+  it('should simulate AI meaning fill with the local dictionary', async () => {
+    await mockApiKey.save({ provider: 'deepseek', apiKey: `sk-${'a'.repeat(24)}` })
+
+    const data = await mockWords.extractImport(
+      new File(['apple\nzzzz'], 'words.txt', { type: 'text/plain' }),
+      { mode: 'ai' },
+    )
+
+    expect(data.engine).toBe('ai')
+    expect(data.ai).toMatchObject({ keySource: 'user', calls: 1 })
+    expect(data.rows[0]).toMatchObject({ word: 'apple', meaningSource: 'ai' })
+    expect(data.rows[0].meaning).toBeTruthy()
+    // 词库里没有的词不伪造释义
+    expect(data.rows[1]).toMatchObject({ word: 'zzzz', meaning: '', meaningSource: 'missing' })
+    expect(data.warnings.map((warning) => warning.code)).toContain('AI_RECOGNIZED')
   })
 
   it('should explain that mock mode cannot parse binary or image files', async () => {

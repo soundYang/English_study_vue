@@ -6,21 +6,25 @@
  *       确认后统一走 `POST /api/words/batch` 落库。
  *       粘贴模式每行一个单词，可写「word 释义」；# 或 // 开头的行视为注释。
  *       文件模式只解析不写库，行可编辑 / 删除，超过 200 条时按 200 条分批串行提交。
+ *       文件模式可选「用 AI 整理」（默认关）：勾选后解析请求多传 `mode=ai`，
+ *       由后端用账号自备的 API Key 补释义（md/49）。
  * 用法：<WordBatchImport
  *         v-model:open="batchOpen"
  *         :preview-batch="store.previewBatch"
  *         :submit-batch="store.importBatch"
  *         :extract-file="store.extractImportFile"
  *         @imported="handleBatchImported"
+ *         @api-key-needed="router.push('/profile')"
  *       />
  *
  * props:
  *   open         — 是否打开（v-model:open）
  *   previewBatch — 必填，接收 { text, status }，返回 { ok, data?, message? }
  *   submitBatch  — 必填，接收 { text, status } 或 { rows, status, onProgress }，返回 { ok, data?, message? }
- *   extractFile  — 必填，接收 File，返回 { ok, data?, message? }
+ *   extractFile  — 必填，接收 (File, { mode: 'local' | 'ai' })，返回 { ok, data?, message?, code? }
  * emits:
  *   update:open / imported — 导入成功（含部分失败），参数为后端结果
+ *   api-key-needed         — AI 模式缺 Key / Key 失效，由父级跳个人中心
  */
 import { computed, ref, watch } from 'vue'
 import BaseButton from '../../../component/BaseButton.vue'
@@ -70,6 +74,11 @@ const PASTE_DESCRIPTION =
   '每行一个单词，行内可写中文释义；# 或 // 开头的行会被忽略，重复词按合并规则处理。'
 const FILE_DESCRIPTION =
   '支持 Word、Excel、CSV、TXT 和图片；先解析预览，确认后再导入。图片只识别英文单词。'
+// 这两类警告说明结果不完整，必须独立醒目展示，不能混进普通 warnings 列表
+const AI_ALERT_CODES = ['AI_TRUNCATED', 'AI_PARTIAL']
+// 可由用户主动重试的 AI 失败；其余（缺 Key / Key 失效）只有「去个人中心」一条路
+const AI_RETRYABLE_CODES = ['AI_PROVIDER_ERROR', 'AI_INVALID_RESPONSE']
+const AI_KEY_CODES = ['USER_API_KEY_REQUIRED', 'USER_API_KEY_INVALID']
 
 const PLACEHOLDER = `每行一个单词，行内可写中文释义：
 apple 苹果
@@ -83,7 +92,7 @@ const props = defineProps({
   extractFile: { type: Function, required: true },
 })
 
-const emit = defineEmits(['update:open', 'imported'])
+const emit = defineEmits(['update:open', 'imported', 'api-key-needed'])
 
 const text = ref('')
 const mode = ref('paste')
@@ -95,6 +104,13 @@ const importing = ref(false)
 const extracting = ref(false)
 const dragging = ref(false)
 const generalError = ref('')
+// AI 整理（md/49）：默认关；服务端 403 后整块隐藏
+const aiMode = ref(false)
+const aiUnavailable = ref(false)
+// { code, message }：AI 解析失败且需要单独出口（去设置 / 重试 / 改本地）
+const aiError = ref(null)
+// 重试与「改用本地识别」都要重发同一个文件
+const lastFile = ref(null)
 const fileInput = ref(null)
 // { fileName, size, source, stats, truncated, warnings }
 const fileMeta = ref(null)
@@ -130,6 +146,31 @@ const fileInvalidCount = computed(() => fileRows.value.length - fileValidCount.v
 const canImportFile = computed(() => fileRows.value.length > 0)
 const fileChunkCount = computed(() => Math.ceil(fileRows.value.length / WORD_BATCH_MAX))
 const fileWarnings = computed(() => fileMeta.value?.warnings || [])
+const aiAlerts = computed(() =>
+  fileWarnings.value.filter((warning) => AI_ALERT_CODES.includes(warning.code)),
+)
+const plainWarnings = computed(() =>
+  fileWarnings.value.filter((warning) => !AI_ALERT_CODES.includes(warning.code)),
+)
+
+const aiSummary = computed(() => {
+  const ai = fileMeta.value?.ai
+  if (!ai) return ''
+
+  const calls = Number(ai.calls) || 0
+  const tokens = (Number(ai.inputTokens) || 0) + (Number(ai.outputTokens) || 0)
+  const parts = ['AI 整理']
+  if (calls > 0) parts.push(`${calls} 次调用`)
+  if (tokens > 0) parts.push(`约 ${formatTokens(tokens)} tokens`)
+  return parts.join(' · ')
+})
+
+const aiErrorNeedsKey = computed(() =>
+  aiError.value ? AI_KEY_CODES.includes(aiError.value.code) : false,
+)
+const aiErrorRetryable = computed(() =>
+  aiError.value ? AI_RETRYABLE_CODES.includes(aiError.value.code) : false,
+)
 
 const fileSummary = computed(() => {
   if (!fileMeta.value) return ''
@@ -193,6 +234,10 @@ function reset() {
   extracting.value = false
   dragging.value = false
   generalError.value = ''
+  // 每次打开都回到「本地识别」：AI 会花用户自己的额度，不记忆上次的勾选（md/49 §10）
+  aiMode.value = false
+  aiError.value = null
+  lastFile.value = null
   fileMeta.value = null
   fileRows.value = []
   fileImportProgress.value = { done: 0, total: 0 }
@@ -228,6 +273,13 @@ function formatFileSize(bytes) {
   if (value < 1024) return `${value} B`
   if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/** token 数只用于告知用户花了多少，精确到 0.1k 足够（md/49 §10） */
+function formatTokens(value) {
+  const tokens = Number(value) || 0
+  if (tokens < 1000) return String(tokens)
+  return `${(tokens / 1000).toFixed(1)}k`
 }
 
 /** 输入或状态变化后，旧预览不再可信，必须重新预览才能导入 */
@@ -312,9 +364,58 @@ function handleDrop(event) {
 
 async function extractFile(file) {
   if (!file || busy.value) return
+  lastFile.value = file
+  await runExtract(file, aiMode.value)
+}
+
+/** AI 开关：只看下一次请求；已有文件时按新方式重新解析，避免「勾了却什么都没发生」 */
+function toggleAi() {
+  if (busy.value || aiUnavailable.value) return
+
+  aiMode.value = !aiMode.value
+  aiError.value = null
+  generalError.value = ''
+
+  if (lastFile.value) runExtract(lastFile.value, aiMode.value)
+}
+
+/** AI 失败的两个出口：重试同一模式，或改用本地识别（不自动降级，md/49 §10） */
+function retryExtract() {
+  if (lastFile.value) runExtract(lastFile.value, true)
+}
+
+function switchToLocal() {
+  aiMode.value = false
+  if (lastFile.value) runExtract(lastFile.value, false)
+}
+
+function handleExtractFailure(response) {
+  const code = response?.code || ''
+  const message = response?.message || '文件解析失败，请稍后重试。'
+
+  // 服务端没开这个功能：整个开关隐藏，别让用户继续点
+  if (code === 'IMPORT_AI_DISABLED') {
+    aiUnavailable.value = true
+    aiMode.value = false
+    generalError.value = 'AI 整理暂未开放，可继续使用本地识别。'
+    return
+  }
+
+  // 缺 Key / Key 失效：给出「去个人中心」，开关保持勾选（doc 要求方便回来重试）
+  if (AI_KEY_CODES.includes(code) || AI_RETRYABLE_CODES.includes(code)) {
+    aiError.value = { code, message }
+    return
+  }
+
+  generalError.value = message
+}
+
+async function runExtract(file, useAi) {
+  if (busy.value) return
 
   // 选了新文件就丢掉上一份解析结果，避免「报错说文件太大」却还留着旧文件的行
   generalError.value = ''
+  aiError.value = null
   result.value = null
   fileMeta.value = null
   fileRows.value = []
@@ -328,10 +429,10 @@ async function extractFile(file) {
   extracting.value = true
 
   try {
-    const response = await props.extractFile(file)
+    const response = await props.extractFile(file, { mode: useAi ? 'ai' : 'local' })
 
     if (!response?.ok) {
-      generalError.value = response?.message || '文件解析失败，请稍后重试。'
+      handleExtractFailure(response)
       return
     }
 
@@ -343,6 +444,8 @@ async function extractFile(file) {
       stats: data.stats || {},
       truncated: data.truncated === true,
       warnings: Array.isArray(data.warnings) ? data.warnings : [],
+      engine: data.engine || '',
+      ai: data.ai || null,
     }
     fileRows.value = (Array.isArray(data.rows) ? data.rows : []).map((row, position) => ({
       uid: `file-row-${(rowSeq += 1)}`,
@@ -351,6 +454,8 @@ async function extractFile(file) {
       meaning: String(row?.meaning ?? ''),
       valid: row?.valid !== false,
       reason: row?.reason || '',
+      // 'ai' 只用于展示淡黄底与标签；本地模式没有这个字段
+      meaningSource: row?.meaningSource === 'ai' ? 'ai' : '',
     }))
   } catch (caught) {
     generalError.value = caught?.message || '文件解析失败，请稍后重试。'
@@ -360,10 +465,12 @@ async function extractFile(file) {
 }
 
 /** 就地编辑后重新校验；不直接改写输入框内容，避免中文输入法组词时被打断 */
-function updateFileRow(row) {
+function updateFileRow(row, field = '') {
   const { valid, errors } = validateWordInput({ word: row.word, meaning: row.meaning })
   row.valid = valid
   row.reason = valid ? '' : firstError(errors).message
+  // 用户改过释义后不再算「AI 释义」，仅前端状态，不回传（md/49 §10）
+  if (field === 'meaning' && row.meaningSource) row.meaningSource = 'user'
   result.value = null
   generalError.value = ''
 }
@@ -464,6 +571,31 @@ function close() {
       </label>
 
       <template v-else>
+        <div class="ai-field">
+          <button
+            v-if="!aiUnavailable"
+            type="button"
+            role="switch"
+            class="ai-toggle"
+            :class="{ 'is-on': aiMode }"
+            :aria-checked="aiMode"
+            :disabled="busy"
+            @click="toggleAi"
+          >
+            <span class="track" aria-hidden="true"><span class="thumb" /></span>
+            <span class="ai-toggle-text">用 AI 整理（消耗你自己 API Key 的额度）</span>
+          </button>
+
+          <p v-if="aiUnavailable" class="ai-hint">AI 整理暂未开放，可继续使用本地识别。</p>
+          <p v-else class="ai-hint">
+            开启后由你接入的 AI 服务补全释义，结果仍需逐条核对；不开启则只做本地解析。
+          </p>
+        </div>
+
+        <p v-if="aiMode" class="notice notice-info">
+          内容会发送到你接入的 AI 服务用于识别，仅用于整理单词与释义。
+        </p>
+
         <div class="field">
           <span class="field-label">选择文件</span>
           <div
@@ -511,10 +643,36 @@ function close() {
 
         <p v-if="fileMeta?.source === 'image'" class="notice notice-warn">{{ IMAGE_NOTICE }}</p>
         <p v-if="truncatedNotice" class="notice notice-warn">{{ truncatedNotice }}</p>
+        <!-- 截断 / 部分未分析说明结果不完整，单独醒目提示 -->
+        <p v-for="alert in aiAlerts" :key="alert.code" class="notice notice-warn">
+          {{ alert.message }}
+        </p>
 
-        <ul v-if="fileWarnings.length" class="warning-list">
+        <div v-if="aiError" class="ai-error">
+          <p class="form-error" role="alert">{{ aiError.message }}</p>
+          <div class="ai-error-actions">
+            <BaseButton
+              v-if="aiErrorNeedsKey"
+              variant="secondary"
+              size="sm"
+              @click="emit('api-key-needed')"
+            >
+              去个人中心
+            </BaseButton>
+            <template v-if="aiErrorRetryable">
+              <BaseButton variant="secondary" size="sm" :disabled="busy" @click="retryExtract">
+                重试
+              </BaseButton>
+              <BaseButton variant="ghost" size="sm" :disabled="busy" @click="switchToLocal">
+                改用本地识别
+              </BaseButton>
+            </template>
+          </div>
+        </div>
+
+        <ul v-if="plainWarnings.length" class="warning-list">
           <li
-            v-for="warning in fileWarnings"
+            v-for="warning in plainWarnings"
             :key="`${warning.code}-${warning.message}`"
             class="warning-item"
           >
@@ -567,6 +725,7 @@ function close() {
       <section v-if="mode === 'file' && fileMeta" class="preview" aria-live="polite">
         <h3 class="preview-title">解析结果</h3>
         <p class="preview-summary">{{ fileSummary }}</p>
+        <p v-if="aiSummary" class="ai-summary">{{ aiSummary }}</p>
         <p v-if="fileRows.length > WORD_BATCH_MAX" class="preview-summary">
           共 {{ fileRows.length }} 条，将分 {{ fileChunkCount }} 批导入（每批最多
           {{ WORD_BATCH_MAX }} 条）。
@@ -580,7 +739,7 @@ function close() {
             v-for="row in fileRows"
             :key="row.uid"
             class="file-row"
-            :class="{ 'is-invalid': !row.valid }"
+            :class="{ 'is-invalid': !row.valid, 'is-ai': row.meaningSource === 'ai' }"
           >
             <span class="file-row-index">{{ lineLabel(row.index) }}</span>
             <input
@@ -589,16 +748,19 @@ function close() {
               type="text"
               aria-label="单词"
               :disabled="busy"
-              @input="updateFileRow(row)"
+              @input="updateFileRow(row, 'word')"
             />
-            <input
-              v-model="row.meaning"
-              class="file-meaning-input"
-              type="text"
-              aria-label="释义，可留空"
-              :disabled="busy"
-              @input="updateFileRow(row)"
-            />
+            <div class="file-meaning-cell">
+              <input
+                v-model="row.meaning"
+                class="file-meaning-input"
+                type="text"
+                aria-label="释义，可留空"
+                :disabled="busy"
+                @input="updateFileRow(row, 'meaning')"
+              />
+              <span v-if="row.meaningSource === 'ai'" class="ai-badge">AI 释义</span>
+            </div>
             <button
               type="button"
               class="file-row-remove"
@@ -836,6 +998,103 @@ function close() {
   background: var(--color-warning-bg);
 }
 
+.notice-info {
+  color: var(--color-info);
+  background: var(--color-info-bg);
+}
+
+.ai-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-toggle {
+  display: inline-flex;
+  gap: var(--space-3);
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ai-toggle:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 4px;
+}
+
+.ai-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.track {
+  position: relative;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  background: var(--color-line-strong);
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.ai-toggle.is-on .track {
+  background: var(--color-primary);
+}
+
+.thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.ai-toggle.is-on .thumb {
+  transform: translateX(16px);
+}
+
+.ai-toggle-text {
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+}
+
+.ai-hint {
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+}
+
+.ai-error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-deep);
+}
+
+.ai-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ai-summary {
+  color: var(--color-accent);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+}
+
 .warning-list {
   display: flex;
   flex-direction: column;
@@ -958,6 +1217,31 @@ function close() {
   color: var(--color-muted);
 }
 
+/* AI 补的释义用淡黄底提示「需要核对」（md/49 §10） */
+.file-row.is-ai {
+  border-color: var(--color-line-strong);
+  background: var(--color-warning-bg);
+}
+
+.file-meaning-cell {
+  display: flex;
+  grid-area: meaning;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.ai-badge {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-warning);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
 .file-row-index {
   grid-area: index;
   color: var(--color-muted);
@@ -984,8 +1268,8 @@ function close() {
   font-family: var(--font-mono, monospace);
 }
 
-.file-meaning-input {
-  grid-area: meaning;
+.file-meaning-cell .file-meaning-input {
+  flex: 1 1 auto;
 }
 
 .file-word-input:focus,
@@ -1049,6 +1333,18 @@ function close() {
 
   .file-row-reason {
     grid-column: 1 / -1;
+  }
+
+  /* 触控目标不小于 44px */
+  .ai-toggle {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track,
+  .thumb {
+    transition: none;
   }
 }
 </style>

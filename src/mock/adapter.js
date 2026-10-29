@@ -1606,6 +1606,58 @@ function buildMockImportResponse(file, source, parsed) {
   }
 }
 
+/**
+ * 模拟 AI 整理模式（md/49）
+ *
+ * 浏览器里没有模型可调：用本地词库给「只有单词、没有释义」的行补释义，
+ * 补齐的行标 `meaningSource: 'ai'`，其余仍是 `missing`——与后端字段同形状，
+ * 组件不需要为 mock 分支。token 数按行数估，只用于验证摘要展示。
+ */
+function applyMockAiImport(response) {
+  let filled = 0
+
+  const rows = response.rows.map((row) => {
+    if (row.meaning) return { ...row, meaningSource: 'missing' }
+
+    const entry = row.valid ? findEntry(row.word) : null
+    const meaning = normalizeSenses(entry?.senses)
+      .map((sense) => sense.meaning)
+      .filter(Boolean)
+      .slice(0, 2)
+      .join('；')
+
+    if (!meaning) return { ...row, meaningSource: 'missing' }
+    filled += 1
+    return { ...row, meaning, meaningSource: 'ai' }
+  })
+
+  const calls = Math.max(1, Math.ceil(rows.length / 150))
+  const warnings = [
+    { code: 'AI_RECOGNIZED', message: 'AI 识别结果仅供参考，请逐条核对单词与释义。' },
+    ...response.warnings,
+  ]
+  if (response.truncated) {
+    warnings.push({
+      code: 'AI_TRUNCATED',
+      message: '文件内容超出识别上限，结果可能不完整，建议拆分文件后重新上传。',
+    })
+  }
+
+  return {
+    ...response,
+    rows,
+    engine: 'ai',
+    ai: {
+      model: 'deepseek-chat',
+      keySource: 'user',
+      calls,
+      inputTokens: rows.length * 12,
+      outputTokens: filled * 10 + rows.length * 4,
+    },
+    warnings,
+  }
+}
+
 export const mockWords = {
   async list({ q = '', status = 'all', page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
     await wait(latency)
@@ -2043,17 +2095,27 @@ export const mockWords = {
   },
 
   /**
-   * 解析导入文件（md/48）
+   * 解析导入文件（md/48、md/49）
    *
    * Mock 只支持文本类文件（txt / md / csv），因为浏览器端没有 docx / xlsx / OCR 解析器。
    * Word / Excel / 图片会返回带明确说明的 422，而不是伪造一份解析结果；
    * 需要验证这三种格式时请连真实后端。响应字段与后端保持一致，组件无需分支。
+   * `mode: 'ai'` 用本地词库模拟 AI 补释义：没接 Key 时与后端一样先回 409。
    */
-  async extractImport(file) {
+  async extractImport(file, { mode = 'local' } = {}) {
     await wait(latency)
 
     if (!file || typeof file !== 'object') {
       throw new MockApiError('INVALID_REQUEST', '请选择要上传的文件', 400, 'file')
+    }
+
+    const useAi = mode === 'ai'
+    if (useAi && !readStoredApiKey()) {
+      throw new MockApiError(
+        'USER_API_KEY_REQUIRED',
+        '需要先在个人中心接入你自己的 API Key，才能使用 AI 整理。',
+        409,
+      )
     }
 
     const size = Number(file.size) || 0
@@ -2128,11 +2190,13 @@ export const mockWords = {
       throw new MockApiError('FILE_PARSE_FAILED', '文件读取失败，请重试。', 422, 'file')
     }
 
-    return buildMockImportResponse(
+    const response = buildMockImportResponse(
       file,
       resolvedSource,
       extractMockImportRows(text, resolvedSource),
     )
+
+    return useAi ? applyMockAiImport(response) : response
   },
 
   async update(id, patch = {}) {

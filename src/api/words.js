@@ -40,18 +40,25 @@ export function batchWords(payload = {}) {
  * 解析导入文件（Word / Excel / CSV / 文本 / 图片）
  *
  * 只解析、不写库；字段名固定为 `file`，一次一个文件，最大 5MB。
+ * `mode: 'ai'` 时多传一个 multipart 文本字段 `mode=ai`，由后端用账号自备的
+ * API Key 整理释义（md/49）；`local` 不传该字段，保持旧行为。
  * 共享 axios 实例默认 `Content-Type: application/json`，而 axios 看到
  * FormData + JSON 头会把 FormData 转成 `"{}"`；这里必须把该头清掉，
- * 让浏览器自己补 multipart boundary。图片 OCR 冷启动较慢，单独放宽超时。
+ * 让浏览器自己补 multipart boundary。
+ * AI 模式后端最坏 45 秒，必须单独用 60 秒超时，否则前端先报网络错误、
+ * 用户重试会重复消耗自己的额度（md/49 §13）。
  */
-export function extractWordImport(file) {
-  if (config.useMock) return mockWords.extractImport(file)
+export function extractWordImport(file, { mode = 'local' } = {}) {
+  const useAi = mode === 'ai'
+  if (config.useMock) return mockWords.extractImport(file, { mode: useAi ? 'ai' : 'local' })
 
   const form = new FormData()
   form.append('file', file)
+  if (useAi) form.append('mode', 'ai')
+
   return apiPost('/words/import/extract', form, {
     headers: { 'Content-Type': undefined },
-    timeout: config.importTimeout,
+    timeout: useAi ? config.importAiTimeout : config.importTimeout,
   })
 }
 

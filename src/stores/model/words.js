@@ -200,10 +200,10 @@ export const useWordsStore = defineStore('words', () => {
     }
   }
 
-  /** 解析导入文件：只解析、不落库，返回行 / 统计 / 警告 */
-  async function extractImportFile(file) {
+  /** 解析导入文件：只解析、不落库，返回行 / 统计 / 警告；`mode: 'ai'` 交给后端用自己的 Key 整理 */
+  async function extractImportFile(file, options = {}) {
     try {
-      const data = await extractWordImport(file)
+      const data = await extractWordImport(file, options)
       return { ok: true, data }
     } catch (caught) {
       return toFailure(caught)

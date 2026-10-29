@@ -11,7 +11,7 @@ vi.mock('../../unit/request', () => ({
 }))
 
 vi.mock('../../config', () => ({
-  config: { useMock: false, importTimeout: 30000 },
+  config: { useMock: false, importTimeout: 30000, importAiTimeout: 60000 },
 }))
 
 import { apiPost } from '../../unit/request'
@@ -39,5 +39,22 @@ describe('extractWordImport', () => {
 
     const [, , options] = apiPost.mock.calls[0]
     expect(options.headers['Content-Type']).toBeUndefined()
+  })
+
+  it('should not send a mode field for local parsing', async () => {
+    await extractWordImport(new File(['apple'], 'words.txt', { type: 'text/plain' }))
+
+    const [, form] = apiPost.mock.calls[0]
+    expect(form.get('mode')).toBeNull()
+  })
+
+  it('should send mode=ai and use the 60s AI timeout', async () => {
+    await extractWordImport(new File(['apple'], 'words.txt', { type: 'text/plain' }), {
+      mode: 'ai',
+    })
+
+    const [, form, options] = apiPost.mock.calls[0]
+    expect(form.get('mode')).toBe('ai')
+    expect(options.timeout).toBe(60000)
   })
 })

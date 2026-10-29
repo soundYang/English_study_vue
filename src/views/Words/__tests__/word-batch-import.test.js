@@ -64,7 +64,7 @@ describe('WordBatchImport file mode', () => {
 
     await chooseFile(target, new File(['x'], 'shot.png', { type: 'image/png' }))
 
-    expect(extractFile).toHaveBeenCalledWith(expect.any(File))
+    expect(extractFile).toHaveBeenCalledWith(expect.any(File), { mode: 'local' })
     expect(target.text()).toContain('图片是快速识别模式')
     expect(target.text()).toContain('图片识别置信度较低')
     expect(target.text()).toContain('还有 1 条未读取')
@@ -153,5 +153,157 @@ describe('WordBatchImport file mode', () => {
 
     expect(extractFile).not.toHaveBeenCalled()
     expect(target.get('.form-error').text()).toContain('文件不能超过 5MB')
+  })
+})
+
+describe('WordBatchImport AI mode', () => {
+  async function enableAi(target) {
+    const toggle = target.get('[role="switch"]')
+    await toggle.trigger('click')
+    await flushPromises()
+    return toggle
+  }
+
+  it('should send mode=ai and show the AI summary, badge and alerts', async () => {
+    const extractFile = vi.fn().mockResolvedValue({
+      ok: true,
+      data: {
+        source: 'txt',
+        fileName: 'words.txt',
+        size: 20,
+        engine: 'ai',
+        ai: {
+          model: 'deepseek-chat',
+          keySource: 'user',
+          calls: 2,
+          inputTokens: 900,
+          outputTokens: 500,
+        },
+        rows: [
+          { index: 0, word: 'apple', meaning: '苹果', valid: true, meaningSource: 'ai' },
+          { index: 1, word: 'banana', meaning: '', valid: true, meaningSource: 'missing' },
+        ],
+        stats: { total: 2, valid: 2, invalid: 0 },
+        truncated: true,
+        warnings: [
+          { code: 'AI_RECOGNIZED', message: 'AI 识别结果仅供参考，请逐条核对。' },
+          { code: 'AI_TRUNCATED', message: '结果可能不完整，建议拆分文件。' },
+        ],
+      },
+    })
+    const target = await openFileMode(extractFile)
+
+    // 默认关，勾选后才带 AI 模式
+    expect(target.get('[role="switch"]').attributes('aria-checked')).toBe('false')
+    await enableAi(target)
+
+    await chooseFile(target, new File(['apple\nbanana'], 'words.txt', { type: 'text/plain' }))
+
+    expect(extractFile).toHaveBeenCalledWith(expect.any(File), { mode: 'ai' })
+    expect(target.text()).toContain('内容会发送到你接入的 AI 服务用于识别')
+    expect(target.text()).toContain('AI 整理 · 2 次调用 · 约 1.4k tokens')
+    expect(target.text()).toContain('结果可能不完整')
+    expect(target.findAll('.file-row.is-ai')).toHaveLength(1)
+    expect(target.findAll('.ai-badge')).toHaveLength(1)
+    // 普通警告列表里只留 AI_RECOGNIZED，截断提示单独展示
+    expect(target.findAll('.warning-item')).toHaveLength(1)
+  })
+
+  it('should mark an AI meaning as user-edited once the user changes it', async () => {
+    const extractFile = vi.fn().mockResolvedValue({
+      ok: true,
+      data: {
+        source: 'txt',
+        fileName: 'words.txt',
+        size: 20,
+        engine: 'ai',
+        ai: { calls: 1, inputTokens: 20, outputTokens: 10 },
+        rows: [{ index: 0, word: 'apple', meaning: '苹果', valid: true, meaningSource: 'ai' }],
+        stats: { total: 1, valid: 1, invalid: 0 },
+        truncated: false,
+        warnings: [],
+      },
+    })
+    const target = await openFileMode(extractFile)
+
+    await enableAi(target)
+    await chooseFile(target, new File(['apple'], 'words.txt', { type: 'text/plain' }))
+
+    expect(target.findAll('.ai-badge')).toHaveLength(1)
+
+    await target.get('.file-meaning-input').setValue('苹果（水果）')
+    await flushPromises()
+
+    expect(target.findAll('.ai-badge')).toHaveLength(0)
+  })
+
+  it('should ask the parent to open profile when the account has no API Key', async () => {
+    const extractFile = vi.fn().mockResolvedValue({
+      ok: false,
+      code: 'USER_API_KEY_REQUIRED',
+      message: '需要先在个人中心接入你自己的 API Key，才能使用 AI 整理。',
+    })
+    const target = await openFileMode(extractFile)
+
+    await enableAi(target)
+    await chooseFile(target, new File(['apple'], 'words.txt', { type: 'text/plain' }))
+
+    expect(target.text()).toContain('需要先在个人中心接入你自己的 API Key')
+
+    const goProfile = target.findAll('button').find((button) => button.text() === '去个人中心')
+    await goProfile.trigger('click')
+
+    expect(target.emitted('api-key-needed')).toHaveLength(1)
+  })
+
+  it('should offer retry and a local fallback for AI provider failures', async () => {
+    const extractFile = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        code: 'AI_PROVIDER_ERROR',
+        message: 'AI 服务暂时不可用，请稍后重试。',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          source: 'txt',
+          fileName: 'words.txt',
+          size: 10,
+          rows: [{ index: 0, word: 'apple', meaning: '', valid: true }],
+          stats: { total: 1, valid: 1, invalid: 0 },
+          truncated: false,
+          warnings: [],
+        },
+      })
+    const target = await openFileMode(extractFile)
+
+    await enableAi(target)
+    await chooseFile(target, new File(['apple'], 'words.txt', { type: 'text/plain' }))
+
+    expect(target.text()).toContain('AI 服务暂时不可用')
+    expect(target.text()).toContain('重试')
+
+    const localButton = target.findAll('button').find((button) => button.text() === '改用本地识别')
+    await localButton.trigger('click')
+    await flushPromises()
+
+    expect(extractFile).toHaveBeenLastCalledWith(expect.any(File), { mode: 'local' })
+    expect(target.findAll('.file-row')).toHaveLength(1)
+  })
+
+  it('should hide the AI switch when the server turns the feature off', async () => {
+    const extractFile = vi.fn().mockResolvedValue({
+      ok: false,
+      code: 'IMPORT_AI_DISABLED',
+      message: 'AI 整理暂未开放。',
+    })
+    const target = await openFileMode(extractFile)
+
+    await enableAi(target)
+    await chooseFile(target, new File(['apple'], 'words.txt', { type: 'text/plain' }))
+
+    expect(target.find('[role="switch"]').exists()).toBe(false)
+    expect(target.text()).toContain('AI 整理暂未开放')
   })
 })

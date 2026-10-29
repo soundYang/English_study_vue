@@ -8,6 +8,9 @@ const REQUEST_TIMEOUT = 15000
 const GENERATE_TIMEOUT = 90000
 // 文件解析（含图片 OCR）可能冷启动，默认 15 秒不够；后端解析上限 5MB
 const IMPORT_TIMEOUT = 30000
+// AI 整理模式后端最坏 45 秒（分片多次调用模型），前端必须放到 60 秒：
+// 沿用 30 秒会让后端还在跑、前端先报网络错误，用户重试会重复消耗他的 Key 额度（md/49 §13）
+const IMPORT_AI_TIMEOUT = 60000
 
 const rawBaseUrl = (import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL).trim()
 const useMock = import.meta.env.VITE_USE_MOCK !== 'false'
@@ -23,6 +26,7 @@ export const config = Object.freeze({
   requestTimeout: REQUEST_TIMEOUT,
   generateTimeout: GENERATE_TIMEOUT,
   importTimeout: IMPORT_TIMEOUT,
+  importAiTimeout: IMPORT_AI_TIMEOUT,
   isDev: import.meta.env.DEV,
   isProd: import.meta.env.PROD,
 })

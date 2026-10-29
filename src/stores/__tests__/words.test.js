@@ -216,6 +216,18 @@ describe('words store file import', () => {
     })
   })
 
+  it('should forward the AI mode to the extract API and keep its error code', async () => {
+    const store = useWordsStore()
+
+    const result = await store.extractImportFile(
+      new File(['apple'], 'words.txt', { type: 'text/plain' }),
+      { mode: 'ai' },
+    )
+
+    // 演示账号没接自备 Key：mock 与真实后端一样回 409
+    expect(result).toMatchObject({ ok: false, code: 'USER_API_KEY_REQUIRED' })
+  })
+
   it('should submit 201 rows as 200 + 1 and remap errors to the file index', async () => {
     const store = useWordsStore()
     await store.fetchList()

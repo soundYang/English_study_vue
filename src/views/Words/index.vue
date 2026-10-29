@@ -5,6 +5,7 @@
  * 所有请求状态由 words store 维护，本页只负责交互、Toast 与行高亮。
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import BaseButton from '../../component/BaseButton.vue'
 import BaseModal from '../../component/BaseModal.vue'
 import ConfirmDialog from '../../component/ConfirmDialog.vue'
@@ -29,6 +30,7 @@ const EDIT_HIGHLIGHT_DURATION = 600
 
 const toast = useToast()
 const store = useWordsStore()
+const router = useRouter()
 const isWide = useMediaQuery('(min-width: 1200px)')
 
 const addModalOpen = ref(false)
@@ -227,6 +229,12 @@ async function handleAdd(payload) {
   return { ok: true }
 }
 
+/** AI 整理缺 Key / Key 失效：关掉弹窗，带用户去个人中心导入 */
+function handleApiKeyNeeded() {
+  batchOpen.value = false
+  router.push('/profile')
+}
+
 function handleBatchImported(result) {
   detailTarget.value = null
 
@@ -373,6 +381,7 @@ function reload() {
       :submit-batch="store.importBatch"
       :extract-file="store.extractImportFile"
       @imported="handleBatchImported"
+      @api-key-needed="handleApiKeyNeeded"
     />
 
     <WordEditModal v-model:open="editOpen" :word="editingWord" :save-word="handleUpdate" />
