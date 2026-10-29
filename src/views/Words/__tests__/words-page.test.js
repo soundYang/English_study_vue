@@ -79,26 +79,38 @@ describe('Words page', () => {
     expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(10)
   })
 
-  it('should keep the current rows while a status filter is loading', async () => {
+  // 已掌握 / 学习中 / 未学习都要覆盖：三个标签走的是同一条 fetchList，
+  // 但列表长度不同（11 / 9 / 4），曾经在点标签时整表换成骨架屏而闪一下。
+  it.each([
+    ['已掌握', 1, 'mastered'],
+    ['学习中', 2, 'learning'],
+    ['未学习', 3, 'new'],
+  ])('should keep the current rows while switching to %s', async (_, tabIndex, status) => {
     const wrapper = await mountPage()
     const store = useWordsStore()
+    const rows = wrapper.findAll('tbody tr.word-row')
 
-    expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(10)
+    expect(rows).toHaveLength(10)
+    const firstRow = rows[0].element
 
     // 真实网络下切换状态需要时间：这段时间继续显示旧行，
     // 不能整表换成骨架屏，否则每点一次标签都会闪一下。
     setMockLatency(60)
-    await wrapper.findAll('[role="radio"]')[1].trigger('click')
+    await wrapper.findAll('[role="radio"]')[tabIndex].trigger('click')
 
-    expect(store.status).toBe('mastered')
+    expect(store.status).toBe(status)
     expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
-    expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(10)
+    // 旧行还是同一批 DOM 节点，没有被重建
+    expect(wrapper.findAll('tbody tr.word-row')[0].element).toBe(firstRow)
+    // 底部分页也不能在加载中被抽走，否则页面高度会抖一下
+    expect(wrapper.find('.list-footer').exists()).toBe(true)
 
     await new Promise((resolve) => setTimeout(resolve, 80))
     await flushPromises()
 
-    expect(store.items.every((item) => item.status === 'mastered')).toBe(true)
-    expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(10)
+    expect(store.items.every((item) => item.status === status)).toBe(true)
+    expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(store.items.length)
+    expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
   })
 
   it('should show the word detail when the word itself is clicked', async () => {

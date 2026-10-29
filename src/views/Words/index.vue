@@ -252,9 +252,8 @@ function reload() {
 
         <div v-if="!store.error" class="list-head">
           <h2 class="list-title">{{ listTitle }}</h2>
-          <span v-if="store.query && !store.loading" class="list-count">
-            找到 {{ store.total }} 个单词
-          </span>
+          <!-- 切换筛选 / 搜索时列表继续显示旧数据，计数也先留在原位，等新结果一起换 -->
+          <span v-if="store.query" class="list-count">找到 {{ store.total }} 个单词</span>
         </div>
 
         <WordTable
@@ -284,7 +283,8 @@ function reload() {
           </template>
         </EmptyState>
 
-        <div v-if="!store.loading && !store.error && store.total > 0" class="list-footer">
+        <!-- 加载中保留底栏：否则每切一次状态，底部分页都会消失再出现，页面高度抖一下 -->
+        <div v-if="!store.error && store.total > 0" class="list-footer">
           <p class="total-text">共 {{ store.total }} 条</p>
           <PaginationBar
             :page="store.page"
