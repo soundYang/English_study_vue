@@ -58,6 +58,8 @@ const NON_RETRYABLE_CODES = [
   'FREE_BUDGET_EXHAUSTED',
   'USER_API_KEY_INVALID',
   'USER_API_KEY_MISSING',
+  // 自选词失效：同样的词重试必然再 422，只能回设置页改选（后端 md/54）
+  'FOCUS_WORDS_NOT_LEARNED',
 ]
 
 function isDocumentHidden() {

@@ -10,6 +10,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import BaseButton from '../../component/BaseButton.vue'
 import AllowNewWordsPicker from './component/AllowNewWordsPicker.vue'
 import DifficultyPicker from './component/DifficultyPicker.vue'
+import FocusWordsPicker from './component/FocusWordsPicker.vue'
 import LengthPicker from './component/LengthPicker.vue'
 import QuestionCountPicker from './component/QuestionCountPicker.vue'
 import ScopePicker from './component/ScopePicker.vue'
@@ -23,6 +24,7 @@ import { useToast } from '../../composables/useToast'
 import { useAuthStore } from '../../stores/model/auth'
 import { useSettingsStore } from '../../stores/model/settings'
 import { capacityNoteOf } from '../../unit/capacity'
+import { focusWordLimit, focusWordsPayload, normalizeFocusWords } from '../../unit/focus-words'
 import { firstError, LEVEL_MAX_TARGET_WORDS, TARGET_WORDS_MAX } from '../../unit/validators'
 
 const LEVEL_LABELS = { easy: '简单', medium: '进阶', hard: '挑战' }
@@ -59,6 +61,16 @@ const draft = reactive({
 })
 
 const saving = ref(false)
+
+/**
+ * 自选单词不写进 settings store：它是「这一篇」的选择，不该被下一次生成沿用。
+ * 但它是草稿的一部分——切走再回来、点「保存设置」都保留当前选择。
+ */
+const focusWords = ref([])
+// 上限跟篇幅走：100 词 10 个、1000 词 100 个（后端 TARGET_WORD_RATIO = 0.1）
+const focusLimit = computed(() => focusWordLimit(draft.targetWords))
+// 预检会告诉我们哪几个已选词已经不可用（被标成「不认识」/ 删除），标红提示移除
+const invalidFocusWords = computed(() => capacity.value?.focusWords?.invalid || [])
 
 /** 数组逐项比较：词源是两个以上值时，引用比较会把「没改」误判成改动 */
 function sameScope(left, right) {
@@ -151,11 +163,23 @@ watch(
   },
 )
 
-// 难度、篇幅或词源一变就重预检：一个接口同时回答「这个难度认识词够不够」「这个篇幅凑不凑得齐」
-// 词源收窄后候选池跟着变小，不重新预检的话，界面上还挂着上一个范围的成功结论
+// 篇幅缩短会让上限变小：超出的选择要立即截断，否则请求体带着超限数组被后端 400。
+// 截断而不是清空——用户选的词里靠前的通常正是最想要的
+watch(focusLimit, (limit) => {
+  const next = normalizeFocusWords(focusWords.value, { limit })
+  if (next.length !== focusWords.value.length) focusWords.value = next
+})
+
+// 难度、篇幅、词源或自选词一变就重预检：一个接口同时回答「这个难度认识词够不够」
+// 「这个篇幅凑不凑得齐」。选中的词会占掉目标词名额，不重新预检的话数字与真实闸门会分叉
 watch(
-  () => [draft.level, draft.targetWords, draft.vocabScope.join(',')],
-  ([, targetWords]) => loadCapacity({ targetWords, vocabScope: [...draft.vocabScope] }),
+  () => [draft.level, draft.targetWords, draft.vocabScope.join(','), focusWords.value.join(',')],
+  ([, targetWords]) =>
+    loadCapacity({
+      targetWords,
+      vocabScope: [...draft.vocabScope],
+      focusWords: [...focusWords.value],
+    }),
   { immediate: true },
 )
 
@@ -163,8 +187,16 @@ watch(
 watch(
   () => auth.isAuthenticated,
   (authenticated) => {
-    if (!authenticated) return
-    loadCapacity({ targetWords: draft.targetWords, vocabScope: [...draft.vocabScope] })
+    // 退登后清掉选择：预检已经不可用了，留着只会带到下一次别人的生成里
+    if (!authenticated) {
+      if (focusWords.value.length) focusWords.value = []
+      return
+    }
+    loadCapacity({
+      targetWords: draft.targetWords,
+      vocabScope: [...draft.vocabScope],
+      focusWords: [...focusWords.value],
+    })
   },
 )
 
@@ -203,12 +235,17 @@ function runGenerate() {
     toast.info(quotaNote.value)
     return
   }
+  // 自选词不进 settings store，但要在保存草稿前先按当前上限再归一化一次：
+  // 用户可能在弹窗关掉后改过篇幅，上限已经变小
+  focusWords.value = normalizeFocusWords(focusWords.value, { limit: focusLimit.value })
   if (!persistDraft()) return
 
   // 生成页负责发请求与播纸页动画；这里只保存设置、把参数交接过去。
+  // focusWords 只在选了才出现（空数组会 400），focusWordsPayload 负责这个取舍
+  const payload = { ...settings.payload, ...focusWordsPayload(focusWords.value) }
   // 交接单还在说明上一次跳转还没被取走，不覆盖，避免连点发两次
   if (!hasGenerationHandoff()) {
-    setGenerationHandoff(settings.payload, {
+    setGenerationHandoff(payload, {
       availableWords: availableWords.value,
       from: '/settings',
     })
@@ -238,8 +275,20 @@ function runGenerate() {
           <ScopePicker v-model="draft.vocabScope" class="scope-picker" :disabled="isGenerating" />
         </section>
 
+        <section class="scope">
+          <h2 class="section-title">3. 自选单词</h2>
+          <FocusWordsPicker
+            v-model="focusWords"
+            class="focus-picker"
+            :limit="focusLimit"
+            :invalid="invalidFocusWords"
+            :enabled="auth.isAuthenticated"
+            :disabled="isGenerating"
+          />
+        </section>
+
         <section class="params">
-          <h2 class="section-title">3. 设置文章参数</h2>
+          <h2 class="section-title">4. 设置文章参数</h2>
 
           <div class="params-table">
             <LengthPicker
@@ -364,6 +413,10 @@ function runGenerate() {
 }
 
 .scope-picker {
+  margin-top: var(--space-4);
+}
+
+.focus-picker {
   margin-top: var(--space-4);
 }
 

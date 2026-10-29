@@ -31,6 +31,7 @@ import { useGenerateReading } from '../composables/useGenerateReading'
 import { useReadingStore } from '../stores/model/reading'
 import { useSettingsStore } from '../stores/model/settings'
 import {
+  describeFocusWords,
   describeFreeBudgetExhausted,
   describeQuotaExceeded,
   describeRateLimit,
@@ -77,12 +78,22 @@ const basisText = computed(() =>
     : `基于你的 ${summary.value.availableWords} 个单词`,
 )
 // 两个入口：老的 20 词兜底没有 details，其余业务错误一律靠 details.kind 识别
-const hasVocabDetails = computed(() => Boolean(error.value?.details?.kind))
+// 自选词失效也是 details.kind 结构（kind = 'focus_words'），必须先分流出去，
+// 否则会被当成「词不够」，给出缩短篇幅 / 降难度这些毫无用处的建议（md/54 §3.2）
+const isFocusWordsProblem = computed(() => errorCode.value === 'FOCUS_WORDS_NOT_LEARNED')
+const hasVocabDetails = computed(
+  () => Boolean(error.value?.details?.kind) && !isFocusWordsProblem.value,
+)
 
 const vocabShortage = computed(() =>
   isInsufficient.value || hasVocabDetails.value
     ? describeVocabShortage({ code: errorCode.value, details: error.value?.details })
     : null,
+)
+
+// 失效词只能改选：这几个词不变，重试多少次都是同一个 422
+const focusWordsProblem = computed(() =>
+  isFocusWordsProblem.value ? describeFocusWords({ details: error.value?.details }) : null,
 )
 
 // 429 单独说「太频繁」：窗口内重试一定还是 429，给「重试」按钮等于骗用户多点一次
@@ -120,7 +131,8 @@ const canRetry = computed(
     error.value?.retryable !== false &&
     !isQuotaExceeded.value &&
     !isFreeBudgetExhausted.value &&
-    !isApiKeyProblem.value,
+    !isApiKeyProblem.value &&
+    !isFocusWordsProblem.value,
 )
 // retryCount 只用于标题区分第几次尝试，不参与「复用了几段」的数量计算（md/22 §8.5 ②）
 const attemptTitle = computed(() => {
@@ -129,6 +141,7 @@ const attemptTitle = computed(() => {
 })
 
 const errorTitle = computed(() => {
+  if (focusWordsProblem.value) return focusWordsProblem.value.title
   if (vocabShortage.value) return vocabShortage.value.title
   if (apiKeyProblem.value) return apiKeyProblem.value.title
   if (freeBudgetExhausted.value) return freeBudgetExhausted.value.title
@@ -139,6 +152,7 @@ const errorTitle = computed(() => {
   return '这次生成没有成功'
 })
 const errorHint = computed(() => {
+  if (focusWordsProblem.value) return focusWordsProblem.value.hint
   if (vocabShortage.value) return vocabShortage.value.hint
   if (apiKeyProblem.value) return apiKeyProblem.value.hint
   // 免费池用尽没有可补的信息，后端 message 已经把「接入自己的 API Key」说清楚
@@ -326,7 +340,13 @@ onBeforeUnmount(() => {
             <!-- 命中词汇类错误时后端 message 与 hint 说的是同一件事，只留 hint；
                  429（限流 / 额度）与 Key 失效同样按 code 给文案，后端 message 会重复一遍 -->
             <p
-              v-if="!vocabShortage && !rateLimit && !quotaExceeded && !apiKeyProblem"
+              v-if="
+                !vocabShortage &&
+                !rateLimit &&
+                !quotaExceeded &&
+                !apiKeyProblem &&
+                !focusWordsProblem
+              "
               class="generate-subtitle"
             >
               {{ error?.message }}

@@ -94,6 +94,8 @@ const answeredIds = computed(() =>
 const unansweredTitle = computed(() => `还有 ${unansweredCount.value} 道题未作答`)
 
 const newWords = computed(() => store.reading?.newWords || [])
+// 自选词没被写进正文（分段降级可能漏词）：只提示，不触发修复（后端 md/54）
+const missingFocusWords = computed(() => store.reading?.focusWords?.missing || [])
 const detailData = computed(() =>
   detailTarget.value ? newWordDetail(detailTarget.value.entry) : null,
 )
@@ -290,6 +292,10 @@ function goHome() {
           >
             <template #meta>
               <NewWordsPanel v-model:open="newWordsOpen" :words="newWords" inline />
+              <details v-if="missingFocusWords.length" class="focus-missing">
+                <summary>有 {{ missingFocusWords.length }} 个自选词没写进本文</summary>
+                <p>{{ missingFocusWords.join('、') }}</p>
+              </details>
             </template>
           </ArticleCard>
         </div>
@@ -370,6 +376,28 @@ function goHome() {
 
 .article-column {
   min-width: 0;
+}
+
+/* 自选词没写进本文：与「未学词」并排的一枚小提示，默认收起，不抢正文注意力 */
+.focus-missing {
+  color: var(--color-muted);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+}
+
+.focus-missing summary {
+  cursor: pointer;
+}
+
+.focus-missing summary:focus-visible {
+  outline: none;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.focus-missing p {
+  margin-top: var(--space-1);
+  color: var(--color-ink-2);
 }
 
 .question-column {

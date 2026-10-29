@@ -371,6 +371,21 @@ function scoreReading(reading) {
   return { results, correctCount, totalQuestions, score }
 }
 
+/**
+ * 自选词命中情况（后端 toSafeDto 的 focusWords 同形状）
+ * 词边界匹配，避免 `art` 被 `start` 误判成已出现
+ */
+function buildMockFocusWords(article, requested) {
+  const list = Array.isArray(requested) ? requested : []
+  const text = String(article || '').toLowerCase()
+  const missing = list.filter((word) => {
+    const pattern = new RegExp(`\\b${String(word).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+    return !pattern.test(text)
+  })
+
+  return { requested: [...list], missing }
+}
+
 function toSafeReading(reading) {
   return {
     id: reading.id,
@@ -383,6 +398,8 @@ function toSafeReading(reading) {
     actualWords: countWords(reading.article),
     newWords: reading.newWords || [],
     tokenUsage: reading.tokenUsage || emptyTokenUsage(),
+    // 老记录没有这个字段：两个数组都回空，字段始终存在（后端 md/54 同约定）
+    focusWords: reading.focusWords || { requested: [], missing: [] },
     createdAt: reading.createdAt,
     status: reading.status,
     questions: reading.questions.map((question) => ({
@@ -2409,6 +2426,9 @@ function createReadingRecord(db, payload, available) {
     // 模板上带的这两项就是真实后端由 AI 返回、再经 DTO 输出的部分
     newWords: template.newWords || [],
     tokenUsage: template.tokenUsage || emptyTokenUsage(),
+    // md/54：自选词的命中情况。mock 的文章是固定模板，按「正文里是否出现」如实算，
+    // 不假装全部命中——真实后端的分段降级同样会漏词
+    focusWords: buildMockFocusWords(template.article, payload.focusWords),
     questions,
     status: 'generated',
     userAnswers: null,
@@ -2437,6 +2457,14 @@ function normalizeScopeList(scope) {
   return [...normalizeVocabScope(scope)].sort().join(',')
 }
 
+/** 任务参数指纹：自选词按字典序比较，顺序不同不算换参数（后端同样 sort 后比对） */
+function focusListKey(words) {
+  return [...(Array.isArray(words) ? words : [])]
+    .map((word) => String(word))
+    .sort()
+    .join(',')
+}
+
 function sameTaskParams(left, right) {
   return (
     left.level === right.level &&
@@ -2444,8 +2472,103 @@ function sameTaskParams(left, right) {
     Number(left.questionCount) === Number(right.questionCount) &&
     normalizeScopeList(left.vocabScope) === normalizeScopeList(right.vocabScope) &&
     // 三态比较：null（自动）与显式 true / false 是三种不同参数（后端 md/42 §3.2）
-    (left.allowNewWords ?? null) === (right.allowNewWords ?? null)
+    (left.allowNewWords ?? null) === (right.allowNewWords ?? null) &&
+    // 自选不同 = 参数不同（后端 md/54 §5）：换词重试要建新任务，不能复用旧参数。
+    // 这里不能用 normalizeScopeList——那是词组词源的归一化，会把 ['apple'] 当成 ['all']
+    focusListKey(left.focusWords) === focusListKey(right.focusWords)
   )
+}
+
+/** 与后端 reading.schema.js 同一条：字母开头，允许连字符与撇号 */
+const FOCUS_WORD_RE = /^[A-Za-z][A-Za-z'-]{0,49}$/
+
+/** 小写、去重、保留首次出现顺序（后端 normalizeFocusWords 同口径） */
+function normalizeFocusWordList(list) {
+  const seen = new Set()
+  const result = []
+
+  for (const item of list) {
+    const word = String(item).replace(/’/g, "'").trim().toLowerCase()
+    if (!word || seen.has(word)) continue
+
+    seen.add(word)
+    result.push(word)
+  }
+
+  return result
+}
+
+/** 本次篇幅能选几个词：与后端 requiredTargetWords 同一条公式 */
+function maxFocusWordsOf(targetWords) {
+  return Math.max(1, Math.round(Number(targetWords) * 0.1))
+}
+
+/**
+ * 自选单词的请求校验（后端 md/54 §3）
+ *
+ * - 不传 = 自动，返回空数组
+ * - 显式 `[]` → 400：静默退回自动会让用户以为选择生效了
+ * - 形状错误 / 超上限 → 400，field = focusWords
+ * - 不在 learning / mastered → 422 FOCUS_WORDS_NOT_LEARNED（调用模型之前）
+ *
+ * @returns {string[]} 归一化后的选词，写进任务参数 / reading 记录
+ */
+function assertFocusWords(payload, db) {
+  const value = payload.focusWords
+  if (value === undefined) return []
+
+  if (!Array.isArray(value)) {
+    throw new MockApiError('INVALID_REQUEST', 'focusWords 必须是数组', 400, 'focusWords')
+  }
+  if (value.length === 0) {
+    throw new MockApiError(
+      'INVALID_REQUEST',
+      'focusWords 不能为空数组；不指定时请省略这个字段',
+      400,
+      'focusWords',
+    )
+  }
+
+  for (const item of value) {
+    if (typeof item !== 'string' || !FOCUS_WORD_RE.test(item.replace(/’/g, "'").trim())) {
+      throw new MockApiError(
+        'INVALID_REQUEST',
+        '单词只能包含英文字母、连字符和撇号',
+        400,
+        'focusWords',
+      )
+    }
+  }
+
+  const list = normalizeFocusWordList(value)
+  const max = maxFocusWordsOf(payload.targetWords)
+
+  if (list.length > max) {
+    throw new MockApiError(
+      'INVALID_REQUEST',
+      `focusWords 最多 ${max} 个（${payload.targetWords} 词的文章最多 ${max} 个目标词）`,
+      400,
+      'focusWords',
+    )
+  }
+
+  const usable = new Set(usableWords(db.words).map((item) => String(item.word).toLowerCase()))
+  const invalid = list.filter((word) => !usable.has(word))
+
+  if (invalid.length) {
+    const shown = invalid.slice(0, 20)
+
+    throw new MockApiError(
+      'FOCUS_WORDS_NOT_LEARNED',
+      `有 ${invalid.length} 个词不在你的词库里，或已被标记为「不认识」：${shown.join('、')}。` +
+        '只有「学习中」和「已掌握」的词可以指定生成。',
+      422,
+      'focusWords',
+      { kind: 'focus_words', words: shown, count: invalid.length, max },
+    )
+  }
+
+  return list
 }
 
 /**
@@ -2673,12 +2796,27 @@ export const mockReadings = {
     const target = Math.round(targetWords * 1.1)
     const max = Math.round(targetWords * 1.15)
     const min = Math.round(targetWords * 0.85)
+    // md/54：capacity 是诊断接口，选词失效只报告不抛错（生成接口才 422）。
+    // 有效词参与折算的口径在 mock 里不影响数字，这里只回形状给界面标红
+    const requestedFocusWords = normalizeFocusWordList(
+      Array.isArray(payload.focusWords)
+        ? payload.focusWords
+        : String(payload.focusWords ?? '')
+            .split(',')
+            .filter(Boolean),
+    )
+    const usableSet = new Set(usableWords(db.words).map((item) => String(item.word).toLowerCase()))
 
     return {
       targetWords,
       available,
       knownWords,
       personalWords,
+      focusWords: {
+        requested: requestedFocusWords,
+        invalid: requestedFocusWords.filter((word) => !usableSet.has(word)),
+        max: maxFocusWordsOf(targetWords),
+      },
       finalMode: {
         unlocked: finalModeUnlocked,
         unlockAt: FINAL_MODE_PERSONAL_WORDS,
@@ -2702,10 +2840,13 @@ export const mockReadings = {
     assertAllowNewWords(payload)
 
     const db = readDb()
-    const gates = evaluateGenerationGates(payload, db)
+    // 选词校验在闸门之前：失效词与「词不够」是两回事，先告诉用户具体是哪几个词
+    const focusWords = assertFocusWords(payload, db)
+    const params = { ...payload, focusWords }
+    const gates = evaluateGenerationGates(params, db)
     if (gates.error) throw gates.error
 
-    return toSafeReading(createReadingRecord(db, payload, gates.available))
+    return toSafeReading(createReadingRecord(db, params, gates.available))
   },
 
   /**
@@ -2722,6 +2863,10 @@ export const mockReadings = {
     }
     assertAllowNewWords(payload)
 
+    const db = readDb()
+    // 与同步接口同一套校验：失效词在建任务时就 422，不白跑一次后台任务
+    const focusWords = assertFocusWords(payload, db)
+
     // clientToken 命中：任何状态的已有任务都直接返回，不扣第二次钱
     const token = typeof payload.clientToken === 'string' ? payload.clientToken.trim() : ''
     if (token) {
@@ -2732,7 +2877,9 @@ export const mockReadings = {
     // 同参数的在跑任务直接复用；参数不同则 409，前端按 details.taskId 切过去
     const running = [...generationTasks.values()].find(isTaskActive)
     if (running) {
-      if (sameTaskParams(running.params, payload)) return taskAccepted(running, true)
+      if (sameTaskParams(running.params, { ...payload, focusWords })) {
+        return taskAccepted(running, true)
+      }
       throw new MockApiError(
         'TASK_IN_PROGRESS',
         '已经有一次生成在进行中，等它跑完或先取消它。',
@@ -2742,8 +2889,7 @@ export const mockReadings = {
       )
     }
 
-    const db = readDb()
-    const gates = evaluateGenerationGates(payload, db)
+    const gates = evaluateGenerationGates({ ...payload, focusWords }, db)
 
     const task = {
       taskId: `g${(generationTaskSeq += 1)}`,
@@ -2755,6 +2901,8 @@ export const mockReadings = {
         vocabScope: normalizeVocabScope(payload.vocabScope),
         // 三态原样保留：null = 自动，不能压成 false（后端 md/42 §3.2）
         allowNewWords: typeof payload.allowNewWords === 'boolean' ? payload.allowNewWords : null,
+        // 归一化后的选词：写进任务参数，成功时落进 reading.focusWords（后端 md/54）
+        focusWords,
       },
       status: 'queued',
       stage: 'queued',

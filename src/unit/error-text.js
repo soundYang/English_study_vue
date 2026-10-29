@@ -216,3 +216,27 @@ export function describeVocabShortage({ code = '', details = {} } = {}) {
     actions: ['shorten', 'lower', 'add'],
   }
 }
+
+/**
+ * 自选单词不可用（422 FOCUS_WORDS_NOT_LEARNED，md/54 §3.2）
+ *
+ * 后端在调用模型**之前**就拒绝，不占额度；重试同样的词必然再失败一次，
+ * 所以调用方要把它当不可重试错误，出口只有「回去改选」。
+ *
+ * @param {{ details?: { words?: string[], count?: number } }} error
+ * @returns {{ title: string, hint: string }}
+ */
+export function describeFocusWords({ details = {} } = {}) {
+  const words = Array.isArray(details.words) ? details.words.filter(Boolean) : []
+  const count = toNumber(details.count) ?? words.length
+  const shown = words.slice(0, 5).join('、')
+
+  return {
+    title: '你选的单词里有失效的',
+    hint: words.length
+      ? `这 ${count} 个词不在词库，或已被标记为「不认识」：${shown}${
+          count > words.slice(0, 5).length ? ' 等' : ''
+        }。回到设置页把它们移除，或改选别的词。`
+      : '有单词不在你的词库或已被标记为「不认识」，回到设置页改选后再生成。',
+  }
+}
