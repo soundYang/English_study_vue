@@ -122,18 +122,18 @@ const avatarInitial = computed(() => {
   overflow: hidden;
   border: 3px solid rgba(255, 252, 246, 0.9);
   border-radius: 50%;
-  background: var(--color-sidebar);
+  background: var(--color-warning-bg);
   box-shadow: var(--shadow-md);
 }
 
-/* 首字母头像：和顶栏小头像同一套配色 */
+/* 首字母头像：暖沙底 + 墨色字，和头图的奶油色融在一起 */
 .avatar-initial,
 .avatar-question {
   display: grid;
   width: 100%;
   height: 100%;
   place-items: center;
-  color: var(--color-sidebar-text);
+  color: var(--color-ink);
   font-family: var(--font-display);
   font-size: 30px;
   font-weight: 600;
@@ -142,7 +142,7 @@ const avatarInitial = computed(() => {
 
 /* 游客态不展示任何用户信息，只留一个问号示意 */
 .avatar-question {
-  color: var(--color-sidebar-muted);
+  color: var(--color-muted);
   font-weight: 400;
 }
 
