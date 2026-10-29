@@ -117,7 +117,15 @@ function handleKeydown(event) {
           :disabled="disabled"
           @click="select(card.value)"
         >
-          <img :src="card.image" alt="" :width="card.width" :height="card.height" loading="lazy" />
+          <img
+            :src="card.image"
+            alt=""
+            :width="card.width"
+            :height="card.height"
+            loading="lazy"
+            draggable="false"
+            @dragstart.prevent
+          />
           <span v-if="card.value === modelValue" class="badge" aria-hidden="true">
             <Check :size="14" :stroke-width="2.6" />
           </span>
@@ -181,6 +189,10 @@ function handleKeydown(event) {
   padding: 0;
   border-radius: var(--radius-lg);
   background: transparent;
+  /* 点按立即触发 click，不再等双击缩放判定；长按也不弹系统菜单 */
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  user-select: none;
   transition:
     transform 180ms var(--ease-out),
     box-shadow 180ms var(--ease-out);
@@ -190,6 +202,15 @@ function handleKeydown(event) {
   width: 100%;
   height: auto;
   border-radius: var(--radius-lg);
+  /*
+   * 素材图只是卡片内容，不该自己成为点按 / 长按目标：
+   * 部分手机浏览器会把「点图片」当成看图并全屏预览。让触点落在整卡按钮上，
+   * 选中逻辑仍由 button 的 click 处理
+   */
+  pointer-events: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 .card:hover:not(.is-selected):not(:disabled) {

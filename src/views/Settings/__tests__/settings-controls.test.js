@@ -42,6 +42,18 @@ describe('DifficultyPicker', () => {
 
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
   })
+
+  it('should keep the illustration non-interactive so taps select the card', async () => {
+    // 手机上点图会落到整卡按钮上：图片不参与拖动 / 长按，避免浏览器把它当「看图」全屏预览
+    const wrapper = mount(DifficultyPicker, { props: { modelValue: 'easy' } })
+    const image = wrapper.findAll('[role="radio"]')[1].get('img')
+
+    expect(image.attributes('draggable')).toBe('false')
+
+    await image.trigger('click')
+
+    expect(wrapper.emitted('update:modelValue')[0]).toEqual(['medium'])
+  })
 })
 
 describe('LengthPicker', () => {
