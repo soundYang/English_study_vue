@@ -395,6 +395,17 @@ function handleGenerate() {
   }
 }
 
+/* 只改透明度、不产生 transform：移动端 fixed 操作栏需要视口做包含块 */
+@keyframes settings-fade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
 @media (max-width: 1099px) {
   .settings-page {
     grid-template-columns: minmax(0, 1fr);
@@ -411,13 +422,25 @@ function handleGenerate() {
 }
 
 @media (max-width: 767px) {
+  .settings-page {
+    /* 操作栏浮在页面之上，本身不占文档流：按真实高度预留底部空间，
+       md 按钮 40px + 上下内边距 + 1px 上边框，避免滚到底时最后一行被盖住 */
+    --settings-actions-height: calc(40px + var(--space-3) * 2 + 1px);
+  }
+
   .settings-form {
     margin-top: var(--space-6);
+    /* 操作栏是 position: fixed，而带 transform 的祖先会成为它的包含块：
+       原来的 settings-rise 结束后仍保留 translateY(0)，按钮栏就会相对表单定位、
+       悬浮在页面中间并盖住生词容忍。移动端改成只淡入，不产生 transform。 */
+    animation: settings-fade var(--dur-page) var(--ease-out) 60ms both;
   }
 
   .settings-main {
     max-width: none;
-    padding: var(--content-pad-y) var(--content-pad-x) calc(72px + var(--space-6));
+    /* 正文底部至少空出「操作栏高度 + 一段呼吸间距」 */
+    padding: var(--content-pad-y) var(--content-pad-x)
+      calc(var(--settings-actions-height) + var(--space-6));
   }
 
   .quota-note {
