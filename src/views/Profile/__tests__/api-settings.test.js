@@ -88,6 +88,19 @@ describe('ApiSettings', () => {
     expect(useToastStore().items.map((item) => item.message)).toContain('API Key 已导入')
   })
 
+  it('should tell users where to create a DeepSeek key', async () => {
+    mountCard()
+    await flushPromises()
+
+    const link = wrapper.get('a.api-help-link')
+
+    expect(link.attributes('href')).toBe('https://platform.deepseek.com/api_keys')
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.attributes('rel')).toContain('noopener')
+    expect(wrapper.text()).toContain('创建 API Key')
+    expect(wrapper.text()).toContain('Key 只显示一次')
+  })
+
   it('should keep the typed key when the server rejects it on the apiKey field', async () => {
     saveApiKey.mockRejectedValue(
       new BusinessError('这把 API Key 无效或已过期，请检查后重新导入', 'USER_API_KEY_INVALID', {

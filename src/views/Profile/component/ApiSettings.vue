@@ -278,6 +278,23 @@ async function handleDelete() {
         Key 只用于你的账号生成文章，页面只显示掩码（如 sk-****9f3a），不会回显完整内容。
       </p>
 
+      <p class="api-help">
+        还没有 Key？
+        <a
+          class="api-help-link"
+          href="https://platform.deepseek.com/api_keys"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          去 DeepSeek 开放平台创建
+        </a>
+      </p>
+
+      <p class="api-help-note">
+        登录后点「创建 API Key」，复制以 sk- 开头的字符串粘贴到这里。Key 只显示一次； API
+        调用按量计费，账户需有余额。
+      </p>
+
       <p v-if="actionError" class="api-notice-text is-error" role="alert">{{ actionError }}</p>
 
       <div class="api-actions">
@@ -419,6 +436,26 @@ async function handleDelete() {
 
 .api-privacy {
   margin-top: var(--space-1);
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+}
+
+.api-help {
+  margin-top: var(--space-2);
+  color: var(--color-ink-2);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+}
+
+.api-help-link {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.api-help-note {
+  margin-top: 2px;
   color: var(--color-muted);
   font-size: var(--text-caption);
   line-height: var(--leading-caption);
