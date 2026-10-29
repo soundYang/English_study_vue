@@ -90,6 +90,29 @@ describe('GenerateOverlay', () => {
     expect(wrapper.text()).toContain('知道了')
   })
 
+  // 免费池用尽是 503 而不是 429：没有 resetAt / Retry-After，文案原样透传后端 message，
+  // 除了「知道了」不提供任何动作（md/36 §10 ①②③）
+  it('should pass the free-budget message through without retry or cooldown', async () => {
+    const message = '免费生成额度已用完，请接入自己的 API Key 后继续使用'
+    await mountOverlay({
+      code: 'FREE_BUDGET_EXHAUSTED',
+      message,
+      details: { limitTokens: 200000000, usedTokens: 200000031 },
+      retryable: false,
+    })
+
+    expect(wrapper.get('.generate-title').text()).toBe('免费生成额度用完了')
+    // 透传而不是改写：后端 message 原样出现
+    expect(wrapper.get('.generate-subtitle').text()).toBe(message)
+    expect(wrapper.text()).not.toContain('重试')
+    expect(wrapper.text()).not.toContain('返回修改')
+    // 没有任何恢复时间 / 倒计时
+    expect(wrapper.text()).not.toContain('明天')
+    expect(wrapper.text()).not.toContain('秒后')
+    expect(wrapper.findAll('button')).toHaveLength(1)
+    expect(wrapper.get('button').text()).toBe('知道了')
+  })
+
   it('should keep the retry button for other failures', async () => {
     await mountOverlay({ code: 'AI_PROVIDER_ERROR', message: '暂时没有可用的生成模板' })
 

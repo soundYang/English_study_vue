@@ -179,6 +179,46 @@ describe('reading store generation task', () => {
     })
   })
 
+  // 503 免费池用尽不是限流：不写 cooldownUntil（否则会显示一个假的倒计时），也不允许重试
+  it('should keep a free-budget 503 out of the rate-limit cooldown', async () => {
+    createGenerationTask.mockRejectedValue(
+      apiError('FREE_BUDGET_EXHAUSTED', {
+        message: '免费生成额度已用完，请接入自己的 API Key 后继续使用',
+        details: { limitTokens: 200000000, usedTokens: 200000031 },
+        status: 503,
+      }),
+    )
+
+    await store.generate(SETTINGS)
+
+    expect(store.phase).toBe('error')
+    expect(store.error).toMatchObject({ code: 'FREE_BUDGET_EXHAUSTED', retryable: false })
+    // remainingSeconds 只由 429 的 Retry-After 推导；503 没有这个头
+    expect(store.error.details.remainingSeconds).toBeUndefined()
+  })
+
+  // 任务是异步失败时后端可能不带 retryable，靠 NON_RETRYABLE_CODES 兜底（md/36 §10 ②）
+  it('should treat a free-budget task failure as non-retryable without a flag', async () => {
+    fetchGenerationTask.mockResolvedValue(
+      taskDto({
+        status: 'failed',
+        stage: 'done',
+        error: {
+          code: 'FREE_BUDGET_EXHAUSTED',
+          message: '免费生成额度已用完，请接入自己的 API Key 后继续使用',
+          details: {},
+        },
+        retryable: undefined,
+      }),
+    )
+
+    await store.generate(SETTINGS)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(store.phase).toBe('error')
+    expect(store.error.retryable).toBe(false)
+  })
+
   it('should go idle when the task has expired', async () => {
     fetchGenerationTask.mockRejectedValue(apiError('TASK_NOT_FOUND', { status: 404 }))
 

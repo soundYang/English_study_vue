@@ -13,6 +13,8 @@
  *   - 词汇不够（INSUFFICIENT_VOCABULARY / VOCABULARY_TOO_SMALL）：
  *     去添加单词 / 降低难度 / 缩短文章，按当前处境只显示有效的那个
  *   - 限流（429 RATE_LIMITED）：说「太频繁」，不给重试（窗口内重试必然还是 429）
+ *   - 免费池用尽（503 FREE_BUDGET_EXHAUSTED）：不会自行恢复，没有倒计时，
+ *     原样透传后端 message，只给「知道了」（md/36 §10）
  *   - 其他错误：retryable 为 false 时只给「返回修改」，否则「重试」走任务 /retry，
  *     复用已写好的段，不重新建任务
  *   - 打开时锁定背景滚动，焦点落到首个按钮，Esc 取消或关闭
@@ -24,7 +26,12 @@ import BaseButton from './BaseButton.vue'
 import { useGenerateReading } from '../composables/useGenerateReading'
 import { useReadingStore } from '../stores/model/reading'
 import { useSettingsStore } from '../stores/model/settings'
-import { describeQuotaExceeded, describeRateLimit, describeVocabShortage } from '../unit/error-text'
+import {
+  describeFreeBudgetExhausted,
+  describeQuotaExceeded,
+  describeRateLimit,
+  describeVocabShortage,
+} from '../unit/error-text'
 import { TARGET_WORDS_MIN } from '../unit/validators'
 
 const TIPS = ['文章只会使用你学过的词', '正在检查词汇范围', '马上就好']
@@ -85,9 +92,18 @@ const quotaExceeded = computed(() =>
   isQuotaExceeded.value ? describeQuotaExceeded({ details: error.value?.details }) : null,
 )
 
-// retryable === false 的（词不够、参数错、额度用完）重试只会再失败一次，按钮不该给；
+// 503 FREE_BUDGET_EXHAUSTED 与每日额度分开：免费池不会「明天恢复」，
+// 没有 resetAt / Retry-After，唯一出口是接入自己的 API Key（md/36 §10 ①②③）
+const isFreeBudgetExhausted = computed(() => errorCode.value === 'FREE_BUDGET_EXHAUSTED')
+const freeBudgetExhausted = computed(() =>
+  isFreeBudgetExhausted.value ? describeFreeBudgetExhausted() : null,
+)
+
+// retryable === false 的（词不够、参数错、额度用完、免费池用尽）重试只会再失败一次，按钮不该给；
 // 本地建任务失败（网络 / 429）没有这个字段，按可重试处理
-const canRetry = computed(() => error.value?.retryable !== false && !isQuotaExceeded.value)
+const canRetry = computed(
+  () => error.value?.retryable !== false && !isQuotaExceeded.value && !isFreeBudgetExhausted.value,
+)
 // retryCount 只用于标题区分第几次尝试，不参与「复用了几段」的数量计算（md/22 §8.5 ②）
 const attemptTitle = computed(() => {
   const retryCount = Number(task.value?.retryCount) || 0
@@ -96,6 +112,7 @@ const attemptTitle = computed(() => {
 
 const errorTitle = computed(() => {
   if (vocabShortage.value) return vocabShortage.value.title
+  if (freeBudgetExhausted.value) return freeBudgetExhausted.value.title
   if (quotaExceeded.value) return quotaExceeded.value.title
   if (rateLimit.value) return rateLimit.value.title
   if (attemptTitle.value) return attemptTitle.value
@@ -104,6 +121,8 @@ const errorTitle = computed(() => {
 })
 const errorHint = computed(() => {
   if (vocabShortage.value) return vocabShortage.value.hint
+  // 免费池用尽没有可补的信息，后端 message 已经把「接入自己的 API Key」说清楚
+  if (freeBudgetExhausted.value) return ''
   if (quotaExceeded.value) return quotaExceeded.value.hint
   if (rateLimit.value) return rateLimit.value.hint
 
@@ -283,7 +302,7 @@ onBeforeUnmount(() => {
             <p v-if="!vocabShortage && !rateLimit && !quotaExceeded" class="generate-subtitle">
               {{ error?.message }}
             </p>
-            <p class="generate-hint">{{ errorHint }}</p>
+            <p v-if="errorHint" class="generate-hint">{{ errorHint }}</p>
             <!-- 只有真实后端才带 requestId，mock 时这一行自然不出现 -->
             <p v-if="error?.requestId" class="generate-id">错误编号：{{ error.requestId }}</p>
 
@@ -305,6 +324,10 @@ onBeforeUnmount(() => {
               <BaseButton v-if="vocabShortage.actions.includes('add')" @click="goAddWords">
                 去添加单词
               </BaseButton>
+            </div>
+            <!-- 免费池用尽后改参数也没用（任何入口都会 503），只留「知道了」 -->
+            <div v-else-if="isFreeBudgetExhausted" class="generate-actions">
+              <BaseButton @click="dismiss">知道了</BaseButton>
             </div>
             <div v-else-if="rateLimit || quotaExceeded" class="generate-actions">
               <BaseButton variant="secondary" @click="backToSettings">返回修改</BaseButton>

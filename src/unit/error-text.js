@@ -89,6 +89,19 @@ export function describeQuotaExceeded({ details = {} } = {}) {
 }
 
 /**
+ * 503 FREE_BUDGET_EXHAUSTED 的文案（md/36 §6.2 / §10）
+ *
+ * 与 QUOTA_EXCEEDED 的区别：每日额度会「明天 0 点」恢复，免费池不会——
+ * 后端既不给 resetAt 也不给 Retry-After，用户能做的只有接入自己的 API Key。
+ * 所以这里不编恢复时间、不给等待建议；正文直接透传后端 message（§10 第 ②③ 条）。
+ *
+ * @returns {{ title: string }}
+ */
+export function describeFreeBudgetExhausted() {
+  return { title: '免费生成额度用完了' }
+}
+
+/**
  * 四种「生成被挡下」的语义不同，用户能做的补救也不同：
  *   target_words     —— 422 这次参数凑不齐目标词：缩篇幅 / 换词源
  *   known_words      —— 422 这个难度还没解锁：加词 / 降难度

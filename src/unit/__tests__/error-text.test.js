@@ -4,7 +4,12 @@
  * 改这里等于改用户能点的东西，所以三种 kind 各锁一条。
  */
 import { describe, expect, it } from 'vitest'
-import { describeQuotaExceeded, describeRateLimit, describeVocabShortage } from '../error-text'
+import {
+  describeFreeBudgetExhausted,
+  describeQuotaExceeded,
+  describeRateLimit,
+  describeVocabShortage,
+} from '../error-text'
 
 describe('describeVocabShortage', () => {
   it('should explain known-words shortage with the gap', () => {
@@ -120,5 +125,16 @@ describe('describeQuotaExceeded', () => {
 
     expect(result.hint).toContain('明天 00:00')
     expect(result.hint).not.toContain('Invalid')
+  })
+})
+
+describe('describeFreeBudgetExhausted', () => {
+  // 免费池不会自己恢复：文案里不能出现「明天」「稍后」这类暗示等待的说法（md/36 §10）
+  it('should not promise a recovery time', () => {
+    const result = describeFreeBudgetExhausted()
+
+    expect(result.title).toBe('免费生成额度用完了')
+    expect(result.title).not.toContain('明天')
+    expect(result.title).not.toContain('稍后')
   })
 })
