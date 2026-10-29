@@ -14,7 +14,7 @@
  */
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { ArrowRight, BookOpen, Lock, Smartphone, UserRound } from 'lucide-vue-next'
+import { ArrowRight, BookOpen, Gift, Lock, Smartphone, UserRound } from 'lucide-vue-next'
 import BaseButton from '../../component/BaseButton.vue'
 import AuthField from './component/AuthField.vue'
 import CaptchaField from './component/CaptchaField.vue'
@@ -312,6 +312,20 @@ onMounted(() => {
           </RouterLink>
         </nav>
 
+        <!--
+          登录 / 注册共用的福利说明，只放这一处：
+          每日免费次数与 token 活动一次说清，不散落到两个表单里
+        -->
+        <div class="auth-offer" role="note" aria-label="登录福利">
+          <span class="auth-offer-icon" aria-hidden="true">
+            <Gift :size="16" :stroke-width="1.8" />
+          </span>
+          <div class="auth-offer-copy">
+            <p class="auth-offer-title">登录后每日 3 次免费生成文章</p>
+            <p class="auth-offer-sub">2 亿 token 先到先得</p>
+          </div>
+        </div>
+
         <form v-if="!isRegister" class="auth-form" novalidate @submit.prevent="submitLogin">
           <AuthField
             v-model="loginForm.usernameOrPhone"
@@ -563,6 +577,47 @@ onMounted(() => {
   border-radius: 2px;
   background: var(--color-primary);
   content: '';
+}
+
+/* 福利条：暖色一掠，和表单拉开层次，但不抢「登录」按钮的注意力 */
+.auth-offer {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 0 0 18px;
+  padding: 10px 14px;
+  border: 1px solid rgba(143, 98, 54, 0.22);
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(143, 98, 54, 0.12), rgba(143, 98, 54, 0.05));
+}
+
+.auth-offer-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--color-accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.auth-offer-copy {
+  min-width: 0;
+}
+
+.auth-offer-title {
+  color: var(--color-ink);
+  font-size: var(--text-small);
+  font-weight: 600;
+  line-height: var(--leading-small);
+}
+
+.auth-offer-sub {
+  color: var(--color-accent);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 
 .auth-form {

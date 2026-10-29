@@ -128,6 +128,19 @@ describe('Auth page', () => {
     expect(wrapper.find('.captcha-image img').attributes('src')).toContain('data:image/svg+xml')
   })
 
+  it('should state the free quota and token giveaway in one shared notice', async () => {
+    await mountPage('/login')
+
+    // 福利只在标签页下方说一次：两个 tab 共用，不散落到表单里
+    expect(wrapper.findAll('.auth-offer')).toHaveLength(1)
+    const offer = wrapper.get('.auth-offer').text()
+    expect(offer).toContain('登录后每日 3 次免费生成文章')
+    expect(offer).toContain('2 亿 token 先到先得')
+
+    await mountPage('/register')
+    expect(wrapper.findAll('.auth-offer')).toHaveLength(1)
+  })
+
   it('should keep the redirect target when switching to register', async () => {
     await mountPage('/login?redirect=/profile')
 
