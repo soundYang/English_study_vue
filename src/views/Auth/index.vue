@@ -21,7 +21,6 @@ import CaptchaField from './component/CaptchaField.vue'
 import { fetchCaptcha } from '../../api/auth'
 import { config } from '../../config'
 import { MOCK_DEMO_CREDENTIALS } from '../../mock/adapter'
-import { localStore, storageKeys } from '../../unit/storage'
 import { useAuthStore } from '../../stores/model/auth'
 import { useToastStore } from '../../stores/model/toast'
 import authBg from '../../assets/images/auth-bg.jpg'
@@ -67,12 +66,11 @@ const captchaRef = ref(null)
 // 演示提示只在本地 mock 的开发环境出现，真实后端不会有这组账号
 const showDemoHint = computed(() => config.useMock && config.isDev)
 
-// 福利条允许关掉：记住选择，之后来登录页不再反复出现
-const showPromo = ref(!localStore.get(storageKeys.loginPromoDismissed, false))
+// 福利条允许关掉，但不落盘：刷新后重新出现，避免用户错过活动
+const showPromo = ref(true)
 
 function dismissPromo() {
   showPromo.value = false
-  localStore.set(storageKeys.loginPromoDismissed, true)
 }
 
 function clearErrors() {

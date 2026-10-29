@@ -141,17 +141,16 @@ describe('Auth page', () => {
     expect(wrapper.findAll('.auth-offer')).toHaveLength(1)
   })
 
-  it('should let the user close the notice and keep it closed', async () => {
+  it('should let the user close the notice only until the page reloads', async () => {
     await mountPage('/login')
 
     await wrapper.get('.auth-offer-close').trigger('click')
 
     expect(wrapper.find('.auth-offer').exists()).toBe(false)
-    expect(localStore.get(storageKeys.loginPromoDismissed)).toBe(true)
 
-    // 关掉是长期选择：刷新 / 再次进入登录页都不再出现
+    // 关闭只对当前页面生效，不落盘：刷新（重新挂载）后重新出现
     await mountPage('/login')
-    expect(wrapper.find('.auth-offer').exists()).toBe(false)
+    expect(wrapper.find('.auth-offer').exists()).toBe(true)
   })
 
   it('should keep the redirect target when switching to register', async () => {
