@@ -51,6 +51,7 @@ let highlightTimer = null
 const statusModel = computed({
   get: () => store.status,
   set: (value) => {
+    rememberEmptyView()
     store.filterByStatus(value)
   },
 })
@@ -61,12 +62,16 @@ const allWordsLabel = computed(() => {
 })
 
 const listTitle = computed(() => (store.query ? '搜索结果' : '词汇列表'))
-const showEmpty = computed(() => !store.loading && !store.error && store.items.length === 0)
+// 已经有成功结果、但当前没有单词时展示空态。
+// 加载中也保持显示：从空态切到别的筛选时，旧的空态先留在原位，
+// 新结果到达后直接换成列表 / 新的空态，避免「空态 → 骨架 → 空态」闪一下。
+const showEmpty = computed(() => store.hasLoaded && !store.error && !store.hasItems)
 const emptyActionVariant = computed(() => (store.isFiltered ? 'ghost' : 'primary'))
 
 const emptyMeta = computed(() => {
   if (store.query) {
     return {
+      action: 'search',
       title: '没有找到匹配的单词',
       description: '换个关键词试试，或清除搜索。',
       actionText: '清除搜索',
@@ -76,6 +81,7 @@ const emptyMeta = computed(() => {
 
   if (store.status !== 'all') {
     return {
+      action: 'status',
       title: '这个状态下还没有单词',
       description: '切换其他状态，或查看全部单词。',
       actionText: '查看全部',
@@ -84,12 +90,28 @@ const emptyMeta = computed(() => {
   }
 
   return {
+    action: 'add',
     title: '还没有单词',
     description: '先添加第一个单词，开始你的阅读训练。',
     actionText: '添加单词',
     image: wordsBook,
   }
 })
+
+// 空态上的一次点击已经开始请求新数据时，按钮与文案先保持点击前的样子：
+// 否则「清除搜索」会把空态立刻换成「还没有单词」，数据回来又换成列表，文案闪两下。
+const emptySnapshot = ref(null)
+
+const emptyView = computed(() => {
+  if (store.loading && emptySnapshot.value) return emptySnapshot.value
+  return { ...emptyMeta.value, variant: emptyActionVariant.value }
+})
+
+/** 在改变查询条件之前记下当前空态（即用户此刻看到的内容），供请求期间继续展示 */
+function rememberEmptyView() {
+  if (!showEmpty.value) return
+  emptySnapshot.value = { ...emptyView.value }
+}
 
 const deleteTitle = computed(() =>
   deleteTarget.value ? `删除 “${deleteTarget.value.word}”？` : '删除这个单词？',
@@ -127,6 +149,7 @@ function flashRow(id, duration) {
 }
 
 function handleSearch(value) {
+  rememberEmptyView()
   store.search(value)
 }
 
@@ -155,15 +178,20 @@ async function openAddPanel() {
 }
 
 function clearSearch() {
+  rememberEmptyView()
   store.search('')
 }
 
 function handleEmptyAction() {
-  if (store.query) {
+  // 按用户看到的空态按钮动作，而不是按已经变化但还没返回的查询条件
+  const action = emptyView.value.action
+
+  if (action === 'search') {
     clearSearch()
     return
   }
-  if (store.status !== 'all') {
+  if (action === 'status') {
+    rememberEmptyView()
     store.filterByStatus('all')
     return
   }
@@ -256,10 +284,11 @@ function reload() {
           <span v-if="store.query" class="list-count">找到 {{ store.total }} 个单词</span>
         </div>
 
+        <!-- 首次加载（还没有成功结果）才挂列表骨架；有数据时挂着等新结果；
+             列表为空且已加载过时交给下面的空态，加载中也不换成骨架 -->
         <WordTable
-          v-if="store.loading || store.error || store.hasItems"
+          v-if="store.error || store.hasItems || !store.hasLoaded"
           :items="store.items"
-          :loading="store.loading"
           :error="store.error"
           :highlight-id="highlightId"
           :expanded-word="detailTarget?.item.word || ''"
@@ -271,14 +300,14 @@ function reload() {
 
         <EmptyState
           v-else-if="showEmpty"
-          :title="emptyMeta.title"
-          :description="emptyMeta.description"
-          :image="emptyMeta.image"
+          :title="emptyView.title"
+          :description="emptyView.description"
+          :image="emptyView.image"
           class="words-empty"
         >
           <template #actions>
-            <BaseButton :variant="emptyActionVariant" @click="handleEmptyAction">
-              {{ emptyMeta.actionText }}
+            <BaseButton :variant="emptyView.variant" @click="handleEmptyAction">
+              {{ emptyView.actionText }}
             </BaseButton>
           </template>
         </EmptyState>

@@ -3,13 +3,13 @@
  * 词汇列表
  *
  * 用途：桌面端表格 + 小于 768px 的卡片列表，覆盖骨架屏、错误卡与新增/编辑高亮
- * 用法：<WordTable :items="items" :loading="loading" :error="error" :highlight-id="id"
+ * 用法：<WordTable :items="items" :error="error" :highlight-id="id"
  *          :expanded-word="expandedWord"
  *          @edit="openEdit" @remove="askDelete" @retry="fetch" @detail="openDetail" />
  *
  * props:
- *   items        — 词汇数组
- *   loading      — 加载中；列表为空时显示 8 行骨架，已有内容时保留旧行直到新数据到达
+ *   items        — 词汇数组；为空时显示骨架（页面只在首次加载 / 有数据 / 出错时挂载本组件，
+ *                  空结果由页面的 EmptyState 负责）
  *   error        — 错误文案，存在时整块替换为错误卡
  *   highlightId  — 新增/编辑后需要高亮的行 id
  *   expandedWord — 详情浮层当前显示的单词，用来同步 aria-expanded
@@ -44,7 +44,6 @@ function extraSenseCount(item) {
 
 const props = defineProps({
   items: { type: Array, default: () => [] },
-  loading: { type: Boolean, default: false },
   error: { type: String, default: '' },
   highlightId: { type: String, default: '' },
   expandedWord: { type: String, default: '' },
@@ -52,9 +51,10 @@ const props = defineProps({
 
 const emit = defineEmits(['edit', 'remove', 'retry', 'detail'])
 
-// 切换状态 / 翻页 / 搜索时列表里还有旧数据，继续展示它们等新结果，
-// 只有首次加载（列表为空）才出骨架屏；否则每点一次标签都会闪一次灰条。
-const showSkeleton = computed(() => props.loading && props.items.length === 0)
+// 只有「没有行可展示」时才出骨架。
+// 切换状态 / 翻页 / 搜索时列表里还有旧数据，继续展示它们等新结果；
+// 旧列表本来就是空的，页面会继续挂空态，不会走到这里，因此不会再闪灰条。
+const showSkeleton = computed(() => props.items.length === 0)
 
 function detail(item, event) {
   emit('detail', { item, anchor: event.currentTarget })

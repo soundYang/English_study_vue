@@ -26,6 +26,9 @@ export const useWordsStore = defineStore('words', () => {
   const pageSize = ref(DEFAULT_PAGE_SIZE)
   const loading = ref(false)
   const error = ref('')
+  // 是否已经有过一次成功的列表结果；用来区分「首次加载」与「切换筛选」：
+  // 前者该出骨架屏，后者列表为空时应继续显示原来的空态，而不是先闪一帧骨架。
+  const hasLoaded = ref(false)
 
   // 搜索防抖与翻页可能产生并发请求，只允许最后一次响应写入状态
   let requestSeq = 0
@@ -69,6 +72,7 @@ export const useWordsStore = defineStore('words', () => {
       page.value = result.page
       pageSize.value = result.pageSize
       loading.value = false
+      hasLoaded.value = true
       return { ok: true }
     } catch (caught) {
       if (current !== requestSeq) return { ok: false, stale: true }
@@ -78,6 +82,8 @@ export const useWordsStore = defineStore('words', () => {
         error.value = normalizeApiError(caught)?.message || '网络出了点问题，请稍后重试。'
         items.value = []
         total.value = 0
+        // 列表已被清空，重试时按首次加载处理，重新走骨架屏
+        hasLoaded.value = false
       }
       return toFailure(caught)
     }
@@ -189,6 +195,7 @@ export const useWordsStore = defineStore('words', () => {
     pageSize.value = DEFAULT_PAGE_SIZE
     loading.value = false
     error.value = ''
+    hasLoaded.value = false
   }
 
   return {
@@ -201,6 +208,7 @@ export const useWordsStore = defineStore('words', () => {
     pageSize,
     loading,
     error,
+    hasLoaded,
     hasItems,
     isFiltered,
     fetchList,

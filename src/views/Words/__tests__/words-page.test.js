@@ -10,6 +10,7 @@ import WordsView from '../index.vue'
 import { resetMockDb, setMockLatency } from '../../../mock/adapter'
 import { useToastStore } from '../../../stores/model/toast'
 import { useWordsStore } from '../../../stores/model/words'
+import { storageKeys } from '../../../unit/storage'
 
 let wrapper = null
 
@@ -29,6 +30,16 @@ afterEach(() => {
 afterAll(() => {
   setMockLatency(300)
 })
+
+/**
+ * 从 seed 数据库里去掉指定状态的单词，用来构造「某个状态没有单词」的场景。
+ * resetMockDb() 会重新写入种子数据，随后用过滤后的副本覆盖 localStorage。
+ */
+function seedWithoutStatuses(statuses) {
+  const db = resetMockDb()
+  const words = db.words.filter((item) => !statuses.includes(item.status))
+  localStorage.setItem(storageKeys.mockDb, JSON.stringify({ ...db, words }))
+}
 
 async function mountPage() {
   const pinia = createPinia()
@@ -111,6 +122,106 @@ describe('Words page', () => {
     expect(store.items.every((item) => item.status === status)).toBe(true)
     expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(store.items.length)
     expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
+  })
+
+  // 用户反馈的场景：未学习为空，已掌握也为空，点标签时页面仍会闪一下。
+  // 原因是旧列表为空时页面挂上了列表骨架，回来后又变回空态。
+  it('should keep the empty state when switching between two empty tabs', async () => {
+    seedWithoutStatuses(['mastered', 'new'])
+    const wrapper = await mountPage()
+    const store = useWordsStore()
+
+    await wrapper.findAll('[role="radio"]')[3].trigger('click')
+    await flushPromises()
+
+    expect(store.hasItems).toBe(false)
+    expect(wrapper.text()).toContain('这个状态下还没有单词')
+    const emptyElement = wrapper.get('.words-empty').element
+
+    setMockLatency(60)
+    await wrapper.findAll('[role="radio"]')[1].trigger('click')
+
+    expect(store.status).toBe('mastered')
+    // 空态切空态：不能挂上列表骨架，原来的空态节点保持不动
+    expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
+    expect(wrapper.find('.word-table-wrap').exists()).toBe(false)
+    expect(wrapper.get('.words-empty').element).toBe(emptyElement)
+
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    await flushPromises()
+
+    expect(store.hasItems).toBe(false)
+    expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
+    expect(wrapper.get('.words-empty').element).toBe(emptyElement)
+    expect(wrapper.text()).toContain('这个状态下还没有单词')
+  })
+
+  it('should keep the empty state until rows arrive when switching to a non-empty tab', async () => {
+    seedWithoutStatuses(['new'])
+    const wrapper = await mountPage()
+    const store = useWordsStore()
+
+    await wrapper.findAll('[role="radio"]')[3].trigger('click')
+    await flushPromises()
+
+    expect(store.hasItems).toBe(false)
+    const emptyElement = wrapper.get('.words-empty').element
+
+    setMockLatency(60)
+    await wrapper.findAll('[role="radio"]')[1].trigger('click')
+
+    // 空态 → 有数据：加载中仍显示空态，不闪骨架，也不留下半张空表格
+    expect(store.status).toBe('mastered')
+    expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
+    expect(wrapper.get('.words-empty').element).toBe(emptyElement)
+
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    await flushPromises()
+
+    expect(store.items.length).toBeGreaterThan(0)
+    expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(store.items.length)
+    expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
+    expect(wrapper.find('.words-empty').exists()).toBe(false)
+  })
+
+  it('should keep the empty copy while reloading after a search is cleared', async () => {
+    const wrapper = await mountPage()
+    const input = wrapper.get('input[type="search"]')
+
+    await input.setValue('zzzz')
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('没有找到匹配的单词')
+
+    const clearButton = wrapper.findAll('button').find((button) => button.text() === '清除搜索')
+    setMockLatency(60)
+    await clearButton.trigger('click')
+
+    // 加载期间继续显示点击前看到的空态文案，不会先变成「还没有单词」再换列表
+    expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
+    expect(wrapper.text()).toContain('没有找到匹配的单词')
+    expect(wrapper.text()).not.toContain('还没有单词')
+
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    await flushPromises()
+
+    expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(10)
+    expect(wrapper.find('.words-empty').exists()).toBe(false)
+  })
+
+  it('should still show the skeleton on the first load', async () => {
+    setMockLatency(60)
+    const wrapper = await mountPage()
+
+    // 还没有任何成功结果，首次进入照常出骨架
+    expect(wrapper.findAll('tbody tr.skeleton-row').length).toBeGreaterThan(0)
+
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    await flushPromises()
+
+    expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
+    expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(10)
   })
 
   it('should show the word detail when the word itself is clicked', async () => {

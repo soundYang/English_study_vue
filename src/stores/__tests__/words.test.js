@@ -33,6 +33,19 @@ describe('words store', () => {
     expect(store.loading).toBe(false)
   })
 
+  it('should mark the list as loaded even when the result is empty', async () => {
+    const store = useWordsStore()
+    expect(store.hasLoaded).toBe(false)
+
+    await store.search('zzzz')
+
+    expect(store.items).toHaveLength(0)
+    expect(store.hasLoaded).toBe(true)
+
+    store.reset()
+    expect(store.hasLoaded).toBe(false)
+  })
+
   it('should search by word and reset the page', async () => {
     const store = useWordsStore()
     await store.fetchList()
