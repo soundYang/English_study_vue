@@ -19,6 +19,9 @@
  *     原样透传后端 message，给「去接入 API Key」+「知道了」（md/36 §10）
  *   - 自备 Key 失效（403 USER_API_KEY_INVALID / 409 USER_API_KEY_MISSING）：
  *     Key 不变时重试没有意义，不给「重试」，只给「去设置」（md/43 §9）
+ *   - 临时拥塞（503 GENERATION_SATURATED / AI_PROVIDER_BUSY）与整篇超时
+ *     （504 / failed GENERATION_TIMEOUT）：都是「等几秒再来」，按钮按 Retry-After
+ *     置灰倒计时，超时那次用「重新生成」（后端 md/55 §8、md/22 第 68–70 行）
  *   - 其他错误：retryable 为 false 时只给「返回修改」，否则「重试」走任务 /retry，
  *     复用已写好的段，不重新建任务
  *   - 打开时锁定背景滚动，焦点落到首个按钮，Esc 取消或关闭
@@ -33,6 +36,9 @@ import { useSettingsStore } from '../stores/model/settings'
 import {
   describeFocusWords,
   describeFreeBudgetExhausted,
+  describeGenerationSaturated,
+  describeGenerationTimeout,
+  describeProviderBusy,
   describeQuotaExceeded,
   describeRateLimit,
   describeUserApiKeyProblem,
@@ -123,6 +129,56 @@ const apiKeyProblem = computed(() =>
   isApiKeyProblem.value ? describeUserApiKeyProblem({ code: errorCode.value }) : null,
 )
 
+// 临时拥塞与整篇超时（后端 md/55 §8）：用户没做错什么，不给「缩短 / 降难度」这类建议，
+// 只给「等几秒再来」和一个能走的出口
+const isSaturated = computed(() => errorCode.value === 'GENERATION_SATURATED')
+const saturated = computed(() =>
+  isSaturated.value ? describeGenerationSaturated({ details: error.value?.details }) : null,
+)
+
+const isProviderBusy = computed(() => errorCode.value === 'AI_PROVIDER_BUSY')
+const providerBusy = computed(() =>
+  isProviderBusy.value ? describeProviderBusy({ details: error.value?.details }) : null,
+)
+
+const isGenerationTimeout = computed(() => errorCode.value === 'GENERATION_TIMEOUT')
+const generationTimeout = computed(() =>
+  isGenerationTimeout.value ? describeGenerationTimeout({ details: error.value?.details }) : null,
+)
+
+// 三种拥塞态共用一个出口：冷却中的「重试」+「先不生成」
+const isCongested = computed(
+  () => isSaturated.value || isProviderBusy.value || isGenerationTimeout.value,
+)
+
+// Retry-After 冷却：后端给几秒就置灰几秒。remainingSeconds 由 reading store 从
+// 响应头 / 任务 details 里算好；这里只负责每秒往下数，不自己猜时间（md/22 §8.5 ③）
+const cooldownSeconds = ref(0)
+let cooldownTimer = null
+
+function stopCooldown() {
+  if (cooldownTimer) clearInterval(cooldownTimer)
+  cooldownTimer = null
+}
+
+function startCooldown(seconds) {
+  stopCooldown()
+  cooldownSeconds.value = Math.max(0, Math.ceil(seconds))
+  if (!cooldownSeconds.value) return
+
+  cooldownTimer = setInterval(() => {
+    cooldownSeconds.value -= 1
+    if (cooldownSeconds.value <= 0) stopCooldown()
+  }, 1000)
+}
+
+// 超时不是「接上次继续」，是整篇重跑：按钮文案要说清这件事（md/55 §8 建议）
+const RETRY_LABELS = { GENERATION_TIMEOUT: '重新生成', AI_PROVIDER_BUSY: '稍后重试' }
+const retryLabel = computed(() => {
+  const base = RETRY_LABELS[errorCode.value] || '重试'
+  return cooldownSeconds.value > 0 ? `${base}（${cooldownSeconds.value}s）` : base
+})
+
 // retryable === false 的（词不够、参数错、额度用完、免费池用尽）重试只会再失败一次，按钮不该给；
 // 本地建任务失败（网络 / 429）没有这个字段，按可重试处理
 // Key 失效单独排除：后端任务失败可能不带 retryable，不能只靠这个字段
@@ -144,6 +200,9 @@ const errorTitle = computed(() => {
   if (focusWordsProblem.value) return focusWordsProblem.value.title
   if (vocabShortage.value) return vocabShortage.value.title
   if (apiKeyProblem.value) return apiKeyProblem.value.title
+  if (saturated.value) return saturated.value.title
+  if (providerBusy.value) return providerBusy.value.title
+  if (generationTimeout.value) return generationTimeout.value.title
   if (freeBudgetExhausted.value) return freeBudgetExhausted.value.title
   if (quotaExceeded.value) return quotaExceeded.value.title
   if (rateLimit.value) return rateLimit.value.title
@@ -155,6 +214,9 @@ const errorHint = computed(() => {
   if (focusWordsProblem.value) return focusWordsProblem.value.hint
   if (vocabShortage.value) return vocabShortage.value.hint
   if (apiKeyProblem.value) return apiKeyProblem.value.hint
+  if (saturated.value) return saturated.value.hint
+  if (providerBusy.value) return providerBusy.value.hint
+  if (generationTimeout.value) return generationTimeout.value.hint
   // 免费池用尽没有可补的信息，后端 message 已经把「接入自己的 API Key」说清楚
   if (freeBudgetExhausted.value) return ''
   if (quotaExceeded.value) return quotaExceeded.value.hint
@@ -293,8 +355,23 @@ watch(
   { immediate: true },
 )
 
+// 错误对象换了就重置倒计时：store 会回填 remainingSeconds（按当前时刻算出来的剩余），
+// 没有时退回 details.retryAfter（后端给的原始等待秒数），两者都没有就不显示倒计时
+watch(
+  () => Number(error.value?.details?.remainingSeconds ?? error.value?.details?.retryAfter) || 0,
+  (seconds) => {
+    if (seconds > 0) startCooldown(seconds)
+    else {
+      stopCooldown()
+      cooldownSeconds.value = 0
+    }
+  },
+  { immediate: true },
+)
+
 onBeforeUnmount(() => {
   stopTips()
+  stopCooldown()
   document.body.classList.remove('has-modal-open')
 })
 </script>
@@ -345,7 +422,8 @@ onBeforeUnmount(() => {
                 !rateLimit &&
                 !quotaExceeded &&
                 !apiKeyProblem &&
-                !focusWordsProblem
+                !focusWordsProblem &&
+                !isCongested
               "
               class="generate-subtitle"
             >
@@ -392,12 +470,20 @@ onBeforeUnmount(() => {
               <BaseButton variant="secondary" @click="backToSettings">返回修改</BaseButton>
               <BaseButton @click="dismiss">知道了</BaseButton>
             </div>
+            <!-- 队满 / 上游繁忙 / 整篇超时：参数没错，别让人回设置页白跑一趟；
+                 冷却未结束时按钮置灰，点了也只会再撞一次 -->
+            <div v-else-if="isCongested" class="generate-actions">
+              <BaseButton variant="secondary" @click="dismiss">先不生成</BaseButton>
+              <BaseButton :disabled="cooldownSeconds > 0" @click="handleRetry">
+                {{ retryLabel }}
+              </BaseButton>
+            </div>
             <div v-else class="generate-actions">
               <BaseButton variant="secondary" @click="backToSettings">返回修改</BaseButton>
               <BaseButton v-if="canRetry" @click="handleRetry">重试</BaseButton>
             </div>
             <p
-              v-if="canRetry && !vocabShortage && !rateLimit && !quotaExceeded"
+              v-if="canRetry && !vocabShortage && !rateLimit && !quotaExceeded && !isSaturated"
               class="generate-note"
             >
               会从上次中断的地方继续，已经写好的部分不会重来

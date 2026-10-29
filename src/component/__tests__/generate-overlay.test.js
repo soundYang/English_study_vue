@@ -212,6 +212,63 @@ describe('GenerateOverlay', () => {
     expect(wrapper.text()).toContain('去设置')
   })
 
+  // 队满 503：参数没错，别把人往设置页赶；按钮按 Retry-After 置灰（md/22 第 68 行）
+  it('should explain a saturated queue and hold the retry for the cooldown', async () => {
+    await mountOverlay({
+      code: 'GENERATION_SATURATED',
+      message: '当前生成人数较多，请稍后再试',
+      details: { retryAfter: 5, active: 4, queued: 16, maxActive: 4, maxQueue: 16 },
+      retryable: true,
+    })
+
+    expect(wrapper.get('.generate-title').text()).toBe('当前生成人数较多')
+    expect(wrapper.get('.generate-hint').text()).toContain('不占用今天的免费次数')
+    // 后端 message 与 hint 是同一件事，不重复展示
+    expect(wrapper.find('.generate-subtitle').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('返回修改')
+
+    const retry = wrapper.findAll('button').find((button) => button.text().includes('重试'))
+    expect(retry.text()).toBe('重试（5s）')
+    expect(retry.attributes('disabled')).toBeDefined()
+    // 这次一个字都还没写，不能承诺「已经写好的部分不会重来」
+    expect(wrapper.find('.generate-note').exists()).toBe(false)
+  })
+
+  // 整篇超时不是「接上次继续」：按钮写「重新生成」（md/22 第 69 行）
+  it('should call a timeout a timeout and offer a full re-run', async () => {
+    await mountOverlay({
+      code: 'GENERATION_TIMEOUT',
+      message: '生成超时',
+      details: { deadlineMs: 120000 },
+      retryable: true,
+    })
+
+    expect(wrapper.get('.generate-title').text()).toBe('这次生成超时了')
+    expect(wrapper.get('.generate-hint').text()).toContain('120 秒')
+    expect(wrapper.get('.generate-hint').text()).toContain('退回')
+    expect(wrapper.text()).toContain('重新生成')
+    // 超时没有 Retry-After：不该凭空冒出倒计时
+    expect(wrapper.text()).not.toContain('（s）')
+  })
+
+  // 上游繁忙可重试，已写好的段会保留（md/22 第 70 行）
+  it('should let a busy provider be retried after the cooldown', async () => {
+    await mountOverlay({
+      code: 'AI_PROVIDER_BUSY',
+      message: 'AI 服务暂时繁忙',
+      details: { retryAfter: 10 },
+      retryable: true,
+    })
+
+    expect(wrapper.get('.generate-title').text()).toBe('AI 服务暂时繁忙')
+    expect(wrapper.get('.generate-hint').text()).toContain('10 秒')
+    expect(wrapper.get('.generate-note').text()).toContain('已经写好的部分不会重来')
+
+    const retry = wrapper.findAll('button').find((button) => button.text().includes('重试'))
+    expect(retry.text()).toBe('稍后重试（10s）')
+    expect(retry.attributes('disabled')).toBeDefined()
+  })
+
   it('should hand the retry to the store and go back to the paper stage', async () => {
     const retry = vi.fn().mockResolvedValue(true)
     const { router } = await mountOverlay(

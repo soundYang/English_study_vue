@@ -218,6 +218,63 @@ export function describeVocabShortage({ code = '', details = {} } = {}) {
 }
 
 /**
+ * 生成被闸门挡下（后端 md/55 §8）：三种都是临时拥塞，等几秒就能再试，
+ * 但「谁在等」和「要不要从头来」不同，文案分开写。
+ *
+ *   GENERATION_SATURATED —— 调度器队满，503。任务根本没建、额度没扣；
+ *                           冷却期内连点只会继续撞队，所以要按住 retryAfter。
+ *   AI_PROVIDER_BUSY     —— 上游熔断或信号量等超时，503。可重试，已写好的段会保留。
+ *   GENERATION_TIMEOUT   —— 整篇 deadline 到，504 / 任务 failed。额度后端已退回。
+ *
+ * 三个码都不带「你哪里做错了」的含义，别引导用户改设置。
+ */
+
+/**
+ * 503 GENERATION_SATURATED
+ * @param {{ details?: { retryAfter?: number } }} error
+ * @returns {{ title: string, hint: string }}
+ */
+export function describeGenerationSaturated({ details = {} } = {}) {
+  const retryAfter = toNumber(details.retryAfter) ?? toNumber(details.remainingSeconds) ?? 5
+
+  return {
+    title: '当前生成人数较多',
+    hint: `同时生成的人有点多，请 ${retryAfter} 秒后再试。这次没有开始生成，也不占用今天的免费次数。`,
+  }
+}
+
+/**
+ * 503 AI_PROVIDER_BUSY
+ * @param {{ details?: { retryAfter?: number } }} error
+ * @returns {{ title: string, hint: string }}
+ */
+export function describeProviderBusy({ details = {} } = {}) {
+  const retryAfter = toNumber(details.retryAfter) ?? toNumber(details.remainingSeconds) ?? 10
+
+  return {
+    title: 'AI 服务暂时繁忙',
+    hint: `上游模型这会儿有点忙，请 ${retryAfter} 秒后再试。可以直接重试，已经写好的部分会保留。`,
+  }
+}
+
+/**
+ * 504 / 任务 failed GENERATION_TIMEOUT
+ * deadlineMs 是整篇的时间预算，写进文案让用户知道「不是你等得不够久」
+ * @param {{ details?: { deadlineMs?: number } }} error
+ * @returns {{ title: string, hint: string }}
+ */
+export function describeGenerationTimeout({ details = {} } = {}) {
+  const deadlineMs = toNumber(details.deadlineMs)
+  const seconds = deadlineMs && deadlineMs > 0 ? Math.round(deadlineMs / 1000) : null
+  const budget = seconds ? `一篇最多写 ${seconds} 秒` : '一篇长文最多只能跑一小段时间'
+
+  return {
+    title: '这次生成超时了',
+    hint: `${budget}，这次没跑完。已经扣掉的免费次数会自动退回，可以直接重新生成。`,
+  }
+}
+
+/**
  * 自选单词不可用（422 FOCUS_WORDS_NOT_LEARNED，md/54 §3.2）
  *
  * 后端在调用模型**之前**就拒绝，不占额度；重试同样的词必然再失败一次，

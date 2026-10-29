@@ -24,6 +24,7 @@ import {
   fetchReading,
   retryGenerationTask,
 } from '../../api/readings'
+import { BusinessError } from '../../errors'
 import { useReadingStore } from '../model/reading'
 
 const SETTINGS = { level: 'easy', targetWords: 100, questionCount: 3 }
@@ -195,6 +196,91 @@ describe('reading store generation task', () => {
     expect(store.error).toMatchObject({ code: 'FREE_BUDGET_EXHAUSTED', retryable: false })
     // remainingSeconds 只由 429 的 Retry-After 推导；503 没有这个头
     expect(store.error.details.remainingSeconds).toBeUndefined()
+  })
+
+  // 队满 503 在扣额度前就发生，后端给 5 秒冷却：冷却期内连点只会继续撞队（md/22 第 68 行）
+  it('should cool down a saturated create and keep the same code inside the window', async () => {
+    createGenerationTask.mockRejectedValue(
+      apiError('GENERATION_SATURATED', {
+        message: '当前生成人数较多，请稍后再试',
+        details: { retryAfter: 5, active: 4, queued: 16, maxActive: 4, maxQueue: 16 },
+        status: 503,
+      }),
+    )
+
+    await store.generate(SETTINGS)
+
+    expect(store.phase).toBe('error')
+    expect(store.error).toMatchObject({ code: 'GENERATION_SATURATED', retryable: true })
+    expect(store.error.details.remainingSeconds).toBe(5)
+
+    createGenerationTask.mockClear()
+    await store.generate(SETTINGS)
+
+    // 冷却期内不再发请求，错误码也不能退化成 RATE_LIMITED（文案是「队满」不是「太频繁」）
+    expect(createGenerationTask).not.toHaveBeenCalled()
+    expect(store.error.code).toBe('GENERATION_SATURATED')
+    expect(store.error.details.remainingSeconds).toBeGreaterThan(0)
+  })
+
+  // 真实链路里剩余秒数来自响应头 Retry-After：拦截器挂在 BusinessError.retryAfter 上
+  it('should take the cooldown from the response header when details has none', async () => {
+    const headerError = new BusinessError('AI 服务暂时繁忙', 'AI_PROVIDER_BUSY', { details: {} })
+    headerError.retryAfter = 10
+    createGenerationTask.mockRejectedValue(headerError)
+
+    await store.generate(SETTINGS)
+
+    expect(store.error.details.remainingSeconds).toBe(10)
+  })
+
+  // 轮询到的 failed 没有响应头，冷却只认 error.details.retryAfter（md/22 第 70 行）
+  it('should cool down a busy task failure from the task details', async () => {
+    fetchGenerationTask.mockResolvedValue(
+      taskDto({
+        status: 'failed',
+        stage: 'done',
+        error: {
+          code: 'AI_PROVIDER_BUSY',
+          message: 'AI 服务暂时繁忙',
+          details: { retryAfter: 10 },
+        },
+        retryable: true,
+      }),
+    )
+
+    await store.generate(SETTINGS)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(store.error).toMatchObject({ code: 'AI_PROVIDER_BUSY', retryable: true })
+    expect(store.error.details.remainingSeconds).toBe(10)
+  })
+
+  // 超时不是终局：任务可 /retry，复用已写好的段（md/22 第 69 行）
+  it('should retry a timed-out task through /retry', async () => {
+    fetchGenerationTask.mockResolvedValue(
+      taskDto({
+        status: 'failed',
+        stage: 'done',
+        error: {
+          code: 'GENERATION_TIMEOUT',
+          message: '生成超时',
+          details: { deadlineMs: 120000 },
+        },
+        retryable: true,
+      }),
+    )
+    retryGenerationTask.mockResolvedValue({ taskId: 't1', status: 'queued', params: PARAMS })
+
+    await store.generate(SETTINGS)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(store.error).toMatchObject({ code: 'GENERATION_TIMEOUT', retryable: true })
+    expect(store.error.details.deadlineMs).toBe(120000)
+
+    expect(await store.retryGeneration()).toBe(true)
+    expect(retryGenerationTask).toHaveBeenCalledWith('t1')
+    expect(createGenerationTask).toHaveBeenCalledTimes(1)
   })
 
   // 任务是异步失败时后端可能不带 retryable，靠 NON_RETRYABLE_CODES 兜底（md/36 §10 ②）

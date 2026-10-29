@@ -6,6 +6,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   describeFreeBudgetExhausted,
+  describeGenerationSaturated,
+  describeGenerationTimeout,
+  describeProviderBusy,
   describeQuotaExceeded,
   describeRateLimit,
   describeUserApiKeyProblem,
@@ -178,5 +181,49 @@ describe('describeUserApiKeyProblem', () => {
     expect(result.kind).toBe('missing')
     expect(result.title).toContain('已经不在了')
     expect(result.hint).toContain('重新导入')
+  })
+})
+
+describe('describeGenerationSaturated', () => {
+  // 队满 503 在扣额度之前就发生：要明确说「没开始、没扣次数」，
+  // 否则用户会以为白白消耗了一次免费额度（md/22 第 68 行）
+  it('should say the request never started and quote the wait', () => {
+    const result = describeGenerationSaturated({ details: { retryAfter: 5 } })
+
+    expect(result.title).toBe('当前生成人数较多')
+    expect(result.hint).toContain('5 秒后')
+    expect(result.hint).toContain('不占用今天的免费次数')
+  })
+
+  it('should fall back to 5 seconds when the server sends no hint', () => {
+    expect(describeGenerationSaturated({ details: {} }).hint).toContain('5 秒后')
+  })
+})
+
+describe('describeProviderBusy', () => {
+  it('should promise that written segments survive a retry', () => {
+    const result = describeProviderBusy({ details: { retryAfter: 10 } })
+
+    expect(result.title).toBe('AI 服务暂时繁忙')
+    expect(result.hint).toContain('10 秒后')
+    expect(result.hint).toContain('已经写好的部分会保留')
+  })
+})
+
+describe('describeGenerationTimeout', () => {
+  // deadlineMs 写成秒，让人知道「不是你等得不够久」；额度退回也要说
+  it('should translate the deadline into seconds and mention the refund', () => {
+    const result = describeGenerationTimeout({ details: { deadlineMs: 120000 } })
+
+    expect(result.title).toBe('这次生成超时了')
+    expect(result.hint).toContain('120 秒')
+    expect(result.hint).toContain('退回')
+  })
+
+  it('should stay readable when the server omits the deadline', () => {
+    const result = describeGenerationTimeout({ details: {} })
+
+    expect(result.hint).not.toContain('null')
+    expect(result.hint).not.toContain('undefined')
   })
 })

@@ -62,6 +62,13 @@ const NON_RETRYABLE_CODES = [
   'FOCUS_WORDS_NOT_LEARNED',
 ]
 
+// 这三种都是「等几秒再试」的临时拥塞，后端都会给 Retry-After（md/22 第 68、70 行）：
+//   RATE_LIMITED        —— 分钟级窗口
+//   GENERATION_SATURATED—— 调度器队满，任务没建、额度没扣
+//   AI_PROVIDER_BUSY    —— 上游熔断 / 排队超时
+// 冷却期内再点只是再撞一次同一个桶，所以统一置灰到剩余时间结束。
+const COOLDOWN_CODES = ['RATE_LIMITED', 'GENERATION_SATURATED', 'AI_PROVIDER_BUSY']
+
 function isDocumentHidden() {
   return typeof document !== 'undefined' && document.hidden
 }
@@ -133,6 +140,8 @@ export const useReadingStore = defineStore('reading', () => {
   const cancelling = ref(false)
   const pendingReadingId = ref('')
   const cooldownUntil = ref(0)
+  // 冷却由哪个错误码触发：覆盖层按它给不同文案，冷却期内再点也复现同一个码
+  let cooldownCode = 'RATE_LIMITED'
 
   // 每次生成/加载分配递增 id，取消或重新进入后旧请求的回调不能再改写状态
   let activeId = 0
@@ -427,24 +436,34 @@ export const useReadingStore = defineStore('reading', () => {
     cancelling.value = false
   }
 
-  /** 把一次请求级错误转成覆盖层能用的形状；429 顺势记下冷却截止时间 */
+  /**
+   * 记下冷却窗口，并把「还剩几秒」回填进 details
+   * 剩余秒数的来源有两处：响应头的 Retry-After（请求级错误，拦截器已解析到 retryAfter），
+   * 以及任务 DTO 里的 error.details.retryAfter（轮询到的 failed 没有响应头）。
+   * 两个都没有就按 0 处理，不编倒计时。
+   */
+  function applyCooldown(code, details = {}, headerSeconds = 0) {
+    if (!COOLDOWN_CODES.includes(code)) return { ...details }
+
+    const seconds = Number(details.retryAfter) || Number(headerSeconds) || 0
+    if (seconds <= 0) return { ...details }
+
+    cooldownUntil.value = Date.now() + seconds * 1000
+    cooldownCode = code
+    return { ...details, remainingSeconds: Math.ceil(seconds) }
+  }
+
+  /** 把一次请求级错误转成覆盖层能用的形状；临时拥塞顺势记下冷却截止时间 */
   function failGeneration(caught, fallbackMessage = '这次生成没有成功，请稍后重试。') {
     const normalized = normalizeApiError(caught)
     const code = normalized?.code || 'GENERATION_FAILED'
-    const retryAfter = Number(normalized?.retryAfter) || 0
-    if (code === 'RATE_LIMITED' && retryAfter > 0) {
-      cooldownUntil.value = Date.now() + retryAfter * 1000
-    }
+    const details = applyCooldown(code, normalized?.details || {}, normalized?.retryAfter)
 
-    const remainingSeconds = Math.max(0, Math.ceil((cooldownUntil.value - Date.now()) / 1000))
     setGenerationError({
       code,
       message: normalized?.message || fallbackMessage,
       field: normalized?.field || '',
-      details: {
-        ...(normalized?.details || {}),
-        ...(remainingSeconds > 0 ? { remainingSeconds } : {}),
-      },
+      details,
       requestId: normalized?.requestId || '',
       retryable:
         code !== 'RATE_LIMITED' && code !== 'TASK_NOT_FOUND' && !NON_RETRYABLE_CODES.includes(code),
@@ -452,16 +471,20 @@ export const useReadingStore = defineStore('reading', () => {
     return false
   }
 
-  /** 429 冷却期不再发请求：三个生成入口都从 generate / retryGeneration 进来 */
+  /** 冷却期不再发请求：三个生成入口都从 generate / retryGeneration 进来 */
   function passCooldown() {
     const remaining = Math.ceil((cooldownUntil.value - Date.now()) / 1000)
     if (remaining <= 0) return true
 
     setGenerationError({
-      code: 'RATE_LIMITED',
-      message: `生成太频繁：请 ${remaining} 秒后再试。`,
+      code: cooldownCode,
+      message:
+        cooldownCode === 'RATE_LIMITED'
+          ? `生成太频繁：请 ${remaining} 秒后再试。`
+          : `请 ${remaining} 秒后再试。`,
       details: { remainingSeconds: remaining },
-      retryable: false,
+      // 限流是分钟级窗口，等也等不完；队满 / 上游繁忙只是几秒，冷却过了就能重试
+      retryable: cooldownCode !== 'RATE_LIMITED',
     })
     return false
   }
@@ -526,11 +549,13 @@ export const useReadingStore = defineStore('reading', () => {
     unbindVisibility()
     cancelling.value = false
     const payload = dto.error || {}
+    // 轮询到 failed 时没有响应头，冷却只认 error.details.retryAfter（AI_PROVIDER_BUSY）
+    const details = applyCooldown(payload.code, payload.details || {})
     setGenerationError({
       code: payload.code || 'GENERATION_FAILED',
       message: payload.message || '这次生成没有成功，请稍后重试。',
       field: payload.field || '',
-      details: payload.details || {},
+      details,
       requestId: payload.requestId || '',
       retryable:
         typeof dto.retryable === 'boolean'
@@ -885,6 +910,7 @@ export const useReadingStore = defineStore('reading', () => {
     cancelling.value = false
     pendingReadingId.value = ''
     cooldownUntil.value = 0
+    cooldownCode = 'RATE_LIMITED'
     lastRequest = null
     taskFrom = '/settings'
     clearStoredGenerationTask()
