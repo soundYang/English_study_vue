@@ -177,7 +177,6 @@ async function handleSubmit() {
         :maxlength="CONTACT_MAX"
       />
 
-      <p class="field-hint">当前页面会自动附在反馈里：{{ page }}</p>
       <p v-if="generalError" class="form-error" role="alert">{{ generalError }}</p>
     </form>
 
