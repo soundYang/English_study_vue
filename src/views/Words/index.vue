@@ -10,6 +10,8 @@ import BaseButton from '../../component/BaseButton.vue'
 import BaseModal from '../../component/BaseModal.vue'
 import ConfirmDialog from '../../component/ConfirmDialog.vue'
 import EmptyState from '../../component/EmptyState.vue'
+import GuestMask from '../../component/GuestMask.vue'
+import GuestNotice from '../../component/GuestNotice.vue'
 import PaginationBar from '../../component/PaginationBar.vue'
 import StatusPill from '../../component/StatusPill.vue'
 import WordDetailPopover from '../../component/WordDetailPopover.vue'
@@ -20,8 +22,10 @@ import WordStatusTabs from './component/WordStatusTabs.vue'
 import WordTable from './component/WordTable.vue'
 import WordToolbar from './component/WordToolbar.vue'
 import wordsBook from '../../assets/images/words-book.png'
+import { useAuthGate } from '../../composables/useAuthGate'
 import { useMediaQuery } from '../../composables/useMediaQuery'
 import { useToast } from '../../composables/useToast'
+import { useAuthStore } from '../../stores/model/auth'
 import { useWordsStore } from '../../stores/model/words'
 import { myWordDetail } from '../../unit/word-detail'
 
@@ -31,7 +35,11 @@ const EDIT_HIGHLIGHT_DURATION = 600
 const toast = useToast()
 const store = useWordsStore()
 const router = useRouter()
+const auth = useAuthStore()
+const { goLogin } = useAuthGate()
 const isWide = useMediaQuery('(min-width: 1200px)')
+// 游客可浏览页面结构，但私人词条不请求、不渲染（md/45 §5.2）
+const isGuest = computed(() => !auth.isAuthenticated)
 
 const addModalOpen = ref(false)
 const batchOpen = ref(false)
@@ -55,6 +63,10 @@ let highlightTimer = null
 const statusModel = computed({
   get: () => store.status,
   set: (value) => {
+    if (isGuest.value) {
+      goLogin('/words')
+      return
+    }
     rememberEmptyView()
     store.filterByStatus(value)
   },
@@ -130,6 +142,17 @@ watch(
 )
 
 onMounted(() => {
+  if (isGuest.value) return
+  store.fetchList()
+})
+
+// 登录态变化：掉线清掉私人列表、立刻切遮罩；登录成功原地补拉
+watch(isGuest, (guest) => {
+  detailTarget.value = null
+  if (guest) {
+    store.reset()
+    return
+  }
   store.fetchList()
 })
 
@@ -153,6 +176,10 @@ function flashRow(id, duration) {
 }
 
 function handleSearch(value) {
+  if (isGuest.value) {
+    goLogin('/words')
+    return
+  }
   rememberEmptyView()
   store.search(value)
 }
@@ -171,6 +198,11 @@ function handleDetailOpen(value) {
 }
 
 async function openAddPanel() {
+  if (isGuest.value) {
+    goLogin('/words')
+    return
+  }
+
   if (!shouldUseModal()) {
     desktopPanel.value?.focusWord()
     return
@@ -179,6 +211,14 @@ async function openAddPanel() {
   addModalOpen.value = true
   await nextTick()
   modalPanel.value?.focusWord()
+}
+
+function openBatchPanel() {
+  if (isGuest.value) {
+    goLogin('/words')
+    return
+  }
+  batchOpen.value = true
 }
 
 function clearSearch() {
@@ -303,7 +343,12 @@ function reload() {
       <p class="page-eyebrow">Vocabulary</p>
       <h1 class="page-title">我的单词</h1>
       <p class="page-desc">
-        你已累计 <strong class="count-accent">{{ allWordsLabel }}</strong> 个单词
+        你已累计
+        <strong class="count-accent">
+          <GuestMask v-if="isGuest" mode="number" />
+          <template v-else>{{ allWordsLabel }}</template>
+        </strong>
+        个单词
       </p>
     </header>
 
@@ -313,31 +358,43 @@ function reload() {
 
         <WordToolbar
           :value="store.query"
+          :search-disabled="isGuest"
           @search="handleSearch"
           @add="openAddPanel"
-          @batch="batchOpen = true"
+          @batch="openBatchPanel"
         />
 
-        <WordStatusTabs v-model="statusModel" :counts="store.counts" />
+        <WordStatusTabs v-model="statusModel" :counts="store.counts" :disabled="isGuest" />
+
+        <GuestNotice
+          v-if="isGuest"
+          class="guest-notice"
+          title="登录后查看你的单词"
+          @login="goLogin('/words')"
+        />
 
         <div v-if="!store.error" class="list-head">
           <h2 class="list-title">{{ listTitle }}</h2>
           <!-- 切换筛选 / 搜索时列表继续显示旧数据，计数也先留在原位，等新结果一起换 -->
-          <span v-if="store.query" class="list-count">找到 {{ store.total }} 个单词</span>
+          <span v-if="store.query && !isGuest" class="list-count">
+            找到 {{ store.total }} 个单词
+          </span>
         </div>
 
         <!-- 首次加载（还没有成功结果）才挂列表骨架；有数据时挂着等新结果；
              列表为空且已加载过时交给下面的空态，加载中也不换成骨架 -->
         <WordTable
-          v-if="store.error || store.hasItems || !store.hasLoaded"
-          :items="store.items"
+          v-if="isGuest || store.error || store.hasItems || !store.hasLoaded"
+          :items="isGuest ? [] : store.items"
           :error="store.error"
           :highlight-id="highlightId"
           :expanded-word="detailTarget?.item.word || ''"
+          :masked="isGuest"
           @edit="openEdit"
           @remove="askDelete"
           @retry="reload"
           @detail="handleDetail"
+          @login="goLogin('/words')"
         />
 
         <EmptyState
@@ -355,7 +412,7 @@ function reload() {
         </EmptyState>
 
         <!-- 加载中保留底栏：否则每切一次状态，底部分页都会消失再出现，页面高度抖一下 -->
-        <div v-if="!store.error && store.total > 0" class="list-footer">
+        <div v-if="!isGuest && !store.error && store.total > 0" class="list-footer">
           <p class="total-text">共 {{ store.total }} 条</p>
           <PaginationBar
             :page="store.page"
@@ -367,7 +424,14 @@ function reload() {
       </div>
 
       <aside class="words-aside">
-        <WordFormPanel ref="desktopPanel" :submit-word="handleAdd" />
+        <WordFormPanel v-if="!isGuest" ref="desktopPanel" :submit-word="handleAdd" />
+        <GuestNotice
+          v-else
+          compact
+          title="登录后添加你的单词"
+          description="登录后可以手动添加，或从文件批量导入。"
+          @login="goLogin('/words')"
+        />
       </aside>
     </div>
 
@@ -443,6 +507,11 @@ function reload() {
   position: sticky;
   top: var(--space-6);
   animation: words-rise var(--dur-page) var(--ease-out) 120ms both;
+}
+
+/* 游客提示条与工具栏 / 列表之间的呼吸间距 */
+.guest-notice {
+  margin-top: var(--space-5);
 }
 
 .list-head {

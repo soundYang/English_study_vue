@@ -44,7 +44,12 @@ function createTestRouter() {
     routes: [
       { path: '/', name: 'home', component: HomeStub },
       { path: '/readings/:id', name: 'reading', component: ReadingStub },
-      { path: '/readings/:id/result', name: 'reading-result', component: ResultPage },
+      {
+        path: '/readings/:id/result',
+        name: 'reading-result',
+        component: ResultPage,
+        meta: { guestMode: 'gate' },
+      },
       { path: '/history', name: 'history', component: HistoryStub },
     ],
   })
@@ -91,6 +96,18 @@ beforeEach(() => {
 afterAll(() => {
   window.matchMedia = originalMatchMedia
   setMockLatency(300)
+})
+
+describe('Result page · guest', () => {
+  it('should show the login gate without loading the result', async () => {
+    localStore.remove(storageKeys.accessToken)
+
+    const { wrapper } = await mountResult('/readings/r2/result')
+
+    // md/45 §5.7：结果含答案与翻译，游客只看到整页登录引导
+    expect(wrapper.text()).toContain('请登录后查看练习结果')
+    expect(wrapper.findAll('.review-card')).toHaveLength(0)
+  })
 })
 
 describe('Result page', () => {

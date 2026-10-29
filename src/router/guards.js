@@ -11,9 +11,16 @@ import { localStore, storageKeys } from '../unit/storage'
 
 const BASE_TITLE = 'Word Reading'
 
+/** 是否游客：只认令牌存在性，令牌是否有效由接口 401 兜底 */
+function isGuest() {
+  return !localStore.get(storageKeys.accessToken, '')
+}
+
 async function guardReading(to) {
   const id = String(to.params.id ?? '').trim()
   if (!id) return true
+  // 游客由页面画「请登录后查看」，不发详情请求，避免 401 把人踢走（md/45 §3.3）
+  if (isGuest()) return true
 
   try {
     const store = useReadingStore()
@@ -35,6 +42,8 @@ async function guardReading(to) {
 async function guardResult(to) {
   const id = String(to.params.id ?? '').trim()
   if (!id) return true
+  // 同 guardReading：游客页面自己展示占位，不请求结果
+  if (isGuest()) return true
 
   try {
     const store = useReadingStore()
@@ -65,6 +74,8 @@ function guardAuth(to) {
   if (to?.meta?.bare) return true
   // 首页、404 等显式公开页
   if (to?.meta?.public === true) return true
+  // 游客可进：页面自己决定遮罩 / 占位 / 回退（md/45 §3.2）
+  if (to?.meta?.guestMode) return true
   // 默认：需要登录
   if (localStore.get(storageKeys.accessToken, '')) return true
 

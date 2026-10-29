@@ -13,15 +13,18 @@
  *   error        — 错误文案，存在时整块替换为错误卡
  *   highlightId  — 新增/编辑后需要高亮的行 id
  *   expandedWord — 详情浮层当前显示的单词，用来同步 aria-expanded
+ *   masked       — 游客态：用固定占位行替代真实数据，不绑定编辑 / 删除 / 详情
  * emits:
  *   edit — 点击编辑，参数为词汇对象
  *   remove — 点击删除，参数为词汇对象
  *   retry — 错误卡中的重试
  *   detail — 点击单词查看详情，参数 { item, anchor }
+ *   login — 游客点击遮罩行，去登录
  */
 import { computed } from 'vue'
 import { Pencil, Trash2 } from 'lucide-vue-next'
 import BaseButton from '../../../component/BaseButton.vue'
+import GuestMask from '../../../component/GuestMask.vue'
 import SkeletonBlock from '../../../component/SkeletonBlock.vue'
 import StatusPill from '../../../component/StatusPill.vue'
 import { formatDate } from '../../../unit/format'
@@ -47,9 +50,10 @@ const props = defineProps({
   error: { type: String, default: '' },
   highlightId: { type: String, default: '' },
   expandedWord: { type: String, default: '' },
+  masked: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['edit', 'remove', 'retry', 'detail'])
+const emit = defineEmits(['edit', 'remove', 'retry', 'detail', 'login'])
 
 // 只有「没有行可展示」时才出骨架。
 // 切换状态 / 翻页 / 搜索时列表里还有旧数据，继续展示它们等新结果；
@@ -105,7 +109,24 @@ function retry() {
           </tr>
         </thead>
 
-        <tbody v-if="showSkeleton" key="skeleton">
+        <!-- 游客态：不渲染任何真实词条，只留结构 + 遮罩（md/45 §5.2） -->
+        <tbody v-if="masked" key="masked" class="word-rows is-guest">
+          <tr
+            v-for="row in 6"
+            :key="`masked-${row}`"
+            class="word-row is-masked"
+            @click="emit('login')"
+          >
+            <td><GuestMask /></td>
+            <td><GuestMask width="72px" /></td>
+            <td><GuestMask width="160px" /></td>
+            <td><span class="guest-pill" aria-hidden="true">••</span></td>
+            <td><GuestMask mode="number" width="60px" /></td>
+            <td><span class="guest-pill" aria-hidden="true">••</span></td>
+          </tr>
+        </tbody>
+
+        <tbody v-else-if="showSkeleton" key="skeleton">
           <tr v-for="row in 8" :key="`skeleton-${row}`" class="skeleton-row">
             <td><SkeletonBlock width="58%" height="14px" /></td>
             <td><SkeletonBlock width="76%" height="12px" /></td>
@@ -198,7 +219,24 @@ function retry() {
       </table>
     </div>
 
-    <ul v-if="showSkeleton" key="card-skeleton" class="word-cards" aria-hidden="true">
+    <ul v-if="masked" key="card-masked" class="word-cards is-guest">
+      <li
+        v-for="row in 4"
+        :key="`card-masked-${row}`"
+        class="word-card is-masked"
+        @click="emit('login')"
+      >
+        <div class="card-text">
+          <span class="card-line"><GuestMask /></span>
+          <span class="card-phonetic"><GuestMask width="96px" /></span>
+          <span class="card-meaning"><GuestMask width="160px" /></span>
+          <span class="card-created"><GuestMask mode="number" width="72px" /></span>
+        </div>
+        <span class="guest-pill" aria-hidden="true">••</span>
+      </li>
+    </ul>
+
+    <ul v-else-if="showSkeleton" key="card-skeleton" class="word-cards" aria-hidden="true">
       <li v-for="row in 4" :key="`card-skeleton-${row}`" class="word-card">
         <div class="card-text">
           <SkeletonBlock width="42%" height="15px" />
@@ -294,6 +332,29 @@ function retry() {
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
+}
+
+/* 游客遮罩行：整行可点，去登录；不做 hover 高亮以外的强调 */
+.word-row.is-masked,
+.word-card.is-masked {
+  cursor: pointer;
+}
+
+.word-row.is-masked:hover {
+  background: var(--color-bg-deep);
+}
+
+.guest-pill {
+  display: inline-block;
+  min-width: 52px;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-deep);
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+  text-align: center;
+  letter-spacing: 0.12em;
 }
 
 .word-table {

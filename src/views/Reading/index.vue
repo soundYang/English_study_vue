@@ -10,6 +10,7 @@ import { useRoute, useRouter } from 'vue-router'
 import BaseButton from '../../component/BaseButton.vue'
 import BaseModal from '../../component/BaseModal.vue'
 import ConfirmDialog from '../../component/ConfirmDialog.vue'
+import GuestGate from '../../component/GuestGate.vue'
 import SegmentedControl from '../../component/SegmentedControl.vue'
 import WordDetailPopover from '../../component/WordDetailPopover.vue'
 import ArticleCard from './component/ArticleCard.vue'
@@ -18,10 +19,12 @@ import QuestionList from './component/QuestionList.vue'
 import ReadingHeader from './component/ReadingHeader.vue'
 import ReadingSkeleton from './component/ReadingSkeleton.vue'
 import SubmitBar from './component/SubmitBar.vue'
+import { useAuthGate } from '../../composables/useAuthGate'
 import { useMediaQuery } from '../../composables/useMediaQuery'
 import { useReadingTimer } from '../../composables/useReadingTimer'
 import { useScrollSpy } from '../../composables/useScrollSpy'
 import { useToast } from '../../composables/useToast'
+import { useAuthStore } from '../../stores/model/auth'
 import { useReadingStore } from '../../stores/model/reading'
 import { newWordDetail } from '../../unit/word-detail'
 
@@ -34,7 +37,11 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const store = useReadingStore()
+const auth = useAuthStore()
+const { goLogin } = useAuthGate()
 const isMobile = useMediaQuery('(max-width: 767px)')
+// 正文属于账号数据：游客只渲染整页登录引导，不请求详情（md/45 §5.7）
+const isGuest = computed(() => !auth.isAuthenticated)
 
 const activePanel = ref('article')
 const unansweredOpen = ref(false)
@@ -129,6 +136,8 @@ watch(
 )
 
 onMounted(async () => {
+  if (isGuest.value) return
+
   const id = String(route.params.id ?? '')
 
   // 守卫已加载或已报错时不再重复请求
@@ -146,7 +155,7 @@ onMounted(async () => {
 watch(
   () => route.params.id,
   async (id) => {
-    if (!id || String(id) === String(reading.value?.id)) return
+    if (isGuest.value || !id || String(id) === String(reading.value?.id)) return
     stopTimer()
     activatedId = ''
     const outcome = await store.ensureReading(String(id))
@@ -215,6 +224,8 @@ function confirmExit() {
 }
 
 async function retryLoad() {
+  if (isGuest.value) return
+
   const id = String(route.params.id ?? '')
   const outcome = await store.ensureReading(id, { force: true })
 
@@ -233,7 +244,9 @@ function goHome() {
 
 <template>
   <section class="reading-page">
-    <div v-if="store.loadError" class="state-card" role="alert">
+    <GuestGate v-if="isGuest" title="请登录后查看这篇阅读" @login="goLogin(route.fullPath)" />
+
+    <div v-else-if="store.loadError" class="state-card" role="alert">
       <h1 class="state-title">{{ loadTitle }}</h1>
       <p class="state-desc">{{ loadDescription }}</p>
       <p v-if="store.loadError?.requestId" class="state-id">

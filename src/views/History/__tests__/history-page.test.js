@@ -7,10 +7,11 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import HistoryPage from '../index.vue'
 import { resetMockDb, setMockLatency } from '../../../mock/adapter'
 import { countWords } from '../../../unit/format'
-import { storageKeys } from '../../../unit/storage'
+import { localStore, storageKeys } from '../../../unit/storage'
 
 const ReadingStub = defineComponent({
   name: 'ReadingStub',
@@ -64,6 +65,9 @@ function writeDb(db) {
 
 beforeEach(() => {
   localStorage.clear()
+  // 本文件测的是登录后的历史页；游客遮罩另有独立用例（md/45）
+  localStore.set(storageKeys.accessToken, 'sess_history_page')
+  setActivePinia(createPinia())
   resetMockDb()
   setMockLatency(0)
 

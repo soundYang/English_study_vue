@@ -14,11 +14,13 @@ import LengthPicker from './component/LengthPicker.vue'
 import QuestionCountPicker from './component/QuestionCountPicker.vue'
 import ScopePicker from './component/ScopePicker.vue'
 import SettingsAside from './component/SettingsAside.vue'
+import { useAuthGate } from '../../composables/useAuthGate'
 import { useCapacity } from '../../composables/useCapacity'
 import { useGenerateReading } from '../../composables/useGenerateReading'
 import { hasGenerationHandoff, setGenerationHandoff } from '../../composables/useGenerationHandoff'
 import { useQuota } from '../../composables/useQuota'
 import { useToast } from '../../composables/useToast'
+import { useAuthStore } from '../../stores/model/auth'
 import { useSettingsStore } from '../../stores/model/settings'
 import { capacityNoteOf } from '../../unit/capacity'
 import { firstError, LEVEL_MAX_TARGET_WORDS, TARGET_WORDS_MAX } from '../../unit/validators'
@@ -27,8 +29,11 @@ const LEVEL_LABELS = { easy: '简单', medium: '进阶', hard: '挑战' }
 
 const router = useRouter()
 const toast = useToast()
+const auth = useAuthStore()
 const settings = useSettingsStore()
+const { requireAuth } = useAuthGate()
 const { isGenerating } = useGenerateReading()
+const isGuest = computed(() => !auth.isAuthenticated)
 const {
   capacity,
   loading: capacityLoading,
@@ -37,9 +42,12 @@ const {
   levelGate: gateOf,
   maxTargetWords: maxOf,
   dispose: disposeCapacity,
-} = useCapacity()
-// 额度用尽时禁用「开始生成」；查询失败不拦（useQuota fail-open），交给后端 429 兜底
-const { quotaNote, isBlocked: quotaBlocked } = useQuota()
+} = useCapacity({ enabled: () => auth.isAuthenticated })
+// 额度用尽时禁用「开始生成」；查询失败不拦（useQuota fail-open），交给后端 429 兜底。
+// 游客不发额度请求，也不显示上一个账号的剩余次数（md/45 §5.4）
+const { quotaNote, isBlocked: quotaBlocked } = useQuota({
+  enabled: () => auth.isAuthenticated,
+})
 
 const draft = reactive({
   level: settings.level,
@@ -151,6 +159,15 @@ watch(
   { immediate: true },
 )
 
+// 游客在本页登录后补一次预检，不用刷新页面
+watch(
+  () => auth.isAuthenticated,
+  (authenticated) => {
+    if (!authenticated) return
+    loadCapacity({ targetWords: draft.targetWords, vocabScope: [...draft.vocabScope] })
+  },
+)
+
 onBeforeUnmount(disposeCapacity)
 
 function persistDraft() {
@@ -174,6 +191,11 @@ async function handleSave() {
 }
 
 function handleGenerate() {
+  // 游客点开始生成才去登录，设置本身仍可本地保存（md/45 §5.4）
+  if (!requireAuth(runGenerate, { redirect: '/settings' })) return
+}
+
+function runGenerate() {
   if (isGenerating.value || saving.value) return
 
   // 按钮已禁用；回车提交也拦住，并说明为什么，别让用户对着没反应的按钮猜
@@ -244,7 +266,8 @@ function handleGenerate() {
             role="status"
             aria-live="polite"
           >
-            <p v-if="capacityError" class="capacity-warn">{{ capacityError }}</p>
+            <p v-if="isGuest" class="capacity-idle">登录后可检查你的词库是否够生成这篇文章</p>
+            <p v-else-if="capacityError" class="capacity-warn">{{ capacityError }}</p>
             <p v-else-if="capacityLoading && !gate" class="capacity-idle">正在检查当前词库…</p>
             <template v-else-if="gate && capacityNote">
               <p :class="capacityNote.tone === 'warn' ? 'capacity-warn' : 'capacity-ok'">

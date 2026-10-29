@@ -13,6 +13,7 @@
  *   item     — 基础词表接口返回的单条记录
  *   pending  — 该词的写请求进行中
  *   expanded — 详情浮层当前显示的是这个词
+ *   readonly — 游客态：不渲染个人状态 pill 与操作菜单，只保留公开词条内容
  * emits:
  *   remove / restore — 菜单动作，是否二次确认由页面决定
  *   detail           — 查看详情，参数 { item, anchor }，anchor 是单词按钮
@@ -27,6 +28,7 @@ const props = defineProps({
   item: { type: Object, required: true },
   pending: { type: Boolean, default: false },
   expanded: { type: Boolean, default: false },
+  readonly: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['remove', 'restore', 'detail'])
@@ -68,6 +70,7 @@ function openDetail(event) {
         </button>
       </h3>
       <WordCardMenu
+        v-if="!readonly"
         :item="item"
         :pending="pending"
         @remove="emit('remove', $event)"
@@ -87,7 +90,7 @@ function openDetail(event) {
     <footer class="card-foot">
       <span v-if="meta" class="card-meta" :title="meta.hint">{{ meta.label }}</span>
       <span v-else class="card-meta-space" aria-hidden="true" />
-      <StatusPill :value="status.value" :label="status.label" />
+      <StatusPill v-if="!readonly" :value="status.value" :label="status.label" />
     </footer>
   </article>
 </template>

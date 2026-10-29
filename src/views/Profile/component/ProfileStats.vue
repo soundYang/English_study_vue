@@ -7,10 +7,12 @@
  * 用法：<ProfileStats :stats="stats" />
  *
  * props:
- *   stats — { reading, questions, weekly }；字段缺失按 0 处理，不阻塞渲染
+ *   stats  — { reading, questions, weekly }；字段缺失按 0 处理，不阻塞渲染
+ *   masked — 游客态：数值全部用 ** 遮罩，隐藏周柱状图与按题明细
  */
 import { computed } from 'vue'
 import { Coins, FileText, Target } from 'lucide-vue-next'
+import GuestMask from '../../../component/GuestMask.vue'
 
 const WEEKLY_COUNT = 12
 const RING_RADIUS = 34
@@ -18,6 +20,7 @@ const RING_LENGTH = 2 * Math.PI * RING_RADIUS
 
 const props = defineProps({
   stats: { type: Object, default: null },
+  masked: { type: Boolean, default: false },
 })
 
 const reading = computed(() => props.stats?.reading || {})
@@ -77,11 +80,15 @@ const ringStyle = computed(() => ({
       </header>
 
       <p class="stat-value">
-        <span class="stat-number">{{ tokenText }}</span>
+        <span v-if="masked" class="stat-number">
+          <GuestMask mode="number" width="2.5em" />
+        </span>
+        <span v-else class="stat-number">{{ tokenText }}</span>
         <span class="stat-unit">tokens</span>
       </p>
 
-      <p class="stat-caption">
+      <p v-if="masked" class="stat-caption">登录后查看</p>
+      <p v-else class="stat-caption">
         <template v-if="generatedCount > 0"
           >累计生成 {{ generatedCount }} 篇，含未完成的稿子</template
         >
@@ -101,14 +108,21 @@ const ringStyle = computed(() => ({
         <div
           class="accuracy-ring"
           role="img"
-          :aria-label="`答题准确率 ${accuracy}%，正确 ${correctCount} 题，错误 ${wrongCount} 题`"
+          :aria-label="
+            masked
+              ? '登录后查看答题准确率'
+              : `答题准确率 ${accuracy}%，正确 ${correctCount} 题，错误 ${wrongCount} 题`
+          "
         >
           <svg viewBox="0 0 88 88" aria-hidden="true" focusable="false">
             <circle class="ring-track" cx="44" cy="44" :r="RING_RADIUS" />
             <circle class="ring-fill" cx="44" cy="44" :r="RING_RADIUS" :style="ringStyle" />
           </svg>
           <span class="ring-label">
-            <span class="ring-number">{{ accuracy }}</span>
+            <span v-if="masked" class="ring-number">
+              <GuestMask mode="number" width="1.6em" />
+            </span>
+            <span v-else class="ring-number">{{ accuracy }}</span>
             <span class="ring-unit">%</span>
           </span>
         </div>
@@ -116,16 +130,23 @@ const ringStyle = computed(() => ({
         <dl class="accuracy-breakdown">
           <div class="breakdown-row">
             <dt><span class="breakdown-dot is-correct" aria-hidden="true" />正确</dt>
-            <dd>{{ correctCount }}</dd>
+            <dd>
+              <GuestMask v-if="masked" mode="number" width="2em" />
+              <template v-else>{{ correctCount }}</template>
+            </dd>
           </div>
           <div class="breakdown-row">
             <dt><span class="breakdown-dot is-wrong" aria-hidden="true" />错误</dt>
-            <dd>{{ wrongCount }}</dd>
+            <dd>
+              <GuestMask v-if="masked" mode="number" width="2em" />
+              <template v-else>{{ wrongCount }}</template>
+            </dd>
           </div>
         </dl>
       </div>
 
-      <p v-if="answeredCount === 0" class="stat-caption">还没有提交过练习</p>
+      <p v-if="masked" class="stat-caption">登录后查看</p>
+      <p v-else-if="answeredCount === 0" class="stat-caption">还没有提交过练习</p>
       <p v-else class="stat-caption">共作答 {{ answeredCount }} 题</p>
     </article>
 
@@ -139,11 +160,14 @@ const ringStyle = computed(() => ({
 
       <div class="articles-body">
         <p class="stat-value">
-          <span class="stat-number">{{ completedCount }}</span>
+          <span v-if="masked" class="stat-number">
+            <GuestMask mode="number" width="2.5em" />
+          </span>
+          <span v-else class="stat-number">{{ completedCount }}</span>
           <span class="stat-unit">篇</span>
         </p>
 
-        <div v-if="weeklyBars.length" class="weekly-chart" aria-hidden="true">
+        <div v-if="weeklyBars.length && !masked" class="weekly-chart" aria-hidden="true">
           <span
             v-for="bar in weeklyBars"
             :key="bar.weekStart"
@@ -155,7 +179,8 @@ const ringStyle = computed(() => ({
         </div>
       </div>
 
-      <p class="stat-caption">
+      <p v-if="masked" class="stat-caption">登录后查看</p>
+      <p v-else class="stat-caption">
         <template v-if="weeklyBars.length">近 12 周完成 {{ weeklyTotal }} 篇</template>
         <template v-else>暂无周统计</template>
       </p>

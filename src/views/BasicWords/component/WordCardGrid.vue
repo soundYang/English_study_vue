@@ -16,6 +16,7 @@
  *   error       — 错误文案，存在时整块替换为错误卡
  *   pendingWord  — 写请求进行中的词，只禁用对应那一个菜单
  *   expandedWord — 详情浮层当前显示的词，对应卡片画描边并同步 aria-expanded
+ *   readonly    — 游客态：只渲染公开词条，隐藏个人状态与写操作菜单
  * emits:
  *   retry — 错误卡中的重试
  *   remove / restore — 逐张卡片转发上去
@@ -31,6 +32,7 @@ defineProps({
   error: { type: String, default: '' },
   pendingWord: { type: String, default: '' },
   expandedWord: { type: String, default: '' },
+  readonly: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['retry', 'remove', 'restore', 'detail'])
@@ -58,6 +60,7 @@ const emit = defineEmits(['retry', 'remove', 'restore', 'detail'])
         :item="item"
         :pending="item.word === pendingWord"
         :expanded="item.word === expandedWord"
+        :readonly="readonly"
         @remove="emit('remove', $event)"
         @restore="emit('restore', $event)"
         @detail="emit('detail', $event)"

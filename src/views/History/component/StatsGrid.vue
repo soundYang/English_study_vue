@@ -9,10 +9,12 @@
  * props:
  *   stats    — 历史接口返回的 stats；为空时显示占位
  *   loading  — 首次加载骨架；已有 stats 时不再显示骨架
+ *   masked   — 游客态：数值用 ** 遮罩，不跑 count-up
  *   duration — 计数动画时长，默认 900ms；测试可传 0
  */
 import { computed, watch } from 'vue'
 import { BookOpen, Library, Target, Trophy } from 'lucide-vue-next'
+import GuestMask from '../../../component/GuestMask.vue'
 import SkeletonBlock from '../../../component/SkeletonBlock.vue'
 import { useCountUp } from '../../../composables/useCountUp'
 
@@ -26,6 +28,7 @@ const STAT_META = [
 const props = defineProps({
   stats: { type: Object, default: null },
   loading: { type: Boolean, default: false },
+  masked: { type: Boolean, default: false },
   duration: { type: Number, default: 900 },
 })
 
@@ -71,6 +74,9 @@ function statValue(counter) {
       <span class="stat-label">{{ counter.label }}</span>
 
       <SkeletonBlock v-if="showSkeleton" width="72px" height="28px" />
+      <span v-else-if="masked" class="stat-value">
+        <GuestMask mode="number" />
+      </span>
       <span v-else class="stat-value">
         <span class="stat-number">{{ statValue(counter) }}</span>
         <span v-if="hasStats" class="stat-unit">{{ counter.unit }}</span>

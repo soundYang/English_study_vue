@@ -8,6 +8,7 @@
  *
  * props:
  *   value — 当前生效的搜索词；由父级在“清除搜索”时回写
+ *   searchDisabled — 游客态禁用输入框（添加 / 批量导入仍可点，由父级带去登录）
  * emits:
  *   search — 搜索词（已去首尾空格，可能为空字符串）
  *   add    — 点击“添加单词”
@@ -21,6 +22,7 @@ const DEBOUNCE_DELAY = 300
 
 const props = defineProps({
   value: { type: String, default: '' },
+  searchDisabled: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['search', 'add', 'batch'])
@@ -89,9 +91,10 @@ onBeforeUnmount(cancelTimer)
         v-model="keyword"
         class="search-input"
         type="search"
-        placeholder="搜索单词或释义…"
+        :placeholder="searchDisabled ? '登录后搜索你的单词' : '搜索单词或释义…'"
         aria-label="搜索单词或释义"
         autocomplete="off"
+        :disabled="searchDisabled"
         @input="handleInput"
         @keydown="handleKeydown"
       />

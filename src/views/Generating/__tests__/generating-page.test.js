@@ -16,7 +16,7 @@ import {
 } from '../../../composables/useGenerationHandoff'
 import { useReadingStore } from '../../../stores/model/reading'
 import { mockApiKey, setMockLatency } from '../../../mock/adapter'
-import { storageKeys } from '../../../unit/storage'
+import { localStore, storageKeys } from '../../../unit/storage'
 
 const EmptyStub = { template: '<div />' }
 
@@ -55,6 +55,8 @@ async function mountPage(beforeMount) {
 beforeEach(() => {
   clearGenerationHandoff()
   localStorage.removeItem(storageKeys.generationTask)
+  // 生成页只服务登录用户；游客进页会被送回设置页（md/45 §5.8）
+  localStore.set(storageKeys.accessToken, 'sess_generating_page')
 })
 
 afterEach(() => {

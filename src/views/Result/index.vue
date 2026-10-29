@@ -9,20 +9,27 @@ import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from 'lucide-vue-next'
 import BaseButton from '../../component/BaseButton.vue'
+import GuestGate from '../../component/GuestGate.vue'
 import SkeletonBlock from '../../component/SkeletonBlock.vue'
 import ArticleCard from '../Reading/component/ArticleCard.vue'
 import NewWordsPanel from '../Reading/component/NewWordsPanel.vue'
 import QuestionReview from './component/QuestionReview.vue'
 import ScoreSummary from './component/ScoreSummary.vue'
 import TranslationPanel from './component/TranslationPanel.vue'
+import { useAuthGate } from '../../composables/useAuthGate'
 import { useGenerateReading } from '../../composables/useGenerateReading'
+import { useAuthStore } from '../../stores/model/auth'
 import { useReadingStore } from '../../stores/model/reading'
 import { formatDateTime } from '../../unit/format'
 
 const route = useRoute()
 const router = useRouter()
 const store = useReadingStore()
+const auth = useAuthStore()
+const { goLogin } = useAuthGate()
 const { isGenerating, start } = useGenerateReading()
+// 结果含答案与翻译，只属于账号数据：游客不请求，整页换成登录引导（md/45 §5.7）
+const isGuest = computed(() => !auth.isAuthenticated)
 
 const readingId = computed(() => String(route.params.id ?? '').trim())
 
@@ -60,6 +67,8 @@ const reviewItems = computed(() => {
 })
 
 async function loadResult() {
+  if (isGuest.value) return
+
   const id = readingId.value
   if (!id || result.value || store.loadError) return
 
@@ -72,11 +81,13 @@ async function loadResult() {
 onMounted(loadResult)
 
 watch(readingId, (id, previous) => {
-  if (!id || id === previous) return
+  if (isGuest.value || !id || id === previous) return
   loadResult()
 })
 
 async function retryLoad() {
+  if (isGuest.value) return
+
   const id = readingId.value
   if (!id) return
 
@@ -110,7 +121,9 @@ function goHome() {
 
 <template>
   <section class="result-page">
-    <div v-if="isLoading" class="result-skeleton" role="status" aria-label="正在加载练习结果">
+    <GuestGate v-if="isGuest" title="请登录后查看练习结果" @login="goLogin(route.fullPath)" />
+
+    <div v-else-if="isLoading" class="result-skeleton" role="status" aria-label="正在加载练习结果">
       <SkeletonBlock width="120px" height="14px" />
       <SkeletonBlock width="220px" height="34px" radius="var(--radius-sm)" />
       <SkeletonBlock height="140px" radius="var(--radius-xl)" />

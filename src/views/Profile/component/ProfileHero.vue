@@ -6,16 +6,19 @@
  * 用法：<ProfileHero :user="user" @edit="editOpen = true" />
  *
  * props:
- *   user — 当前用户资料（nickname / username / signature）
+ *   user   — 当前用户资料（nickname / username / signature）；游客态不传
+ *   masked — 游客态：头像显示「?」、昵称与签名遮罩，隐藏编辑按钮
  * emits:
  *   edit — 点击铅笔按钮
  */
 import { computed } from 'vue'
 import { Pencil } from 'lucide-vue-next'
+import GuestMask from '../../../component/GuestMask.vue'
 import mountains from '../../../assets/images/profile-mountains.png'
 
 const props = defineProps({
-  user: { type: Object, required: true },
+  user: { type: Object, default: null },
+  masked: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['edit'])
@@ -35,20 +38,33 @@ const username = computed(() => String(props.user?.username || '').trim())
     </div>
 
     <span class="hero-avatar" aria-hidden="true">
-      <img :src="mountains" alt="" />
+      <img v-if="!masked" :src="mountains" alt="" />
+      <span v-else class="avatar-question">?</span>
     </span>
 
     <div class="hero-info">
       <div class="hero-name-row">
-        <p class="hero-name">{{ displayName || '未命名' }}</p>
-        <button class="hero-edit" type="button" aria-label="编辑个人资料" @click="emit('edit')">
+        <p class="hero-name">
+          <GuestMask v-if="masked" width="6em" />
+          <template v-else>{{ displayName || '未命名' }}</template>
+        </p>
+        <button
+          v-if="!masked"
+          class="hero-edit"
+          type="button"
+          aria-label="编辑个人资料"
+          @click="emit('edit')"
+        >
           <Pencil :size="15" :stroke-width="1.8" aria-hidden="true" />
         </button>
       </div>
 
-      <p class="hero-id">ID: {{ username || '—' }}</p>
+      <p class="hero-id">ID: {{ masked ? '--' : username || '—' }}</p>
 
-      <p v-if="signature" class="hero-signature">「{{ signature }}」</p>
+      <p v-if="masked" class="hero-signature">
+        <GuestMask width="12em" />
+      </p>
+      <p v-else-if="signature" class="hero-signature">「{{ signature }}」</p>
       <p v-else class="hero-signature is-empty">还没有个性签名，点铅笔写一句。</p>
     </div>
   </header>
@@ -109,6 +125,18 @@ const username = computed(() => String(props.user?.username || '').trim())
   object-fit: cover;
   /* 从同一张山景里裁出主峰，头像和右侧装饰保持同一套画 */
   object-position: 82% 62%;
+}
+
+/* 游客态头像不展示任何用户图片，只留一个问号示意 */
+.avatar-question {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  color: var(--color-muted);
+  font-family: var(--font-display);
+  font-size: 26px;
+  line-height: 1;
 }
 
 .hero-info {

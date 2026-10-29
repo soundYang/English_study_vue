@@ -14,7 +14,7 @@
  */
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { BookOpen, Lock, Smartphone, UserRound } from 'lucide-vue-next'
+import { ArrowRight, BookOpen, Lock, Smartphone, UserRound } from 'lucide-vue-next'
 import BaseButton from '../../component/BaseButton.vue'
 import AuthField from './component/AuthField.vue'
 import CaptchaField from './component/CaptchaField.vue'
@@ -82,6 +82,15 @@ function safeRedirect(value) {
   if (path === '/login' || path === '/register') return '/'
   return target
 }
+
+// 「先逛逛，暂不登录」：优先回被拦下的目标页；gate 页（阅读正文 / 结果）回首页，
+// 否则刚离开登录页又会被提示登录（md/45 §5.9）
+const skipTarget = computed(() => {
+  const target = safeRedirect(route.query.redirect)
+  const path = target.split(/[?#]/)[0]
+  if (path.startsWith('/readings/')) return '/'
+  return target
+})
 
 // 连点「换一张」时只认最后一次响应，避免旧图覆盖新图
 let captchaSeq = 0
@@ -371,9 +380,9 @@ onMounted(() => {
 
           <AuthField
             v-model="registerForm.phone"
-            label="手机号（选填）"
+            label="手机号"
             name="phone"
-            placeholder="手机号（选填，不验证）"
+            placeholder="手机号"
             :icon="Smartphone"
             autocomplete="tel"
             inputmode="tel"
@@ -423,6 +432,12 @@ onMounted(() => {
             <RouterLink :to="{ name: 'login', query: redirectQuery }">立即登录</RouterLink>
           </p>
         </form>
+
+        <!-- 不登录也能浏览网站：入口放在两个 tab 共用的卡片底部（md/45 §5.9） -->
+        <RouterLink class="auth-skip" :to="skipTarget" aria-label="不登录，先浏览网站">
+          先逛逛，暂不登录
+          <ArrowRight :size="16" :stroke-width="1.8" aria-hidden="true" />
+        </RouterLink>
       </section>
     </main>
   </div>
@@ -606,6 +621,24 @@ onMounted(() => {
   color: var(--color-muted);
   font-size: 12px;
   text-align: center;
+}
+
+.auth-skip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  margin-top: var(--space-4);
+  color: var(--color-muted);
+  font-size: var(--text-small);
+  text-decoration: none;
+}
+
+.auth-skip:hover {
+  color: var(--color-ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
 @media (max-width: 1023px) {

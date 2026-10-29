@@ -9,6 +9,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import ReadingView from '../index.vue'
 import { resetMockDb, setMockLatency } from '../../../mock/adapter'
 import { useReadingStore } from '../../../stores/model/reading'
+import { localStore, storageKeys } from '../../../unit/storage'
 
 const routeState = vi.hoisted(() => ({ id: 'r5' }))
 const routerMocks = vi.hoisted(() => ({ replace: vi.fn(), push: vi.fn() }))
@@ -23,6 +24,8 @@ let wrapper = null
 beforeEach(() => {
   localStorage.clear()
   sessionStorage.clear()
+  // 本文件测登录后答题；游客整页引导另有独立用例（md/45 §5.7）
+  localStore.set(storageKeys.accessToken, 'sess_reading_page')
   resetMockDb()
   setMockLatency(0)
   routeState.id = 'r5'
@@ -58,6 +61,21 @@ async function mountPage() {
 function findButton(target, label) {
   return target.findAll('button').find((button) => button.text().trim() === label)
 }
+
+describe('Reading page · guest', () => {
+  it('should show the login gate without loading the reading', async () => {
+    localStore.remove(storageKeys.accessToken)
+
+    const page = await mountPage()
+    const store = useReadingStore()
+
+    // md/45 §5.7：没有正文就不渲染半残的答题界面，也不发详情请求
+    expect(page.text()).toContain('请登录后查看这篇阅读')
+    expect(page.findAll('.question-card')).toHaveLength(0)
+    expect(store.reading).toBeNull()
+    expect(store.loadError).toBeNull()
+  })
+})
 
 describe('Reading page', () => {
   it('should render the article and questions without answers or translation', async () => {

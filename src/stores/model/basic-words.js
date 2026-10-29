@@ -2,18 +2,26 @@
  * 基础词表状态
  * 维护分组 / 状态 / 搜索 / 分页与「标记不认识 / 恢复」；
  * 视图不直接调用 api/basic-words，写操作后的列表同步规则集中在 applyMutation。
+ * 游客态改用公开只读接口，写操作直接返回 AUTH_REQUIRED（md/45 §5.3）。
  */
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { fetchBasicWords, removeBasicWord, restoreBasicWord } from '../../api/basic-words'
+import {
+  fetchBasicWords,
+  fetchPublicBasicWords,
+  removeBasicWord,
+  restoreBasicWord,
+} from '../../api/basic-words'
 import { normalizeApiError } from '../../errors'
 import { BASIC_PAGE_SIZES } from '../../unit/basic-words'
+import { useAuthStore } from './auth'
 
 export const DEFAULT_PAGE_SIZE = 100
 
 const FALLBACK_MESSAGE = '网络出了点问题，请稍后重试。'
 
 export const useBasicWordsStore = defineStore('basic-words', () => {
+  const auth = useAuthStore()
   const items = ref([])
   const total = ref(0)
   const counts = ref(null)
@@ -44,7 +52,15 @@ export const useBasicWordsStore = defineStore('basic-words', () => {
     }
   }
 
-  /** 拉取当前条件下的列表；quiet 用于写操作后的对账，不触发骨架屏 */
+  /** 游客态写操作：不发请求，用与后端一致的 AUTH_REQUIRED 交给页面转登录 */
+  function authRequired(message) {
+    return { ok: false, message, code: 'AUTH_REQUIRED', details: {} }
+  }
+
+  /**
+   * 拉取当前条件下的列表；quiet 用于写操作后的对账，不触发骨架屏。
+   * 数据源按登录态切换：登录走个人接口，游客走公开只读接口（md/45 §5.3）。
+   */
   async function fetchList({ quiet = false } = {}) {
     const current = (requestSeq += 1)
     if (!quiet) {
@@ -52,8 +68,10 @@ export const useBasicWordsStore = defineStore('basic-words', () => {
       error.value = ''
     }
 
+    const request = auth.isAuthenticated ? fetchBasicWords : fetchPublicBasicWords
+
     try {
-      const result = await fetchBasicWords({
+      const result = await request({
         q: query.value,
         group: group.value,
         status: status.value,
@@ -139,6 +157,9 @@ export const useBasicWordsStore = defineStore('basic-words', () => {
 
   /** 标记不认识；词已收录进个人词库时后端给 409，文案里自带出口 */
   async function markRemoved(word) {
+    // 写操作必须有账号：游客态即便绕过界面调用也不发请求（md/45 §5.3）
+    if (!auth.isAuthenticated) return authRequired('登录后才能标记不认识的单词')
+
     pendingWord.value = word
     try {
       const result = await removeBasicWord(word)
@@ -153,6 +174,8 @@ export const useBasicWordsStore = defineStore('basic-words', () => {
 
   /** 恢复：只对 source = basic-removed 的记录有效，用户自建的词后端会拒绝 */
   async function restore(word) {
+    if (!auth.isAuthenticated) return authRequired('登录后才能恢复单词')
+
     pendingWord.value = word
     try {
       const result = await restoreBasicWord(word)

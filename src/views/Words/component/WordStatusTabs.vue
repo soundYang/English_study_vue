@@ -8,6 +8,7 @@
  * props:
  *   modelValue — 当前状态筛选值（all / mastered / learning / new）
  *   counts     — 接口 counts 对象；null 表示尚未加载
+ *   disabled   — 游客态禁用切换（计数用 ** 遮罩）
  * emits:
  *   update:modelValue
  */
@@ -17,13 +18,15 @@ import SegmentedControl from '../../../component/SegmentedControl.vue'
 const props = defineProps({
   modelValue: { type: String, required: true },
   counts: { type: Object, default: null },
+  disabled: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:modelValue'])
 
 const options = computed(() => {
   const counts = props.counts
-  const countOf = (key) => (counts ? counts[key] : '—')
+  // 游客态没有个人计数：用 ** 遮罩，不显示会让人误读的 0
+  const countOf = (key) => (props.disabled ? '**' : counts ? counts[key] : '—')
 
   return [
     { value: 'all', label: '全部', count: countOf('all') },
@@ -43,6 +46,7 @@ function select(value) {
     <SegmentedControl
       :model-value="modelValue"
       :options="options"
+      :disabled="disabled"
       aria-label="按学习状态筛选"
       @update:model-value="select"
     />

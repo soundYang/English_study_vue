@@ -9,10 +9,13 @@
  * props:
  *   items   — 历史记录数组
  *   loading — 加载中显示 4 张骨架卡
+ *   masked  — 游客态：渲染 4 张占位卡，点击整卡触发 login
  * emits:
- *   open — 打开记录，参数为记录对象
+ *   open  — 打开记录，参数为记录对象
+ *   login — 游客点击占位卡，父级带去登录
  */
 import { ArrowRight } from 'lucide-vue-next'
+import GuestMask from '../../../component/GuestMask.vue'
 import SkeletonBlock from '../../../component/SkeletonBlock.vue'
 import StatusPill from '../../../component/StatusPill.vue'
 import { formatDate, formatPercent } from '../../../unit/format'
@@ -20,9 +23,12 @@ import { formatDate, formatPercent } from '../../../unit/format'
 defineProps({
   items: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
+  masked: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['open'])
+const emit = defineEmits(['open', 'login'])
+
+const MASKED_CARDS = 4
 
 function isSubmitted(item) {
   return item.status === 'submitted'
@@ -43,6 +49,39 @@ function rowDelay(index) {
       <SkeletonBlock width="62%" height="15px" />
       <SkeletonBlock width="44%" height="13px" />
       <SkeletonBlock width="72%" height="22px" radius="var(--radius-pill)" />
+    </li>
+  </ul>
+
+  <ul v-else-if="masked" class="history-cards">
+    <li
+      v-for="card in MASKED_CARDS"
+      :key="`masked-${card}`"
+      class="history-card-item"
+      :style="rowDelay(card - 1)"
+    >
+      <button type="button" class="history-card" @click="emit('login')">
+        <span class="card-top">
+          <span class="card-title"><GuestMask /></span>
+          <span class="guest-pill">难度</span>
+        </span>
+
+        <span class="card-meta">
+          <span>----/--/--</span>
+          <span aria-hidden="true">·</span>
+          <span>-- 题</span>
+        </span>
+
+        <span class="card-bottom">
+          <span class="card-accuracy">
+            <GuestMask mode="number" /><span class="mask-unit">%</span>
+          </span>
+
+          <span class="card-action">
+            登录后查看
+            <ArrowRight :size="14" aria-hidden="true" />
+          </span>
+        </span>
+      </button>
     </li>
   </ul>
 
@@ -172,6 +211,25 @@ function rowDelay(index) {
     color: var(--color-accent);
     font-size: var(--text-small);
     line-height: var(--leading-small);
+  }
+
+  .guest-pill {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    height: 22px;
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-pill);
+    background: var(--color-bg-deep);
+    color: var(--color-muted);
+    font-size: var(--text-caption);
+    line-height: var(--leading-caption);
+  }
+
+  .mask-unit {
+    margin-left: 2px;
+    color: var(--color-muted);
+    font-size: var(--text-caption);
   }
 }
 

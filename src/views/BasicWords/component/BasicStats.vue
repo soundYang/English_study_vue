@@ -7,10 +7,12 @@
  *
  * props:
  *   counts — 接口 counts 对象；null 时显示占位符，不显示 0
+ *   masked — 游客态：「已标记不认识」是个人的，数值用 ** 遮罩
  *
  * 数字不随筛选、搜索、翻页变化，这是设计意图：一眼看到词表构成（md/16 §7.4）。
  */
 import { BookOpen, ListOrdered, Sparkles, UserRound } from 'lucide-vue-next'
+import GuestMask from '../../../component/GuestMask.vue'
 
 const STAT_META = [
   { key: 'all', label: '词表总量', hint: '去重后的词条', icon: BookOpen },
@@ -21,6 +23,7 @@ const STAT_META = [
 
 const props = defineProps({
   counts: { type: Object, default: null },
+  masked: { type: Boolean, default: false },
 })
 
 /** 计数缺失时给占位符：显示 0 会被读成「一个都没有」 */
@@ -42,7 +45,10 @@ function valueOf(key) {
         <span class="stat-label">{{ stat.label }}</span>
       </span>
 
-      <span class="stat-value">{{ valueOf(stat.key) }}</span>
+      <span v-if="masked && stat.key === 'removed'" class="stat-value">
+        <GuestMask mode="number" width="2em" />
+      </span>
+      <span v-else class="stat-value">{{ valueOf(stat.key) }}</span>
       <span class="stat-hint">{{ stat.hint }}</span>
     </article>
   </section>

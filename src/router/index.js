@@ -2,7 +2,8 @@
  * 路由表
  * 页面路由 + 404；meta.module 决定侧栏激活项，meta.hideMobileNav 控制底部标签栏，
  * meta.flush 取消内容区最大宽度与内边距（首页 Hero、设置页装饰栏、生成页纸舞台需要贴住窗口边缘）。
- * 鉴权默认拦截：只有显式 meta.public 的页面允许游客进入，登录 / 注册页用 meta.bare。
+ * 鉴权默认拦截：meta.public 与 meta.guestMode 的页面允许游客进入，
+ * 未标注的新路由仍要求登录；登录 / 注册页用 meta.bare。
  */
 import { createRouter, createWebHistory } from 'vue-router'
 import { registerGuards } from './guards'
@@ -19,49 +20,58 @@ const routes = [
     path: '/words',
     name: 'words',
     component: () => import('../views/Words/index.vue'),
-    meta: { title: '我的单词', module: 'words' },
+    // 游客可进：页面用遮罩展示结构（md/45）
+    meta: { title: '我的单词', module: 'words', guestMode: 'browse' },
   },
   {
     path: '/basic-words',
     name: 'basic-words',
     component: () => import('../views/BasicWords/index.vue'),
-    meta: { title: '基础词汇库', module: 'basic-words' },
+    // 公开只读词表，游客可浏览（md/45 §5.3）
+    meta: { title: '基础词汇库', module: 'basic-words', guestMode: 'browse' },
   },
   {
     path: '/settings',
     name: 'settings',
     component: () => import('../views/Settings/index.vue'),
-    meta: { title: '阅读设置', module: 'reading', flush: true },
+    meta: { title: '阅读设置', module: 'reading', flush: true, guestMode: 'browse' },
   },
   {
     path: '/generating',
     name: 'generating',
     component: () => import('../views/Generating/index.vue'),
-    meta: { title: '正在生成', module: 'reading', flush: true },
+    // 游客没有生成参数，页面自己回落到设置页（md/45 §3.4）
+    meta: { title: '正在生成', module: 'reading', flush: true, guestMode: 'redirect' },
   },
   {
     path: '/readings/:id',
     name: 'reading',
     component: () => import('../views/Reading/index.vue'),
-    meta: { title: '阅读答题', module: 'reading', hideMobileNav: true, wide: true },
+    meta: {
+      title: '阅读答题',
+      module: 'reading',
+      hideMobileNav: true,
+      wide: true,
+      guestMode: 'gate',
+    },
   },
   {
     path: '/readings/:id/result',
     name: 'reading-result',
     component: () => import('../views/Result/index.vue'),
-    meta: { title: '练习结果', module: 'reading' },
+    meta: { title: '练习结果', module: 'reading', guestMode: 'gate' },
   },
   {
     path: '/history',
     name: 'history',
     component: () => import('../views/History/index.vue'),
-    meta: { title: '历史记录', module: 'history' },
+    meta: { title: '历史记录', module: 'history', guestMode: 'browse' },
   },
   {
     path: '/profile',
     name: 'profile',
     component: () => import('../views/Profile/index.vue'),
-    meta: { title: '个人中心', module: 'profile' },
+    meta: { title: '个人中心', module: 'profile', guestMode: 'browse' },
   },
   {
     path: '/login',

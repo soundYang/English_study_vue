@@ -6,12 +6,12 @@
  * 用法：const { capacity, loading, error, load, levelGate, maxTargetWords, dispose } = useCapacity()
  *       load({ targetWords: 200 })
  */
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { fetchCapacity } from '../api/readings'
 
 const DEBOUNCE_MS = 250
 
-export function useCapacity() {
+export function useCapacity({ enabled = () => true } = {}) {
   const capacity = ref(null)
   const loading = ref(false)
   const error = ref('')
@@ -21,6 +21,9 @@ export function useCapacity() {
   let seq = 0
 
   async function run(params) {
+    // 游客不预检：公开页不该打受保护接口（md/45 §5.4）
+    if (!enabled()) return
+
     // 序列号而不是请求先后：慢的旧请求回来时不能覆盖新参数的结果
     const current = (seq += 1)
     controller?.abort()
@@ -45,9 +48,23 @@ export function useCapacity() {
   }
 
   function load(params) {
+    if (!enabled()) return
     if (timer) clearTimeout(timer)
     timer = setTimeout(() => run(params), DEBOUNCE_MS)
   }
+
+  // 登录态变化：停用就清掉上一次账号的预检结果；重新启用等调用方的 load 自然触发
+  watch(enabled, (value) => {
+    if (value) return
+    if (timer) clearTimeout(timer)
+    timer = null
+    controller?.abort()
+    controller = null
+    seq += 1
+    capacity.value = null
+    error.value = ''
+    loading.value = false
+  })
 
   function levelGate(level) {
     return capacity.value?.levels?.[level] || null

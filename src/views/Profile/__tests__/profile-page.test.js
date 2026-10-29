@@ -12,6 +12,7 @@ import { mockProfile, resetMockDb, setMockLatency } from '../../../mock/adapter'
 import { BusinessError } from '../../../errors'
 import { useToastStore } from '../../../stores/model/toast'
 import { fetchProfile } from '../../../api/profile'
+import { localStore, storageKeys } from '../../../unit/storage'
 
 vi.mock('../../../api/profile', async (importOriginal) => {
   const actual = await importOriginal()
@@ -41,6 +42,8 @@ function mountPage() {
 
 beforeEach(() => {
   localStorage.clear()
+  // 本文件测登录后的个人中心；游客遮罩另有独立用例（md/45 §5.6）
+  localStore.set(storageKeys.accessToken, 'sess_profile_page')
   resetMockDb()
   setMockLatency(0)
   vi.mocked(fetchProfile).mockClear()
@@ -50,6 +53,23 @@ afterEach(() => {
   wrapper?.unmount()
   wrapper = null
   document.body.innerHTML = ''
+})
+
+describe('Profile page · guest', () => {
+  it('should mask the profile and skip private requests', async () => {
+    localStore.remove(storageKeys.accessToken)
+
+    mountPage()
+    await flushPromises()
+
+    // md/45 §5.6：游客不发 /profile 与 /profile/stats，只看到遮罩后的结构
+    expect(fetchProfile).not.toHaveBeenCalled()
+    expect(wrapper.find('.hero-name .guest-mask').exists()).toBe(true)
+    expect(wrapper.find('.avatar-question').exists()).toBe(true)
+    expect(wrapper.findAll('.profile-stats .guest-mask').length).toBeGreaterThan(0)
+    expect(wrapper.text()).toContain('登录后管理账号、密码与 API Key')
+    expect(wrapper.find('.settings-card').exists()).toBe(false)
+  })
 })
 
 describe('Profile page', () => {

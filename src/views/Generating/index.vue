@@ -20,7 +20,9 @@ import { useRouter } from 'vue-router'
 import PaperStage from './component/PaperStage.vue'
 import { useGenerateReading } from '../../composables/useGenerateReading'
 import { takeGenerationHandoff } from '../../composables/useGenerationHandoff'
+import { useToast } from '../../composables/useToast'
 import { useUserApiKey } from '../../composables/useUserApiKey'
+import { useAuthStore } from '../../stores/model/auth'
 import { useReadingStore } from '../../stores/model/reading'
 
 // 成功文案要在纸页上停一下，让占位线退场、标题换成「准备好了」，再替换到阅读页
@@ -29,6 +31,8 @@ const FINISH_DELAY = 560
 const CANCEL_DELAY = 360
 
 const router = useRouter()
+const auth = useAuthStore()
+const toast = useToast()
 const store = useReadingStore()
 const { phase, summary, task, cancelling, cancel, dismiss, resume } = useGenerateReading()
 // 只影响纸页上的标识：失败后仍要能看出这次花的是自己的 Key
@@ -82,10 +86,20 @@ function handleCancel() {
   cancel()
 }
 
-// 与生成同时进行，读不到就只是不显示标识，不阻塞建任务
-onMounted(loadOwnKey)
+// 与生成同时进行，读不到就只是不显示标识，不阻塞建任务；
+// 游客没有 Key 可读，跳过请求（md/45 §3.4）
+onMounted(() => {
+  if (auth.isAuthenticated) loadOwnKey()
+})
 
 onMounted(() => {
+  // 游客没有生成参数，回设置页，避免在空白纸页上打转（md/45 §3.4）
+  if (!auth.isAuthenticated) {
+    toast.info('登录后才能生成文章')
+    router.replace('/settings')
+    return
+  }
+
   if (handoff) {
     armed.value = true
     store.generate(handoff.payload, {

@@ -9,6 +9,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import BaseButton from '../../component/BaseButton.vue'
 import ConfirmDialog from '../../component/ConfirmDialog.vue'
 import EmptyState from '../../component/EmptyState.vue'
+import GuestNotice from '../../component/GuestNotice.vue'
 import PaginationBar from '../../component/PaginationBar.vue'
 import StatusPill from '../../component/StatusPill.vue'
 import WordDetailPopover from '../../component/WordDetailPopover.vue'
@@ -16,13 +17,26 @@ import BasicStats from './component/BasicStats.vue'
 import GroupTabs from './component/GroupTabs.vue'
 import WordCardGrid from './component/WordCardGrid.vue'
 import WordIndexToolbar from './component/WordIndexToolbar.vue'
+import { useAuthGate } from '../../composables/useAuthGate'
 import { useToast } from '../../composables/useToast'
+import { useAuthStore } from '../../stores/model/auth'
 import { useBasicWordsStore } from '../../stores/model/basic-words'
-import { statusOf } from '../../unit/basic-words'
+import { BASIC_STATUS_OPTIONS, statusOf } from '../../unit/basic-words'
 import { basicWordDetail } from '../../unit/word-detail'
 
 const store = useBasicWordsStore()
 const toast = useToast()
+const auth = useAuthStore()
+const { goLogin } = useAuthGate()
+// 游客看得到真实词表（公开内容），只是个人状态与写操作不可用（md/45 §5.3）
+const isGuest = computed(() => !auth.isAuthenticated)
+
+// 游客没有个人状态可筛：只保留「全部状态 / 未标记」，二者在公开接口下等价
+const statusOptions = computed(() =>
+  isGuest.value
+    ? BASIC_STATUS_OPTIONS.filter((option) => option.value === 'all' || option.value === 'unknown')
+    : BASIC_STATUS_OPTIONS,
+)
 
 // 待确认的「标为不认识」目标；为空即对话框关闭
 const removeTarget = ref(null)
@@ -89,6 +103,13 @@ watch(
 
 onMounted(() => store.fetchList())
 
+// 登录态变化：清空后按新的数据源重拉，避免上一个账号的列表留在页面上
+watch(isGuest, () => {
+  detailTarget.value = null
+  store.reset()
+  store.fetchList()
+})
+
 // 离开页面就清空：下次进来从第 1 页、基础词、全部状态开始，不继承上次的筛选
 onBeforeUnmount(() => store.reset())
 
@@ -120,6 +141,12 @@ function handleDetailOpen(value) {
 }
 
 function handleRemove(item) {
+  // 游客态菜单已隐藏，这里兜底：任何路径走到写操作都先去登录
+  if (isGuest.value) {
+    goLogin('/basic-words')
+    return
+  }
+
   removeTarget.value = item
 }
 
@@ -142,6 +169,11 @@ async function handleConfirmRemove() {
 }
 
 async function handleRestore(item) {
+  if (isGuest.value) {
+    goLogin('/basic-words')
+    return
+  }
+
   const result = await store.restore(item.word)
 
   if (result.ok) {
@@ -160,7 +192,7 @@ async function handleRestore(item) {
       <p class="page-desc">积累每一个单词，拓宽你的阅读世界</p>
     </header>
 
-    <BasicStats class="stats" :counts="store.counts" />
+    <BasicStats class="stats" :counts="store.counts" :masked="isGuest" />
 
     <GroupTabs v-model="groupModel" class="tabs" :counts="store.counts" />
 
@@ -169,9 +201,18 @@ async function handleRestore(item) {
       :query="store.query"
       :status="store.status"
       :page-size="store.pageSize"
+      :status-options="statusOptions"
       @search="store.search"
       @update:status="store.setStatus"
       @update:page-size="store.setPageSize"
+    />
+
+    <GuestNotice
+      v-if="isGuest"
+      class="guest-notice"
+      title="登录后可标记认识程度"
+      description="浏览公开词表不需要登录，登录后可以标记「不认识」并恢复。"
+      @login="goLogin('/basic-words')"
     />
 
     <div class="list-area">
@@ -182,6 +223,7 @@ async function handleRestore(item) {
         :error="store.error"
         :pending-word="store.pendingWord"
         :expanded-word="detailTarget?.item.word || ''"
+        :readonly="isGuest"
         @retry="store.fetchList()"
         @remove="handleRemove"
         @restore="handleRestore"
@@ -258,6 +300,10 @@ async function handleRestore(item) {
 
 .toolbar,
 .list-area {
+  margin-top: var(--space-4);
+}
+
+.guest-notice {
   margin-top: var(--space-4);
 }
 

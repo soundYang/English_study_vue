@@ -10,6 +10,14 @@ export function fetchBasicWords(params = {}) {
   return apiGet('/basic-words', params)
 }
 
+/**
+ * 游客浏览基础词表：公开只读，后端不返回个人状态
+ * 与登录接口同参数同结构，personalStatus / removed 恒为公共值（md/50）
+ */
+export function fetchPublicBasicWords(params = {}) {
+  return apiGet('/public/basic-words', params)
+}
+
 /** 标记不认识：从个人基础词里移除这个词 */
 export function removeBasicWord(word) {
   return apiDelete(`/basic-words/${encodeURIComponent(word)}`)

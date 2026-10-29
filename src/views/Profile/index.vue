@@ -12,9 +12,10 @@
  *   - API 设置卡由自己读取自备 Key 状态；服务端未开启功能时整块隐藏，
  *     只剩账户设置卡时让它占满两列（md/43 §5.1）
  */
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import BaseButton from '../../component/BaseButton.vue'
+import GuestNotice from '../../component/GuestNotice.vue'
 import SkeletonBlock from '../../component/SkeletonBlock.vue'
 import AccountSettings from './component/AccountSettings.vue'
 import ApiSettings from './component/ApiSettings.vue'
@@ -24,6 +25,7 @@ import ProfileEditModal from './component/ProfileEditModal.vue'
 import ProfileHero from './component/ProfileHero.vue'
 import ProfileStats from './component/ProfileStats.vue'
 import { fetchProfile, fetchProfileStats } from '../../api/profile'
+import { useAuthGate } from '../../composables/useAuthGate'
 import { useToast } from '../../composables/useToast'
 import { normalizeApiError } from '../../errors'
 import { useAuthStore } from '../../stores/model/auth'
@@ -31,6 +33,9 @@ import { useAuthStore } from '../../stores/model/auth'
 const router = useRouter()
 const toast = useToast()
 const auth = useAuthStore()
+const { goLogin } = useAuthGate()
+// 游客看到遮罩后的页面结构，资料与统计请求一律不发（md/45 §5.6）
+const isGuest = computed(() => !auth.isAuthenticated)
 
 const user = ref(null)
 const stats = ref(null)
@@ -42,9 +47,36 @@ const editOpen = ref(false)
 const passwordOpen = ref(false)
 const feedbackOpen = ref(false)
 
-onMounted(load)
+onMounted(() => {
+  // 游客不发私人请求：关掉骨架，交给 masked 分支渲染占位
+  if (isGuest.value) {
+    loading.value = false
+    return
+  }
+  load()
+})
+
+// 登录态变化：掉线清掉私人资料并切回遮罩；登录成功重新拉取
+watch(isGuest, (guest) => {
+  user.value = null
+  stats.value = null
+  error.value = ''
+  errorRequestId.value = ''
+
+  if (guest) {
+    loading.value = false
+    return
+  }
+
+  load()
+})
 
 async function load() {
+  if (isGuest.value) {
+    loading.value = false
+    return
+  }
+
   loading.value = true
   error.value = ''
   errorRequestId.value = ''
@@ -97,6 +129,7 @@ async function handleLogout() {
   <section class="profile-page">
     <h1 class="sr-only">个人中心</h1>
     <p v-if="loading" class="sr-only" role="status">正在加载个人中心</p>
+    <p v-else-if="isGuest" class="sr-only">正在以游客身份浏览</p>
 
     <div v-if="error" class="state-card" role="alert">
       <p class="state-title">个人中心加载失败</p>
@@ -117,6 +150,20 @@ async function handleLogout() {
 
       <div class="skeleton-stats" aria-hidden="true">
         <SkeletonBlock v-for="index in 3" :key="index" height="176px" radius="var(--radius-lg)" />
+      </div>
+    </template>
+
+    <template v-else-if="isGuest">
+      <ProfileHero masked />
+      <ProfileStats masked />
+
+      <div class="settings-grid">
+        <GuestNotice
+          compact
+          title="登录后管理账号、密码与 API Key"
+          description="你的资料、统计与设置都会保存在账号里。"
+          @login="goLogin('/profile')"
+        />
       </div>
     </template>
 
@@ -172,6 +219,11 @@ async function handleLogout() {
 /* API 设置卡在服务端关闭功能时整块不渲染；只剩账户设置时占满整行，
    避免右半边留一块空白（注释节点不参与 :only-child 判断） */
 .settings-grid > .settings-card:only-child {
+  grid-column: 1 / -1;
+}
+
+/* 游客态只有一张提示卡，占满整行，避免右半边空着 */
+.settings-grid > .guest-notice {
   grid-column: 1 / -1;
 }
 

@@ -74,6 +74,43 @@ describe('auth guard', () => {
     ).toBe(true)
   })
 
+  it('should let guest browse pages through without a token', async () => {
+    // md/45：业务页自己决定遮罩，不再统一送去登录
+    expect(
+      await handlers.before({
+        name: 'words',
+        fullPath: '/words',
+        meta: { title: '我的单词', guestMode: 'browse' },
+      }),
+    ).toBe(true)
+    expect(
+      await handlers.before({
+        name: 'reading',
+        fullPath: '/readings/r1',
+        params: { id: 'r1' },
+        meta: { guestMode: 'gate' },
+      }),
+    ).toBe(true)
+    expect(
+      await handlers.before({
+        name: 'generating',
+        fullPath: '/generating',
+        meta: { guestMode: 'redirect' },
+      }),
+    ).toBe(true)
+  })
+
+  it('should still require a token without guestMode', async () => {
+    // fail-safe：新加的保护页忘了标注时，默认仍然拦截
+    const outcome = await handlers.before({
+      name: 'unknown-protected',
+      fullPath: '/unknown',
+      meta: {},
+    })
+
+    expect(outcome).toEqual({ name: 'login', query: { redirect: '/unknown' } })
+  })
+
   it('should let a protected visit with a token through', async () => {
     localStore.set(storageKeys.accessToken, 'sess_test')
 

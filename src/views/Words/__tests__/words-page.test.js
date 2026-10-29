@@ -10,12 +10,14 @@ import WordsView from '../index.vue'
 import { resetMockDb, setMockLatency } from '../../../mock/adapter'
 import { useToastStore } from '../../../stores/model/toast'
 import { useWordsStore } from '../../../stores/model/words'
-import { storageKeys } from '../../../unit/storage'
+import { localStore, storageKeys } from '../../../unit/storage'
 
 let wrapper = null
 
 beforeEach(() => {
   localStorage.clear()
+  // 本文件测的是登录后的完整交互；游客态的分支另有独立用例（md/45）
+  localStore.set(storageKeys.accessToken, 'sess_words_page')
   resetMockDb()
   setMockLatency(0)
 })

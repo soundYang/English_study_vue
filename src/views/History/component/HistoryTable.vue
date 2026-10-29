@@ -9,9 +9,12 @@
  * props:
  *   items   — 历史记录数组
  *   loading — 加载中显示 8 行骨架
+ *   masked  — 游客态：渲染 5 行占位数据，点击整行触发 login
  * emits:
- *   open — 打开记录，参数为记录对象
+ *   open  — 打开记录，参数为记录对象
+ *   login — 游客点击占位行，父级带去登录
  */
+import GuestMask from '../../../component/GuestMask.vue'
 import SkeletonBlock from '../../../component/SkeletonBlock.vue'
 import StatusPill from '../../../component/StatusPill.vue'
 import { formatDate, formatPercent } from '../../../unit/format'
@@ -19,9 +22,13 @@ import { formatDate, formatPercent } from '../../../unit/format'
 defineProps({
   items: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
+  masked: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['open'])
+const emit = defineEmits(['open', 'login'])
+
+// 游客占位行数：足够撑出列表的体量感，又不至于让页面显得很长
+const MASKED_ROWS = 5
 
 function isSubmitted(item) {
   return item.status === 'submitted'
@@ -72,6 +79,34 @@ function rowDelay(index) {
         </tr>
       </tbody>
 
+      <!-- 游客占位：表头保留（说明这一页有什么），数据行全部遮罩，点击任意行去登录 -->
+      <tbody v-else-if="masked">
+        <tr
+          v-for="row in MASKED_ROWS"
+          :key="`masked-${row}`"
+          class="history-row is-masked"
+          :style="rowDelay(row - 1)"
+          @click="emit('login')"
+        >
+          <td class="cell-date">----/--/--</td>
+          <td class="cell-title">
+            <GuestMask />
+          </td>
+          <td>
+            <span class="guest-pill">难度</span>
+          </td>
+          <td class="cell-count">--</td>
+          <td>
+            <span class="cell-accuracy">
+              <GuestMask mode="number" /><span class="mask-unit">%</span>
+            </span>
+          </td>
+          <td class="cell-action">
+            <button type="button" class="row-action" @click.stop="emit('login')">登录后查看</button>
+          </td>
+        </tr>
+      </tbody>
+
       <tbody v-else>
         <tr
           v-for="(item, index) in items"
@@ -88,7 +123,7 @@ function rowDelay(index) {
             </span>
           </td>
           <td class="cell-title">
-            <span :title="item.title">{{ item.title }}</span>
+            <span class="title-text" :title="item.title">{{ item.title }}</span>
           </td>
           <td>
             <StatusPill kind="level" :value="item.level" />
@@ -205,7 +240,7 @@ function rowDelay(index) {
   line-height: var(--leading-caption);
 }
 
-.cell-title span {
+.title-text {
   display: block;
   overflow: hidden;
   color: var(--color-ink);
@@ -221,6 +256,29 @@ function rowDelay(index) {
 
 .cell-accuracy {
   font-weight: 500;
+}
+
+/* 游客占位：难度格与真实 pill 同高同形，但只示意、不承载数据 */
+.guest-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-deep);
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+}
+
+.mask-unit {
+  margin-left: 2px;
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+}
+
+.is-masked {
+  cursor: pointer;
 }
 
 .cell-action {

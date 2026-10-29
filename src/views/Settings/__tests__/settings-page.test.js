@@ -11,7 +11,7 @@ import SettingsPage from '../index.vue'
 import LengthPicker from '../component/LengthPicker.vue'
 import { fetchQuota } from '../../../api/quota'
 import { resetMockDb, setMockLatency } from '../../../mock/adapter'
-import { storageKeys } from '../../../unit/storage'
+import { localStore, storageKeys } from '../../../unit/storage'
 
 // 额度只影响「开始生成」按钮与提示，单独替换掉，避免每个页面用例都依赖 mock 快照
 vi.mock('../../../api/quota', () => ({ fetchQuota: vi.fn() }))
@@ -45,7 +45,10 @@ function seedSettings(settings) {
 function createTestRouter() {
   return createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/settings', name: 'settings', component: SettingsPage }],
+    routes: [
+      { path: '/settings', name: 'settings', component: SettingsPage },
+      { path: '/login', name: 'login', component: { template: '<div />' } },
+    ],
   })
 }
 
@@ -73,6 +76,8 @@ async function mountSettings() {
 
 beforeEach(() => {
   localStorage.clear()
+  // 预检与额度只对登录用户请求；游客态另有独立用例（md/45 §5.4）
+  localStore.set(storageKeys.accessToken, 'sess_settings_page')
   resetMockDb()
   setMockLatency(0)
   vi.clearAllMocks()
@@ -240,5 +245,29 @@ describe('settings page daily quota', () => {
     // fail-open：额度未知不挡人，真没额度时后端建任务会返回 429
     expect(generate.attributes('disabled')).toBeUndefined()
     expect(wrapper.find('.quota-note').exists()).toBe(false)
+  })
+})
+
+describe('settings page · guest', () => {
+  it('should skip quota and explain that capacity needs an account', async () => {
+    localStore.remove(storageKeys.accessToken)
+
+    const wrapper = await mountSettings()
+
+    expect(fetchQuota).not.toHaveBeenCalled()
+    expect(wrapper.get('.capacity-note').text()).toContain('登录后可检查')
+  })
+
+  it('should still save local settings without an account', async () => {
+    localStore.remove(storageKeys.accessToken)
+
+    const wrapper = await mountSettings()
+    const saveButton = wrapper.findAll('button').find((button) => button.text() === '保存设置')
+
+    await saveButton.trigger('click')
+    await flushPromises()
+
+    // 设置项写本地不会产生副作用，游客也能保存（md/45 §5.4）
+    expect(JSON.parse(localStorage.getItem(storageKeys.settings))).toBeTruthy()
   })
 })

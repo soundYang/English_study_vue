@@ -303,3 +303,32 @@ describe('Auth page', () => {
     expect(wrapper.text()).toContain('验证码不对')
   })
 })
+
+describe('auth page · skip browsing', () => {
+  it('should offer a skip link on both tabs', async () => {
+    await mountPage('/login')
+    expect(wrapper.get('.auth-skip').text()).toContain('先逛逛')
+    expect(wrapper.get('.auth-skip').attributes('href')).toBe('/')
+
+    await mountPage('/register')
+    expect(wrapper.get('.auth-skip').attributes('href')).toBe('/')
+  })
+
+  it('should skip back to the page the guest came from', async () => {
+    await mountPage('/login?redirect=/profile')
+
+    expect(wrapper.get('.auth-skip').attributes('href')).toBe('/profile')
+
+    await wrapper.get('.auth-skip').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('profile')
+  })
+
+  it('should send a reading redirect home instead of a gated page', async () => {
+    // 阅读页对游客是整页登录引导，回跳它等于原地打转（md/45 §5.9）
+    await mountPage('/login?redirect=/readings/r5')
+
+    expect(wrapper.get('.auth-skip').attributes('href')).toBe('/')
+  })
+})

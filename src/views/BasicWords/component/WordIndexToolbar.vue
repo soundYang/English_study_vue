@@ -11,10 +11,11 @@
  * 45 字符是后端的搜索词上限，超了会 400，所以直接在输入框拦住。
  *
  * props:
- *   query    — 当前生效的搜索词
- *   status   — 状态筛选值（all / unknown / known / removed）
- *   pageSize — 每页条数（100 / 50）
- *   disabled — 请求进行中时禁用筛选
+ *   query         — 当前生效的搜索词
+ *   status        — 状态筛选值（all / unknown / known / removed）
+ *   pageSize      — 每页条数（100 / 50）
+ *   statusOptions — 状态筛选项；游客态由页面收窄为 all / unknown
+ *   disabled      — 请求进行中时禁用筛选
  * emits:
  *   search / update:status / update:page-size
  */
@@ -30,6 +31,7 @@ const props = defineProps({
   query: { type: String, default: '' },
   status: { type: String, default: 'all' },
   pageSize: { type: Number, default: 100 },
+  statusOptions: { type: Array, default: () => BASIC_STATUS_OPTIONS },
   disabled: { type: Boolean, default: false },
 })
 
@@ -117,7 +119,7 @@ onBeforeUnmount(cancelTimer)
     <div class="filters">
       <DropdownSelect
         :model-value="status"
-        :options="BASIC_STATUS_OPTIONS"
+        :options="statusOptions"
         aria-label="按标记状态筛选"
         :disabled="disabled"
         @update:model-value="emit('update:status', $event)"

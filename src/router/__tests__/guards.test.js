@@ -64,6 +64,23 @@ describe('reading route guard', () => {
     expect(await handlers.before({ name: 'home', params: {} })).toBe(true)
   })
 
+  it('should not preload a reading for a guest', async () => {
+    localStore.remove(storageKeys.accessToken)
+    const store = useReadingStore()
+
+    const route = {
+      name: 'reading',
+      fullPath: '/readings/r5',
+      params: { id: 'r5' },
+      meta: { guestMode: 'gate' },
+    }
+
+    expect(await handlers.before(route)).toBe(true)
+    // 游客由页面画整页登录引导，详情请求要留到登录之后（md/45 §3.3）
+    expect(store.reading).toBeNull()
+    expect(store.loadError).toBeNull()
+  })
+
   it('should update the document title after navigation', () => {
     handlers.after({ meta: { title: '我的单词' } })
     expect(document.title).toBe('我的单词 · Word Reading')

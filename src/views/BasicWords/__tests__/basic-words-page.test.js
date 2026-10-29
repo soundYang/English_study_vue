@@ -9,9 +9,11 @@ import { createPinia, setActivePinia } from 'pinia'
 import BasicWordsView from '../index.vue'
 import { fetchBasicWords, removeBasicWord, restoreBasicWord } from '../../../api/basic-words'
 import { useToastStore } from '../../../stores/model/toast'
+import { localStore, storageKeys } from '../../../unit/storage'
 
 vi.mock('../../../api/basic-words', () => ({
   fetchBasicWords: vi.fn(),
+  fetchPublicBasicWords: vi.fn(),
   removeBasicWord: vi.fn(),
   restoreBasicWord: vi.fn(),
 }))
@@ -85,6 +87,8 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.resetAllMocks()
+  // 本文件测登录后的个人状态与写操作；游客只读另有独立用例（md/45 §5.3）
+  localStore.set(storageKeys.accessToken, 'sess_basic_words_page')
   fetchBasicWords.mockResolvedValue(makePage())
 })
 

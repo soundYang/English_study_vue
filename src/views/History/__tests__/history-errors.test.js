@@ -6,7 +6,9 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import HistoryPage from '../index.vue'
+import { localStore, storageKeys } from '../../../unit/storage'
 
 const { fetchHistoryMock } = vi.hoisted(() => ({ fetchHistoryMock: vi.fn() }))
 
@@ -65,6 +67,9 @@ async function mountHistory() {
 
 beforeEach(() => {
   fetchHistoryMock.mockReset()
+  setActivePinia(createPinia())
+  // 错误态只对登录用户出现；游客态由遮罩分支接管（md/45）
+  localStore.set(storageKeys.accessToken, 'sess_history_errors')
 
   window.matchMedia = vi.fn().mockImplementation((query) => ({
     matches: query.includes('prefers-reduced-motion'),

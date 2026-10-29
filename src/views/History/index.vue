@@ -4,16 +4,19 @@
  * 组合统计卡、难度筛选、记录表/移动端列表与分页；点击记录进入结果页或继续答题。
  * 统计取自接口 stats（全量），未提交记录不展示判分；请求用序号隔离，避免快速切换筛选时旧响应覆盖新数据。
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import BaseButton from '../../component/BaseButton.vue'
 import DropdownSelect from '../../component/DropdownSelect.vue'
 import EmptyState from '../../component/EmptyState.vue'
+import GuestNotice from '../../component/GuestNotice.vue'
 import PaginationBar from '../../component/PaginationBar.vue'
 import StatsGrid from './component/StatsGrid.vue'
 import HistoryTable from './component/HistoryTable.vue'
 import HistoryMobileList from './component/HistoryMobileList.vue'
 import { fetchHistory } from '../../api/readings'
+import { useAuthGate } from '../../composables/useAuthGate'
+import { useAuthStore } from '../../stores/model/auth'
 import { normalizeApiError } from '../../errors'
 
 const PAGE_SIZE = 10
@@ -26,6 +29,10 @@ const LEVEL_OPTIONS = [
 ]
 
 const router = useRouter()
+const auth = useAuthStore()
+const { goLogin } = useAuthGate()
+// 游客可浏览统计卡与列表结构，私人数据不请求（md/45 §5.5）
+const isGuest = computed(() => !auth.isAuthenticated)
 
 const level = ref('all')
 const page = ref(1)
@@ -41,8 +48,14 @@ const errorRequestId = ref('')
 let requestSeq = 0
 
 const isFiltered = computed(() => level.value !== 'all')
+// 游客态没有真实记录，不能落到「还没有练习记录」空态，否则等于告诉游客账号是空的
 const showEmpty = computed(
-  () => !loading.value && !error.value && total.value === 0 && items.value.length === 0,
+  () =>
+    !isGuest.value &&
+    !loading.value &&
+    !error.value &&
+    total.value === 0 &&
+    items.value.length === 0,
 )
 
 const emptyMeta = computed(() => {
@@ -61,14 +74,45 @@ const emptyMeta = computed(() => {
   }
 })
 
-onMounted(load)
+onMounted(() => {
+  // 游客不发私人请求：关掉骨架，交给 masked 分支渲染占位
+  if (isGuest.value) {
+    loading.value = false
+    return
+  }
+  load()
+})
 
 onBeforeUnmount(() => {
   // 卸载后到达的响应直接作废，避免继续写入已销毁页面
   requestSeq += 1
 })
 
+// 登录态变化：掉线清掉私人数据并切回遮罩；登录成功回到第一页重新拉取
+watch(isGuest, (guest) => {
+  requestSeq += 1
+  items.value = []
+  stats.value = null
+  total.value = 0
+  error.value = ''
+  errorRequestId.value = ''
+  level.value = 'all'
+  page.value = 1
+
+  if (guest) {
+    loading.value = false
+    return
+  }
+
+  load()
+})
+
 async function load() {
+  if (isGuest.value) {
+    loading.value = false
+    return
+  }
+
   const current = (requestSeq += 1)
   loading.value = true
   error.value = ''
@@ -147,12 +191,18 @@ function handleEmptyAction() {
         class="head-filter"
         :model-value="level"
         :options="LEVEL_OPTIONS"
+        :disabled="isGuest"
         aria-label="按难度筛选"
         @update:model-value="changeLevel"
       />
     </header>
 
-    <StatsGrid class="history-stats" :stats="stats" :loading="loading && !stats" />
+    <StatsGrid
+      class="history-stats"
+      :stats="stats"
+      :loading="loading && !stats"
+      :masked="isGuest"
+    />
 
     <section
       class="history-list"
@@ -161,9 +211,18 @@ function handleEmptyAction() {
     >
       <span v-if="loading" class="sr-only" role="status">正在加载历史记录</span>
 
+      <GuestNotice
+        v-if="isGuest"
+        class="guest-notice"
+        title="登录后查看阅读历史"
+        @login="goLogin('/history')"
+      />
+
       <div class="list-head">
         <h2 id="history-list-title" class="list-title">练习记录</h2>
-        <span v-if="!loading && !error && total > 0" class="list-count">共 {{ total }} 条</span>
+        <span v-if="!isGuest && !loading && !error && total > 0" class="list-count">
+          共 {{ total }} 条
+        </span>
       </div>
 
       <div v-if="error" class="state-card" role="alert">
@@ -183,10 +242,22 @@ function handleEmptyAction() {
       />
 
       <template v-else>
-        <HistoryTable :items="items" :loading="loading" @open="openItem" />
-        <HistoryMobileList :items="items" :loading="loading" @open="openItem" />
+        <HistoryTable
+          :items="isGuest ? [] : items"
+          :loading="loading"
+          :masked="isGuest"
+          @open="openItem"
+          @login="goLogin('/history')"
+        />
+        <HistoryMobileList
+          :items="isGuest ? [] : items"
+          :loading="loading"
+          :masked="isGuest"
+          @open="openItem"
+          @login="goLogin('/history')"
+        />
 
-        <div v-if="!loading && total > 0" class="list-footer">
+        <div v-if="!isGuest && !loading && total > 0" class="list-footer">
           <p class="total-text">共 {{ total }} 条</p>
           <PaginationBar
             :page="page"
@@ -228,6 +299,11 @@ function handleEmptyAction() {
 .history-list {
   margin-top: var(--space-8);
   animation: history-rise var(--dur-page) var(--ease-out) 60ms both;
+}
+
+/* 游客提示条与下方列表之间留出与常规列表头一致的间距 */
+.guest-notice {
+  margin-bottom: var(--space-4);
 }
 
 .list-head {

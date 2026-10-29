@@ -28,6 +28,13 @@ function createTestRouter() {
     routes: [
       { path: '/', name: 'home', component: StubView, meta: { public: true } },
       { path: '/profile', name: 'profile', component: StubView, meta: {} },
+      { path: '/history', name: 'history', component: StubView, meta: { guestMode: 'browse' } },
+      {
+        path: '/readings/:id',
+        name: 'reading',
+        component: StubView,
+        meta: { guestMode: 'gate' },
+      },
       { path: '/login', name: 'login', component: StubView, meta: { bare: true } },
     ],
   })
@@ -85,6 +92,28 @@ describe('App auth expiry', () => {
     await flushPromises()
 
     expect(router.currentRoute.value.fullPath).toBe('/')
+  })
+
+  it('should stay on a browse-mode page when the session expires', async () => {
+    localStore.set(storageKeys.accessToken, 'sess_app')
+    const { router } = await mountApp('/history')
+
+    window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT))
+    await flushPromises()
+
+    // 业务页支持游客态：掉线就留在原页切遮罩，不再把人踢去登录（md/45 §3.4）
+    expect(router.currentRoute.value.fullPath).toBe('/history')
+    expect(localStore.get(storageKeys.accessToken, '')).toBe('')
+  })
+
+  it('should stay on a gate-mode page when the session expires', async () => {
+    localStore.set(storageKeys.accessToken, 'sess_app')
+    const { router } = await mountApp('/readings/1')
+
+    window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT))
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/readings/1')
   })
 
   it('should send an expired session on a protected page to login with redirect', async () => {

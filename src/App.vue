@@ -29,8 +29,9 @@ function handleAuthExpired() {
   // 本来就没有登录态：公开页上的 401 不需要再跳一次登录
   if (!wasAuthenticated) return
 
-  // 登录过期后留在公开页，顶栏自然切成「登录 / 注册」
+  // 登录过期后留在公开页 / 游客可浏览页，页面自己切遮罩，顶栏自然切成「登录 / 注册」（md/45 §3.5）
   if (route.meta.public) return
+  if (route.meta.guestMode === 'browse' || route.meta.guestMode === 'gate') return
 
   router.replace({
     name: 'login',

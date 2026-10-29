@@ -8,9 +8,11 @@ import { createPinia, setActivePinia } from 'pinia'
 import { fetchBasicWords, removeBasicWord, restoreBasicWord } from '../../api/basic-words'
 import { BusinessError } from '../../errors'
 import { useBasicWordsStore } from '../model/basic-words'
+import { localStore, storageKeys } from '../../unit/storage'
 
 vi.mock('../../api/basic-words', () => ({
   fetchBasicWords: vi.fn(),
+  fetchPublicBasicWords: vi.fn(),
   removeBasicWord: vi.fn(),
   restoreBasicWord: vi.fn(),
 }))
@@ -65,6 +67,9 @@ function flush() {
 }
 
 beforeEach(() => {
+  localStorage.clear()
+  // 本文件测个人数据源与写操作；游客公开数据源另有独立用例（md/45 §5.3）
+  localStore.set(storageKeys.accessToken, 'sess_basic_words_store')
   setActivePinia(createPinia())
   vi.resetAllMocks()
   fetchBasicWords.mockResolvedValue(makePage())
