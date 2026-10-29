@@ -43,12 +43,14 @@ const uid = useId()
 const titleId = `modal-title-${uid}`
 const descriptionId = `modal-desc-${uid}`
 
+// tabindex="-1" 的元素（如隐藏的文件选择框）能接收脚本 focus，但不该进 Tab 循环；
+// 否则焦点陷阱会把 Tab 停在看不见的节点上。
 const FOCUSABLE_SELECTOR = [
-  'a[href]',
-  'button:not([disabled])',
-  'textarea:not([disabled])',
-  'input:not([disabled])',
-  'select:not([disabled])',
+  'a[href]:not([tabindex="-1"])',
+  'button:not([disabled]):not([tabindex="-1"])',
+  'textarea:not([disabled]):not([tabindex="-1"])',
+  'input:not([disabled]):not([tabindex="-1"])',
+  'select:not([disabled]):not([tabindex="-1"])',
   '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 

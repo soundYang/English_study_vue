@@ -188,3 +188,69 @@ describe('words store', () => {
     expect(store.items).toHaveLength(10)
   })
 })
+
+describe('words store file import', () => {
+  /** 生成只含字母的唯一词，避免序号里的数字触发 WORD_PATTERN */
+  function alphaWord(index) {
+    let value = index
+    let suffix = ''
+
+    do {
+      suffix = String.fromCharCode(97 + (value % 26)) + suffix
+      value = Math.floor(value / 26) - 1
+    } while (value >= 0)
+
+    return `test${suffix}`
+  }
+
+  it('should expose file extraction through the store', async () => {
+    const store = useWordsStore()
+
+    const result = await store.extractImportFile(
+      new File(['apple 苹果'], 'words.txt', { type: 'text/plain' }),
+    )
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { source: 'txt', stats: { total: 1, valid: 1, invalid: 0 } },
+    })
+  })
+
+  it('should submit 201 rows as 200 + 1 and remap errors to the file index', async () => {
+    const store = useWordsStore()
+    await store.fetchList()
+
+    const rows = Array.from({ length: 201 }, (_, index) => ({
+      index,
+      word: alphaWord(index),
+      meaning: '',
+    }))
+    rows[200] = { index: 999, word: 'bad word', meaning: '' }
+    const progress = []
+
+    const result = await store.importBatch({
+      rows,
+      status: 'learning',
+      onProgress: (done, total) => progress.push([done, total]),
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.data).toMatchObject({ created: 200, failed: 1, total: 201 })
+    // 第二批只发 1 条，错误下标必须加回 200 的偏移，再映射到文件行号
+    expect(result.data.errors[0]).toMatchObject({ index: 999, word: 'bad word' })
+    expect(result.data.chunkErrors).toEqual([])
+    expect(progress).toEqual([
+      [1, 2],
+      [2, 2],
+    ])
+    expect(store.total).toBe(224)
+  })
+
+  it('should reject an empty file row list without calling the batch endpoint', async () => {
+    const store = useWordsStore()
+
+    const result = await store.importBatch({ rows: [] })
+
+    expect(result).toMatchObject({ ok: false, code: 'INVALID_REQUEST' })
+  })
+})

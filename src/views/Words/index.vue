@@ -371,6 +371,7 @@ function reload() {
       v-model:open="batchOpen"
       :preview-batch="store.previewBatch"
       :submit-batch="store.importBatch"
+      :extract-file="store.extractImportFile"
       @imported="handleBatchImported"
     />
 

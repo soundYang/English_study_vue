@@ -32,6 +32,11 @@ export const WORD_MAX_LENGTH = 45
 // 真实词库有 5 条释义在 101–163 字之间，上限放到 200 才能选中保存
 export const MEANING_MAX_LENGTH = 200
 export const VOCABULARY_THRESHOLD = 20
+// 批量写入单次上限（后端 words.schema.js）；文件解析最多返回 500 条，
+// 因此文件导入必须按 200 条分批串行提交，不能一次全发。
+export const WORD_BATCH_MAX = 200
+export const IMPORT_MAX_ROWS = 500
+export const IMPORT_MAX_FILE_BYTES = 5 * 1024 * 1024
 
 const WORD_PATTERN = /^[a-z'-]+$/
 

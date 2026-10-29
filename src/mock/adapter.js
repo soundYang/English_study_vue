@@ -10,6 +10,8 @@ import { localStore, storageKeys } from '../unit/storage'
 import { countWords } from '../unit/format'
 import {
   firstError,
+  IMPORT_MAX_FILE_BYTES,
+  IMPORT_MAX_ROWS,
   isValidWordStatus,
   LEVELS,
   normalizeVocabScope,
@@ -19,6 +21,7 @@ import {
   validateSettings,
   validateWordInput,
   VOCABULARY_THRESHOLD,
+  WORD_BATCH_MAX,
 } from '../unit/validators'
 
 // v4：单词新增 cocaRank（词频徽标要用）；v3 起练习带 newWords / tokenUsage。
@@ -57,7 +60,6 @@ const USER_API_KEY_MASK_PREFIX = 'sk-****'
 const USER_API_KEY_PROVIDERS = ['deepseek']
 // 添加单词优化（md/44）：上限、批量条数与文本长度都与后端 schema 同口径
 const WORD_LIBRARY_LIMIT = 5000
-const WORD_BATCH_MAX = 200
 const WORD_BATCH_TEXT_MAX = 32768
 
 /** 写 targetWords 词至少要认识多少词；与后端 capacity-table.js 的 minKnownFor 同构 */
@@ -1401,6 +1403,209 @@ function parseWordBatchText(text) {
   return entries
 }
 
+/** 文件导入的 Mock 支持范围；真实后端的类型判断按文件内容，Mock 只能看文件名 / MIME */
+function mockImportSource(file) {
+  const name = String(file?.name || '').toLowerCase()
+  const type = String(file?.type || '').toLowerCase()
+
+  if (name.endsWith('.docx') || type.includes('wordprocessingml')) return 'docx'
+  if (name.endsWith('.xlsx') || type.includes('spreadsheetml')) return 'xlsx'
+  if (name.endsWith('.csv') || type === 'text/csv') return 'csv'
+  if (
+    name.endsWith('.txt') ||
+    name.endsWith('.md') ||
+    type === 'text/plain' ||
+    type === 'text/markdown'
+  ) {
+    return 'txt'
+  }
+  if (type.startsWith('image/') || /\.(png|jpe?g|webp)$/.test(name)) return 'image'
+  return ''
+}
+
+/** 读取文件文本；少量测试环境没有 File.text()，退回 FileReader */
+async function readMockFileText(file) {
+  if (typeof file?.text === 'function') return file.text()
+
+  if (typeof FileReader === 'undefined') {
+    throw new MockApiError('FILE_PARSE_FAILED', '无法读取文件内容，请重试。', 422, 'file')
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result ?? ''))
+    reader.onerror = () =>
+      reject(new MockApiError('FILE_PARSE_FAILED', '文件读取失败，请重试。', 422, 'file'))
+    reader.readAsText(file)
+  })
+}
+
+/**
+ * 解析 CSV（含 BOM、CRLF、引号内逗号 / 换行、双引号转义）
+ * 记录上保留起始行号（1 基），供 `rows[].index` 指回文件行。
+ */
+function parseCsvRecords(text) {
+  const source = String(text ?? '').replace(/^﻿/, '')
+  const records = []
+  let cells = []
+  let value = ''
+  let inQuotes = false
+  let line = 1
+  let recordLine = 1
+
+  function pushCell() {
+    cells.push(value)
+    value = ''
+  }
+
+  function pushRecord() {
+    pushCell()
+    if (cells.some((cell) => cell.trim() !== '')) records.push({ line: recordLine, cells })
+    cells = []
+  }
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index]
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (source[index + 1] === '"') {
+          value += '"'
+          index += 1
+        } else {
+          inQuotes = false
+        }
+      } else {
+        if (char === '\n') line += 1
+        value += char
+      }
+      continue
+    }
+
+    if (char === '"') {
+      inQuotes = true
+      continue
+    }
+    if (char === ',') {
+      pushCell()
+      continue
+    }
+    if (char === '\r') {
+      if (source[index + 1] === '\n') index += 1
+      pushRecord()
+      line += 1
+      recordLine = line
+      continue
+    }
+    if (char === '\n') {
+      pushRecord()
+      line += 1
+      recordLine = line
+      continue
+    }
+
+    value += char
+  }
+
+  pushRecord()
+  return records
+}
+
+const CSV_HEADER_WORDS = new Set(['word', 'words', '单词', '英文', '英文单词', 'vocabulary'])
+const CSV_HEADER_MEANINGS = new Set([
+  'meaning',
+  'meanings',
+  '释义',
+  '中文',
+  '中文释义',
+  'translation',
+  'sense',
+])
+
+function isCsvHeader(record) {
+  const first = String(record?.cells?.[0] ?? '')
+    .trim()
+    .toLowerCase()
+  const second = String(record?.cells?.[1] ?? '')
+    .trim()
+    .toLowerCase()
+
+  return CSV_HEADER_WORDS.has(first) && (!second || CSV_HEADER_MEANINGS.has(second))
+}
+
+/** 把文本类文件摊平成 { index, word, meaning }；index 为 0 基文件行号 */
+function extractMockImportRows(text, source) {
+  if (source === 'csv') {
+    const records = parseCsvRecords(text)
+    const first = records[0]
+    const dataRecords = first && isCsvHeader(first) ? records.slice(1) : records
+
+    return {
+      rows: dataRecords.map((record) => ({
+        index: record.line - 1,
+        word: String(record.cells[0] ?? '').trim(),
+        meaning: String(record.cells[1] ?? '').trim(),
+      })),
+      warnings: [],
+    }
+  }
+
+  const warnings = []
+  if (String(text ?? '').includes('\t')) {
+    warnings.push({
+      code: 'DELIMITER_DETECTED',
+      message: '检测到制表符分隔，已按「单词 + 释义」解析。',
+    })
+  }
+
+  return {
+    rows: parseWordBatchText(text).map((entry) => ({
+      index: entry.index,
+      word: entry.word,
+      meaning: entry.meaning,
+    })),
+    warnings,
+  }
+}
+
+/** 生成与真实后端同形状的解析响应；stats 按截断前的全部行统计 */
+function buildMockImportResponse(file, source, parsed) {
+  const allRows = parsed.rows.map((row) => {
+    const { valid, errors, word, meaning } = validateWordInput({
+      word: row.word,
+      meaning: row.meaning,
+      mode: 'manual',
+      senses: [],
+    })
+
+    return {
+      index: row.index,
+      word,
+      meaning,
+      valid,
+      ...(valid ? {} : { reason: firstError(errors).message }),
+    }
+  })
+  const warnings = [...parsed.warnings]
+  if (!allRows.length) {
+    warnings.unshift({ code: 'NO_TEXT', message: '没有从文件里识别到可导入的文本。' })
+  }
+
+  return {
+    source,
+    fileName: String(file?.name || '未命名文件'),
+    size: Number(file?.size) || 0,
+    rows: allRows.slice(0, IMPORT_MAX_ROWS),
+    stats: {
+      total: allRows.length,
+      valid: allRows.filter((row) => row.valid).length,
+      invalid: allRows.filter((row) => !row.valid).length,
+    },
+    truncated: allRows.length > IMPORT_MAX_ROWS,
+    warnings,
+  }
+}
+
 export const mockWords = {
   async list({ q = '', status = 'all', page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
     await wait(latency)
@@ -1835,6 +2040,99 @@ export const mockWords = {
       skippedItems,
       errors,
     }
+  },
+
+  /**
+   * 解析导入文件（md/48）
+   *
+   * Mock 只支持文本类文件（txt / md / csv），因为浏览器端没有 docx / xlsx / OCR 解析器。
+   * Word / Excel / 图片会返回带明确说明的 422，而不是伪造一份解析结果；
+   * 需要验证这三种格式时请连真实后端。响应字段与后端保持一致，组件无需分支。
+   */
+  async extractImport(file) {
+    await wait(latency)
+
+    if (!file || typeof file !== 'object') {
+      throw new MockApiError('INVALID_REQUEST', '请选择要上传的文件', 400, 'file')
+    }
+
+    const size = Number(file.size) || 0
+    if (size > IMPORT_MAX_FILE_BYTES) {
+      throw new MockApiError('PAYLOAD_TOO_LARGE', '文件不能超过 5MB', 413, 'file')
+    }
+
+    const name = String(file.name || '').toLowerCase()
+    const type = String(file.type || '').toLowerCase()
+
+    // 与后端一致：旧版 Office / PDF 先给「另存为」指引，不要只说「不支持」
+    if (/\.(doc|xls|pdf)$/.test(name)) {
+      if (name.endsWith('.doc')) {
+        throw new MockApiError(
+          'UNSUPPORTED_MEDIA_TYPE',
+          '暂不支持旧版 Word 格式，请另存为 .docx 后重试。',
+          415,
+          'file',
+        )
+      }
+      if (name.endsWith('.xls')) {
+        throw new MockApiError(
+          'UNSUPPORTED_MEDIA_TYPE',
+          '暂不支持旧版 Excel 格式，请另存为 .xlsx 后重试。',
+          415,
+          'file',
+        )
+      }
+      throw new MockApiError(
+        'UNSUPPORTED_MEDIA_TYPE',
+        '暂不支持 PDF，请上传 Word / Excel / CSV / 文本或图片。',
+        415,
+        'file',
+      )
+    }
+
+    const source = mockImportSource(file)
+    if (!source) {
+      throw new MockApiError(
+        'UNSUPPORTED_MEDIA_TYPE',
+        '不支持这种文件类型，请上传 Word / Excel / CSV / 文本或图片。',
+        415,
+        'file',
+      )
+    }
+
+    if (source === 'docx' || source === 'xlsx') {
+      throw new MockApiError(
+        'FILE_PARSE_FAILED',
+        `Mock 模式无法解析 ${source === 'docx' ? 'Word' : 'Excel'} 文件，请连接真实后端，或把内容粘贴到「粘贴文本」导入。`,
+        422,
+        'file',
+      )
+    }
+    if (source === 'image') {
+      throw new MockApiError(
+        'OCR_FAILED',
+        'Mock 模式无法识别图片文字，请连接真实后端，或把单词粘贴到「粘贴文本」导入。',
+        422,
+        'file',
+      )
+    }
+
+    // 少数环境把文本类型标成 application/octet-stream；只要不是二进制格式就按 txt 读
+    const resolvedSource = source === 'csv' || type === 'text/csv' ? 'csv' : 'txt'
+    let text
+
+    try {
+      text = await readMockFileText(file)
+    } catch (caught) {
+      if (caught instanceof MockApiError) throw caught
+      throw new MockApiError('FILE_PARSE_FAILED', '文件读取失败，请重试。', 422, 'file')
+    }
+
+    return buildMockImportResponse(
+      file,
+      resolvedSource,
+      extractMockImportRows(text, resolvedSource),
+    )
   },
 
   async update(id, patch = {}) {

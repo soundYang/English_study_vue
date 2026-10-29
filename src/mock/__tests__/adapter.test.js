@@ -704,3 +704,85 @@ describe('mockQuota', () => {
     expect(new Date(snapshot.resetAt).getTime()).toBeGreaterThan(Date.now())
   })
 })
+
+describe('mockWords.extractImport', () => {
+  it('should parse a text file, keep line indexes and mark invalid rows', async () => {
+    const file = new File(['apple 苹果\norchid\n123\n# 注释'], 'words.txt', { type: 'text/plain' })
+
+    const data = await mockWords.extractImport(file)
+
+    expect(data).toMatchObject({
+      source: 'txt',
+      fileName: 'words.txt',
+      truncated: false,
+      stats: { total: 3, valid: 2, invalid: 1 },
+      warnings: [],
+    })
+    expect(data.rows.map((row) => [row.index, row.word, row.meaning, row.valid])).toEqual([
+      [0, 'apple', '苹果', true],
+      [1, 'orchid', '', true],
+      [2, '123', '', false],
+    ])
+    expect(data.rows[2].reason).toBeTruthy()
+  })
+
+  it('should parse csv with a header, quoted commas and quoted newlines', async () => {
+    const csv = ['word,meaning', 'apple,苹果', '"give, up",放弃', 'orchid,"兰\n花"'].join('\n')
+    const file = new File([csv], 'words.csv', { type: 'text/csv' })
+
+    const data = await mockWords.extractImport(file)
+
+    expect(data.source).toBe('csv')
+    expect(data.stats).toEqual({ total: 3, valid: 2, invalid: 1 })
+    // 表头占第 1 行，所以第一条数据从第 2 行开始
+    expect(data.rows.map((row) => row.index)).toEqual([1, 2, 3])
+    expect(data.rows[0]).toMatchObject({ word: 'apple', meaning: '苹果', valid: true })
+    expect(data.rows[1]).toMatchObject({ word: 'give, up', valid: false })
+    expect(data.rows[2]).toMatchObject({ word: 'orchid', meaning: '兰\n花', valid: true })
+  })
+
+  it('should return NO_TEXT when nothing can be parsed', async () => {
+    const data = await mockWords.extractImport(new File([''], 'empty.txt', { type: 'text/plain' }))
+
+    expect(data.rows).toEqual([])
+    expect(data.stats).toEqual({ total: 0, valid: 0, invalid: 0 })
+    expect(data.warnings[0].code).toBe('NO_TEXT')
+  })
+
+  it('should truncate at 500 rows but keep the pre-truncation stats', async () => {
+    const text = Array.from({ length: 501 }, () => 'word').join('\n')
+    const file = new File([text], 'big.txt', { type: 'text/plain' })
+
+    const data = await mockWords.extractImport(file)
+
+    expect(data.rows).toHaveLength(500)
+    expect(data.truncated).toBe(true)
+    expect(data.stats).toEqual({ total: 501, valid: 501, invalid: 0 })
+  })
+
+  it('should reject oversized files and legacy office formats', async () => {
+    await expect(
+      mockWords.extractImport({
+        name: 'big.txt',
+        type: 'text/plain',
+        size: 5 * 1024 * 1024 + 1,
+        text: async () => '',
+      }),
+    ).rejects.toMatchObject({ error: { code: 'PAYLOAD_TOO_LARGE', field: 'file' } })
+
+    const legacy = new File(['x'], 'legacy.doc', { type: 'application/msword' })
+    await expect(mockWords.extractImport(legacy)).rejects.toMatchObject({
+      error: { code: 'UNSUPPORTED_MEDIA_TYPE', message: expect.stringContaining('另存为 .docx') },
+    })
+  })
+
+  it('should explain that mock mode cannot parse binary or image files', async () => {
+    await expect(
+      mockWords.extractImport(new File(['x'], 'unit.docx', { type: 'application/octet-stream' })),
+    ).rejects.toMatchObject({ error: { code: 'FILE_PARSE_FAILED', field: 'file' } })
+
+    await expect(
+      mockWords.extractImport(new File(['x'], 'shot.png', { type: 'image/png' })),
+    ).rejects.toMatchObject({ error: { code: 'OCR_FAILED', field: 'file' } })
+  })
+})

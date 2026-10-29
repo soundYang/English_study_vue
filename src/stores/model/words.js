@@ -10,10 +10,12 @@ import {
   batchWords,
   createWord,
   deleteWord as deleteWordRequest,
+  extractWordImport,
   fetchWords,
   updateWord as updateWordRequest,
 } from '../../api/words'
 import { normalizeApiError } from '../../errors'
+import { WORD_BATCH_MAX } from '../../unit/validators'
 
 export const DEFAULT_PAGE_SIZE = 10
 
@@ -198,6 +200,16 @@ export const useWordsStore = defineStore('words', () => {
     }
   }
 
+  /** 解析导入文件：只解析、不落库，返回行 / 统计 / 警告 */
+  async function extractImportFile(file) {
+    try {
+      const data = await extractWordImport(file)
+      return { ok: true, data }
+    } catch (caught) {
+      return toFailure(caught)
+    }
+  }
+
   /** 批量导入预览：只返回将新增 / 更新 / 跳过多少条，不落库 */
   async function previewBatch(payload = {}) {
     try {
@@ -209,12 +221,116 @@ export const useWordsStore = defineStore('words', () => {
   }
 
   /**
+   * 把 batch 响应里的相对下标映射回文件行号
+   *
+   * batch 接口只认识 `words[]`，返回的 `errors[].index` 是当前批次的数组下标；
+   * 文件导入多批提交时必须加回偏移量，否则第 2 批的错误会显示成「第 1 行」。
+   * 如果行上还保留了解析接口给的原始行号（CSV 表头、注释行），优先用它。
+   */
+  function remapIndexedItems(items, chunk, offset) {
+    return (items || []).map((item) => {
+      const position = Number(item?.index)
+      if (!Number.isInteger(position)) return { ...item }
+
+      const sourceIndex = chunk[position]?.index
+      return {
+        ...item,
+        index: Number.isInteger(sourceIndex) ? sourceIndex : offset + position,
+      }
+    })
+  }
+
+  function emptyImportResult() {
+    return {
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      failed: 0,
+      total: 0,
+      items: [],
+      skippedItems: [],
+      errors: [],
+      chunkErrors: [],
+    }
+  }
+
+  /**
+   * 文件行分批导入
+   *
+   * 解析接口最多返回 500 条，而 batch 单次只接受 200 条，所以按 200 条串行提交。
+   * 串行而不是并发：后端对 batch 有频率限制，并发只会更快撞 429。
+   * 某一批请求失败时继续跑后面的批次，失败条目计入 failed，并单独记录 chunkErrors。
+   */
+  async function importRows(rows, status, onProgress) {
+    const chunks = []
+    for (let start = 0; start < rows.length; start += WORD_BATCH_MAX) {
+      chunks.push(rows.slice(start, start + WORD_BATCH_MAX))
+    }
+
+    const combined = emptyImportResult()
+    let succeeded = 0
+    let lastFailure = null
+
+    for (let index = 0; index < chunks.length; index += 1) {
+      const chunk = chunks[index]
+      const offset = index * WORD_BATCH_MAX
+      const words = chunk.map((row) => ({
+        word: String(row?.word ?? '').trim(),
+        meaning: String(row?.meaning ?? '').trim(),
+      }))
+
+      try {
+        const data = await batchWords({ words, status, dryRun: false })
+        succeeded += 1
+        combined.created += data?.created || 0
+        combined.updated += data?.updated || 0
+        combined.skipped += data?.skipped || 0
+        combined.failed += data?.failed || 0
+        combined.total += data?.total ?? chunk.length
+        combined.items.push(...(data?.items || []))
+        combined.skippedItems.push(...remapIndexedItems(data?.skippedItems, chunk, offset))
+        combined.errors.push(...remapIndexedItems(data?.errors, chunk, offset))
+      } catch (caught) {
+        lastFailure = toFailure(caught)
+        // 这一批整批没发出去，行数也要算进「未导入」，否则 Toast 会少报
+        combined.failed += chunk.length
+        combined.total += chunk.length
+        combined.chunkErrors.push({
+          start: offset,
+          end: offset + chunk.length - 1,
+          message: lastFailure.message,
+          code: lastFailure.code || '',
+        })
+      }
+
+      onProgress?.(index + 1, chunks.length)
+    }
+
+    if (combined.created + combined.updated > 0) {
+      page.value = 1
+      await fetchList({ quiet: true })
+    }
+
+    // 一批都没成功时按失败返回；否则即使有单批失败，也把已成功的部分交给用户
+    if (succeeded === 0) return { ...lastFailure, ok: false, data: combined }
+    return { ok: true, data: combined }
+  }
+
+  /**
    * 正式批量导入
    *
    * 单条失败不会让整个请求失败（后端仍返回 200 + errors），
    * 这里只在确实有新增 / 更新时刷新列表，避免「全部跳过」也把页码打回第 1 页。
+   * `payload.rows` 是文件导入的行数组（≤500），会按 200 条分批；粘贴文本仍走原路径。
    */
   async function importBatch(payload = {}) {
+    if (Array.isArray(payload.rows)) {
+      if (!payload.rows.length) {
+        return { ok: false, errors: {}, message: '没有可导入的内容。', code: 'INVALID_REQUEST' }
+      }
+      return importRows(payload.rows, payload.status, payload.onProgress)
+    }
+
     try {
       const data = await batchWords({ ...payload, dryRun: false })
 
@@ -265,6 +381,7 @@ export const useWordsStore = defineStore('words', () => {
     addWord,
     updateWord,
     removeWord,
+    extractImportFile,
     previewBatch,
     importBatch,
     reset,

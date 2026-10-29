@@ -301,6 +301,38 @@ describe('Words page', () => {
     expect(toasts.items.map((item) => item.message)).toContain('批量导入完成：新增 2 个')
   })
 
+  it('should upload a text file, preview it and import it', async () => {
+    const wrapper = await mountPage()
+    const store = useWordsStore()
+    const toasts = useToastStore()
+
+    const batchButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('批量导入'))
+    await batchButton.trigger('click')
+    await flushPromises()
+
+    const fileTab = wrapper.findAll('button').find((button) => button.text() === '上传文件')
+    await fileTab.trigger('click')
+    await flushPromises()
+
+    const input = wrapper.get('input[type="file"]')
+    const file = new File(['zebra 斑马\norchid'], 'words.txt', { type: 'text/plain' })
+    Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+    await input.trigger('change')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已读取 2 条')
+
+    const importButton = wrapper.findAll('button').find((button) => button.text() === '确认导入')
+    await importButton.trigger('click')
+    await flushPromises()
+
+    expect(store.total).toBe(26)
+    expect(wrapper.text()).toContain('新增 2 个，更新 0 个')
+    expect(toasts.items.map((item) => item.message)).toContain('批量导入完成：新增 2 个')
+  })
+
   it('should confirm before deleting a word', async () => {
     const wrapper = await mountPage()
     const store = useWordsStore()
