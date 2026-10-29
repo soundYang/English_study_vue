@@ -14,13 +14,14 @@
  */
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { ArrowRight, BookOpen, Gift, Lock, Smartphone, UserRound } from 'lucide-vue-next'
+import { ArrowRight, BookOpen, Gift, Lock, Smartphone, UserRound, X } from 'lucide-vue-next'
 import BaseButton from '../../component/BaseButton.vue'
 import AuthField from './component/AuthField.vue'
 import CaptchaField from './component/CaptchaField.vue'
 import { fetchCaptcha } from '../../api/auth'
 import { config } from '../../config'
 import { MOCK_DEMO_CREDENTIALS } from '../../mock/adapter'
+import { localStore, storageKeys } from '../../unit/storage'
 import { useAuthStore } from '../../stores/model/auth'
 import { useToastStore } from '../../stores/model/toast'
 import authBg from '../../assets/images/auth-bg.jpg'
@@ -65,6 +66,14 @@ const captchaRef = ref(null)
 
 // 演示提示只在本地 mock 的开发环境出现，真实后端不会有这组账号
 const showDemoHint = computed(() => config.useMock && config.isDev)
+
+// 福利条允许关掉：记住选择，之后来登录页不再反复出现
+const showPromo = ref(!localStore.get(storageKeys.loginPromoDismissed, false))
+
+function dismissPromo() {
+  showPromo.value = false
+  localStore.set(storageKeys.loginPromoDismissed, true)
+}
 
 function clearErrors() {
   Object.keys(errors).forEach((key) => {
@@ -316,7 +325,7 @@ onMounted(() => {
           登录 / 注册共用的福利说明，只放这一处：
           每日免费次数与 token 活动一次说清，不散落到两个表单里
         -->
-        <div class="auth-offer" role="note" aria-label="登录福利">
+        <div v-if="showPromo" class="auth-offer" role="note" aria-label="登录福利">
           <span class="auth-offer-icon" aria-hidden="true">
             <Gift :size="16" :stroke-width="1.8" />
           </span>
@@ -324,6 +333,14 @@ onMounted(() => {
             <p class="auth-offer-title">登录后每日 3 次免费生成文章</p>
             <p class="auth-offer-sub">2 亿 token 先到先得</p>
           </div>
+          <button
+            type="button"
+            class="auth-offer-close"
+            aria-label="关闭福利说明"
+            @click="dismissPromo"
+          >
+            <X :size="14" :stroke-width="2" aria-hidden="true" />
+          </button>
         </div>
 
         <form v-if="!isRegister" class="auth-form" novalidate @submit.prevent="submitLogin">
@@ -604,7 +621,28 @@ onMounted(() => {
 }
 
 .auth-offer-copy {
+  flex: 1;
   min-width: 0;
+}
+
+.auth-offer-close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: -8px;
+  border-radius: 50%;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.auth-offer-close:hover {
+  background: rgba(143, 98, 54, 0.12);
+  color: var(--color-ink);
 }
 
 .auth-offer-title {
