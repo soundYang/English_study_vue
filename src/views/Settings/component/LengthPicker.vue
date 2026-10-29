@@ -248,7 +248,13 @@ function handleSpinKeydown(event) {
           </div>
 
           <!-- 601–1000 的入口：存在但当前拖不到，等个人词库攒够 3000 词 -->
-          <span v-if="lockedFinal" class="slider-locked" aria-hidden="true">最终模式</span>
+          <span
+            v-if="lockedFinal"
+            class="slider-locked"
+            aria-hidden="true"
+            style="line-height: normal"
+            >最终模式</span
+          >
         </div>
 
         <span class="slider-bound" aria-hidden="true">{{ sliderMax }}</span>
