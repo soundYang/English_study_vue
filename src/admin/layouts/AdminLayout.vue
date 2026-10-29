@@ -3,7 +3,7 @@
  * 后台布局
  *
  * 用途：管理员后台的侧栏、顶栏与内容区。与用户端 AppLayout 共用 tokens，
- *       但不铺森林插画、不复用用户导航——后台的导航只有概览 / 用户台账 / 用户反馈。
+ *       但不铺森林插画、不复用用户导航——后台的导航是概览 / 用户台账 / 用户反馈 / 日志。
  * 用法：由路由 `/admin` 的父级渲染，内部通过 RouterView 渲染子页面。
  *
  * 行为：
@@ -13,7 +13,14 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { LayoutDashboard, LogOut, MessageSquareText, ShieldCheck, Users } from 'lucide-vue-next'
+import {
+  LayoutDashboard,
+  LogOut,
+  MessageSquareText,
+  ScrollText,
+  ShieldCheck,
+  Users,
+} from 'lucide-vue-next'
 import { adminLogout } from '../api/auth'
 import { ADMIN_EXPIRED_EVENT } from '../api/http'
 import { adminAuth } from '../auth'
@@ -22,6 +29,7 @@ const navItems = [
   { key: 'overview', label: '概览', to: '/admin', icon: LayoutDashboard },
   { key: 'users', label: '用户台账', to: '/admin/users', icon: Users },
   { key: 'feedback', label: '用户反馈', to: '/admin/feedback', icon: MessageSquareText },
+  { key: 'logs', label: '日志', to: '/admin/logs', icon: ScrollText },
 ]
 
 const route = useRoute()
@@ -32,6 +40,7 @@ const signingOut = ref(false)
 const activeSection = computed(() => {
   if (route.path.startsWith('/admin/users')) return 'users'
   if (route.path.startsWith('/admin/feedback')) return 'feedback'
+  if (route.path.startsWith('/admin/logs')) return 'logs'
   return 'overview'
 })
 

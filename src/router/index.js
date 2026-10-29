@@ -128,6 +128,12 @@ const routes = [
         component: () => import('../admin/views/FeedbackDetail.vue'),
         meta: { title: '反馈详情' },
       },
+      {
+        path: 'logs',
+        name: 'admin-logs',
+        component: () => import('../admin/views/Logs.vue'),
+        meta: { title: '日志' },
+      },
     ],
   },
   {

@@ -17,6 +17,7 @@
  *   clickable   — 行可点击并可键盘进入
  *   skeletonRows— 骨架行数，默认 8
  *   minWidth    — 表格最小宽度，默认 1120px；详情页的内嵌表格可以更窄
+ *   rowClass    — (row) => string，按行追加类名（如登录失败整行淡红）
  * emits:
  *   row-click — 行点击 / Enter
  */
@@ -30,6 +31,7 @@ const props = defineProps({
   clickable: { type: Boolean, default: false },
   skeletonRows: { type: Number, default: 8 },
   minWidth: { type: String, default: '1120px' },
+  rowClass: { type: Function, default: null },
 })
 
 const emit = defineEmits(['row-click'])
@@ -67,7 +69,7 @@ function emitRow(row) {
         <tr
           v-for="row in rows"
           :key="row[rowKey]"
-          :class="{ 'is-clickable': clickable }"
+          :class="[{ 'is-clickable': clickable }, rowClass ? rowClass(row) : '']"
           :tabindex="clickable ? 0 : undefined"
           @click="emitRow(row)"
           @keydown.enter="emitRow(row)"
