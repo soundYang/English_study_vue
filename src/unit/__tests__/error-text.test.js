@@ -12,6 +12,17 @@ import {
 } from '../error-text'
 
 describe('describeVocabShortage', () => {
+  // 20 词总闸（md/39）：0 词用户请求 300 词时也要给两条出路，
+  // 不能按 known_words 说「降低难度」，更不能出现「600 词」这种具体门槛
+  it('should offer the cold-start short piece at the 20-word gate', () => {
+    const result = describeVocabShortage({ code: 'INSUFFICIENT_VOCABULARY', details: {} })
+
+    expect(result.kind).toBe('too_few_words')
+    expect(result.hint).toContain('100 / 200')
+    expect(result.hint).not.toContain('600')
+    expect(result.actions).toEqual(['shorten', 'add'])
+  })
+
   it('should explain known-words shortage with the gap', () => {
     // 形状与后端 knownWordsTooSmall 的 details 一致：required / available / shortage
     const result = describeVocabShortage({
@@ -50,12 +61,12 @@ describe('describeVocabShortage', () => {
     expect(result.hint).toContain('300')
   })
 
-  // 20 词兜底没有 details，只能给通用文案，不能算出差额
-  it('should fall back to a known-words hint for the legacy 20-word gate', () => {
+  // 20 词兜底没有 details：不再按 known_words 兜底，也不再建议降低难度（md/39）
+  it('should not fall back to the known-words hint for the 20-word gate', () => {
     const result = describeVocabShortage({ code: 'INSUFFICIENT_VOCABULARY', details: {} })
 
-    expect(result.kind).toBe('known_words')
-    expect(result.actions).toEqual(['lower', 'add'])
+    expect(result.kind).toBe('too_few_words')
+    expect(result.actions).not.toContain('lower')
   })
 })
 

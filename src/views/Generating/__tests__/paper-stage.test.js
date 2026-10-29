@@ -151,6 +151,14 @@ describe('PaperStage', () => {
     expect(wrapper.find('.paper-words').exists()).toBe(false)
   })
 
+  // 冷启动文章没有目标词（md/39）：selectedWords 为空时整块不渲染，不留空壳
+  it('should render no words block when the cold-start article has no target words', () => {
+    mountStage({ selectedWords: [], stage: 'writing' })
+
+    expect(wrapper.find('.paper-words').exists()).toBe(false)
+    expect(wrapper.findAll('.word-chip')).toHaveLength(0)
+  })
+
   it('should disable cancel while the cancel request is in flight', async () => {
     mountStage({ cancelling: true })
 

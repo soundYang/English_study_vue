@@ -102,7 +102,8 @@ export function describeFreeBudgetExhausted() {
 }
 
 /**
- * 四种「生成被挡下」的语义不同，用户能做的补救也不同：
+ * 五种「生成被挡下」的语义不同，用户能做的补救也不同：
+ *   too_few_words    —— 422 个人词库不足 20 词的总闸：加词 / 先写 100–200 词
  *   target_words     —— 422 这次参数凑不齐目标词：缩篇幅 / 换词源
  *   known_words      —— 422 这个难度还没解锁：加词 / 降难度
  *   target_words_cap —— 400 这个难度写不了这么长（不是词不够）：只能缩篇幅
@@ -114,7 +115,19 @@ export function describeFreeBudgetExhausted() {
  * @returns {{ kind: string, title: string, hint: string, actions: string[] }}
  */
 export function describeVocabShortage({ code = '', details = {} } = {}) {
-  const kind = details.kind || (code === 'INSUFFICIENT_VOCABULARY' ? 'known_words' : 'target_words')
+  // 20 词总闸（md/39）：这条错误没有 details，不能按 known_words 解释。
+  // 0 词用户除了「加词」，还能直接写 100 / 200 词的冷启动短篇（只用基础词表）；
+  // 「降低难度」对他们是无效建议——任何难度都要过这道 20 词的门。
+  if (code === 'INSUFFICIENT_VOCABULARY') {
+    return {
+      kind: 'too_few_words',
+      title: '词汇太少，暂时写不了这篇文章',
+      hint: '可以先添加一些单词；个人词库不足 20 个时，也可以先写 100 / 200 词的短篇。',
+      actions: ['shorten', 'add'],
+    }
+  }
+
+  const kind = details.kind || 'target_words'
   const required = toNumber(details.required)
   const available = toNumber(details.available)
   const shortage = toNumber(details.shortage) ?? Math.max(0, (required ?? 0) - (available ?? 0))

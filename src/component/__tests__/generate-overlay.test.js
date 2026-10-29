@@ -113,6 +113,23 @@ describe('GenerateOverlay', () => {
     expect(wrapper.get('button').text()).toBe('知道了')
   })
 
+  // 0 词用户点 300 词：不走「降难度」，只给缩篇幅与加词两条路（md/39）
+  it('should point a 20-word-gate failure at shorter pieces instead of lowering the level', async () => {
+    await mountOverlay(
+      { code: 'INSUFFICIENT_VOCABULARY', message: '当前已有 0 个单词，至少需要 20 个才能生成' },
+      (store) => {
+        store.summary = { level: 'medium', targetWords: 300, questionCount: 3, availableWords: 0 }
+      },
+    )
+
+    expect(wrapper.get('.generate-title').text()).toBe('词汇太少，暂时写不了这篇文章')
+    expect(wrapper.get('.generate-hint').text()).toContain('100 / 200')
+    expect(wrapper.text()).toContain('缩短文章')
+    expect(wrapper.text()).toContain('去添加单词')
+    expect(wrapper.text()).not.toContain('降低难度')
+    expect(wrapper.text()).not.toContain('重试')
+  })
+
   it('should keep the retry button for other failures', async () => {
     await mountOverlay({ code: 'AI_PROVIDER_ERROR', message: '暂时没有可用的生成模板' })
 
