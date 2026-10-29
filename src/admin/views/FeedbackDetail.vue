@@ -6,7 +6,8 @@
  *       状态只能推进到 `replied` / `closed`；已关闭的可以再回复（回到 replied）。
  * 用法：从反馈列表点击行进入。
  *
- * 隐私：手机号是提交时的明文快照，这里只展示遮挡后的形式（md/40 §10 第 6 条）。
+ * 隐私：列表里的手机号 / 联系方式由后端打码，详情是**唯一**返回完整值的入口
+ *       （md/45 M6），所以这里原样展示、不再二次遮挡；需要联系用户就只看这一页。
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -16,13 +17,7 @@ import EmptyState from '../../component/EmptyState.vue'
 import SkeletonBlock from '../../component/SkeletonBlock.vue'
 import AdminStatePill from '../component/AdminStatePill.vue'
 import { fetchAdminFeedbackDetail, updateAdminFeedback } from '../api/feedback'
-import {
-  contactLabel,
-  feedbackCategoryLabel,
-  formatDateTime,
-  maskPhone,
-  submitterLabel,
-} from '../format'
+import { contactLabel, feedbackCategoryLabel, formatDateTime, submitterLabel } from '../format'
 
 const REPLY_MAX_LENGTH = 2000
 
@@ -168,7 +163,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="meta-item">
               <dt>账号手机</dt>
-              <dd class="num">{{ maskPhone(feedback.phone) || '—' }}</dd>
+              <dd class="num">{{ feedback.phone || '—' }}</dd>
             </div>
             <div class="meta-item">
               <dt>联系方式</dt>
