@@ -2,11 +2,13 @@
 /**
  * 后台状态胶囊
  *
- * 用途：反馈状态（待处理 / 已回复 / 已关闭）与阅读状态（待作答 / 已提交）。
+ * 用途：反馈状态（待处理 / 已回复 / 已关闭）、阅读状态（待作答 / 已提交）
+ *       与用户自备 API Key 的接入状态。
  * 用法：<AdminStatePill kind="feedback" value="open" />
+ *       <AdminStatePill kind="api-key" value="invalid" />
  *
  * props:
- *   kind  — feedback（默认）/ reading
+ *   kind  — feedback（默认）/ reading / api-key
  *   value — 对应枚举值；未知值原样显示并用中性色
  */
 import { computed } from 'vue'
@@ -22,17 +24,29 @@ const READING_MAP = {
   submitted: { label: '已提交', tone: 'success' },
 }
 
+// invalid 仍然算「接入过」：只是上游 401/403 过，不能显示成「未接入」
+const API_KEY_MAP = {
+  active: { label: '已接入', tone: 'success' },
+  invalid: { label: 'Key 失效', tone: 'warning' },
+}
+
+const MAPS = {
+  feedback: FEEDBACK_MAP,
+  reading: READING_MAP,
+  'api-key': API_KEY_MAP,
+}
+
 const props = defineProps({
   kind: {
     type: String,
     default: 'feedback',
-    validator: (value) => ['feedback', 'reading'].includes(value),
+    validator: (value) => ['feedback', 'reading', 'api-key'].includes(value),
   },
   value: { type: String, required: true },
 })
 
 const meta = computed(() => {
-  const source = props.kind === 'reading' ? READING_MAP : FEEDBACK_MAP
+  const source = MAPS[props.kind] || FEEDBACK_MAP
   return source[props.value] || { label: props.value || '—', tone: 'muted' }
 })
 </script>

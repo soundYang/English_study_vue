@@ -5,6 +5,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import http, { ADMIN_EXPIRED_EVENT, adminGet } from '../api/http'
+import { fetchAdminUsers } from '../api/users'
 import { adminAuth } from '../auth'
 
 const originalAdapter = http.defaults.adapter
@@ -50,6 +51,32 @@ describe('admin http auth headers', () => {
     expect(headers.Authorization).toBe('Bearer admin_sess')
     // 后台不是按设备限流的对象；带上用户设备头只会让两套会话纠缠
     expect(headers['X-Device-Id']).toBeUndefined()
+  })
+})
+
+describe('admin users api', () => {
+  it('should send hasApiKey only when it is true or false', async () => {
+    let params = null
+    http.defaults.adapter = async (requestConfig) => {
+      params = requestConfig.params
+      return {
+        data: { items: [], total: 0 },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: requestConfig,
+      }
+    }
+
+    await fetchAdminUsers({ page: 2, hasApiKey: 'true' })
+    expect(params).toMatchObject({ page: 2, hasApiKey: 'true' })
+
+    await fetchAdminUsers({ hasApiKey: '' })
+    expect(params.hasApiKey).toBeUndefined()
+
+    // 后端对 hasApiKey=yes 返回 400，前端不应该把非法值发出去
+    await fetchAdminUsers({ hasApiKey: 'yes' })
+    expect(params.hasApiKey).toBeUndefined()
   })
 })
 

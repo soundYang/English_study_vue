@@ -17,6 +17,7 @@ import BaseInput from '../../component/BaseInput.vue'
 import DropdownSelect from '../../component/DropdownSelect.vue'
 import EmptyState from '../../component/EmptyState.vue'
 import PaginationBar from '../../component/PaginationBar.vue'
+import AdminStatePill from '../component/AdminStatePill.vue'
 import AdminTable from '../component/AdminTable.vue'
 import { fetchAdminUsers } from '../api/users'
 import { formatCount, formatDate, formatQuota, formatTime, formatTokens } from '../format'
@@ -34,6 +35,13 @@ const SIZE_OPTIONS = [
   { value: 20, label: '20 条/页' },
   { value: 50, label: '50 条/页' },
   { value: 100, label: '100 条/页' },
+]
+
+// 空字符串代表不过滤；只给后端明确支持的两个值，避免 400
+const API_KEY_FILTER_OPTIONS = [
+  { value: '', label: '自备 Key：全部' },
+  { value: 'true', label: '只看已接入' },
+  { value: 'false', label: '只看未接入' },
 ]
 
 const COLUMNS = [
@@ -60,8 +68,9 @@ function normalizeQuery(raw) {
     ? Number(raw.size)
     : 20
   const sort = SORT_OPTIONS.some((option) => option.value === raw.sort) ? raw.sort : 'createdAt'
+  const hasApiKey = raw.hasApiKey === 'true' || raw.hasApiKey === 'false' ? raw.hasApiKey : ''
 
-  return { q, page, size, sort }
+  return { q, page, size, sort, hasApiKey }
 }
 
 /** 只写非默认值，地址栏保持干净 */
@@ -71,6 +80,7 @@ function toRouteQuery(params) {
   if (params.page > 1) query.page = String(params.page)
   if (params.size !== 20) query.size = String(params.size)
   if (params.sort !== 'createdAt') query.sort = params.sort
+  if (params.hasApiKey) query.hasApiKey = params.hasApiKey
   return query
 }
 
@@ -99,6 +109,11 @@ const size = computed({
 const page = computed({
   get: () => params.value.page,
   set: (value) => applyQuery({ page: value }),
+})
+
+const apiKeyFilter = computed({
+  get: () => params.value.hasApiKey,
+  set: (value) => applyQuery({ hasApiKey: value, page: 1 }),
 })
 
 function applyQuery(patch) {
@@ -158,7 +173,7 @@ function runSearchNow() {
 function resetFilters() {
   clearTimeout(searchTimer)
   keyword.value = ''
-  applyQuery({ q: '', page: 1, sort: 'createdAt', size: 20 })
+  applyQuery({ q: '', page: 1, sort: 'createdAt', size: 20, hasApiKey: '' })
 }
 
 function openUser(row) {
@@ -199,6 +214,12 @@ onBeforeUnmount(() => {
           placeholder="用户名 / 昵称 / 手机号"
           @keydown.enter.prevent="runSearchNow"
         />
+        <DropdownSelect
+          v-model="apiKeyFilter"
+          :options="API_KEY_FILTER_OPTIONS"
+          aria-label="自备 Key 筛选"
+          align="end"
+        />
         <DropdownSelect v-model="sort" :options="SORT_OPTIONS" aria-label="排序方式" align="end" />
         <DropdownSelect v-model="size" :options="SIZE_OPTIONS" aria-label="每页数量" align="end" />
       </div>
@@ -224,7 +245,16 @@ onBeforeUnmount(() => {
       >
         <template #cell-user="{ row }">
           <span class="cell-main">{{ row.nickname }}</span>
-          <span class="cell-sub">{{ userSubLabel(row) }}</span>
+          <span class="cell-sub user-sub">
+            <span>{{ userSubLabel(row) }}</span>
+            <!-- hasKey=false 不显示徽标：整列「未接入」只会变成噪音 -->
+            <AdminStatePill
+              v-if="row.apiKey?.hasKey"
+              class="api-key-pill"
+              kind="api-key"
+              :value="row.apiKey.status"
+            />
+          </span>
         </template>
 
         <template #cell-phone="{ row }">
@@ -332,6 +362,19 @@ onBeforeUnmount(() => {
 
 .search {
   width: 260px;
+}
+
+.user-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 比默认胶囊矮一档，避免用户列因为一个徽标高出一截 */
+.api-key-pill {
+  height: 20px;
+  padding: 0 8px;
 }
 
 .error-strip {

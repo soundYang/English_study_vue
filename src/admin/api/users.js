@@ -6,10 +6,22 @@ import { adminGet } from './http'
 
 /**
  * 用户列表
- * @param {{ q?: string, page?: number, size?: number, sort?: 'createdAt'|'lastLoginAt'|'tokens'|'readings' }} query
+ *
+ * `hasApiKey` 只接受字符串 `'true'` / `'false'`；不传表示不过滤。
+ * 后端对其它值返回 400，所以这里先过滤掉空值与非法值，避免拼出 `hasApiKey=yes`。
+ *
+ * @param {{ q?: string, page?: number, size?: number, sort?: 'createdAt'|'lastLoginAt'|'tokens'|'readings', hasApiKey?: 'true'|'false'|'' }} query
  */
-export function fetchAdminUsers({ q = '', page = 1, size = 20, sort = 'createdAt' } = {}) {
-  return adminGet('/admin/users', { q, page, size, sort })
+export function fetchAdminUsers({
+  q = '',
+  page = 1,
+  size = 20,
+  sort = 'createdAt',
+  hasApiKey = '',
+} = {}) {
+  const params = { q, page, size, sort }
+  if (hasApiKey === 'true' || hasApiKey === 'false') params.hasApiKey = hasApiKey
+  return adminGet('/admin/users', params)
 }
 
 /** 用户详情；dataKey 可能含 URL 特殊字符，必须编码 */

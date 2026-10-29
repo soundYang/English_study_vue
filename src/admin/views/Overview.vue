@@ -2,7 +2,7 @@
 /**
  * 后台概览
  *
- * 用途：`/admin` 首屏四组数字——用户、生成、免费 token 池、反馈。
+ * 用途：`/admin` 首屏数字——用户、生成、免费 token 池、自备 API Key（有人接入时才显示）、反馈。
  *       数据来自 `GET /admin/overview`，不画趋势图（后端没有按天聚合）。
  * 用法：路由 `/admin` 默认子路由。
  */
@@ -21,7 +21,15 @@ const errorMessage = ref('')
 const users = computed(() => overview.value?.users || { total: 0, activeToday: 0 })
 const readings = computed(() => overview.value?.readings || { today: 0, total: 0 })
 const feedback = computed(() => overview.value?.feedback || { open: 0, replied: 0, closed: 0 })
+const apiKeys = computed(() => overview.value?.apiKeys || { total: 0, active: 0, invalid: 0 })
 const budget = computed(() => overview.value?.tokens?.freeBudget || null)
+
+const apiKeyHint = computed(() => {
+  const data = apiKeys.value
+  const base = `人在用 · 共 ${formatCount(data.total)} 人接入`
+  // invalid 仍算接入过，只是上游拒绝过；单独点出来，避免管理员把它当成未接入
+  return data.invalid > 0 ? `${base} · ${formatCount(data.invalid)} 个已失效` : base
+})
 
 const budgetValue = computed(() => {
   if (!budget.value?.enabled) return '未启用'
@@ -122,6 +130,15 @@ onMounted(() => load())
           />
         </div>
       </StatCard>
+
+      <!-- total 为 0 时整卡不显示：一张「0 人接入」的卡只会占位置 -->
+      <StatCard
+        v-if="apiKeys.total > 0"
+        label="自备 API Key"
+        :value="formatCount(apiKeys.active)"
+        :hint="apiKeyHint"
+        :loading="loading && !overview"
+      />
 
       <StatCard
         label="待处理反馈"
