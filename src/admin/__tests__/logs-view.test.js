@@ -162,10 +162,12 @@ describe('admin logs overview', () => {
     const cards = wrapper.findAll('.stat-card')
     expect(cards).toHaveLength(4)
 
-    const accessCard = cards.find((card) => card.text().includes('请求总量'))
+    // 访问日志只记失败请求（md/53 §12），卡片口径是失败量而不是全站流量
+    const accessCard = cards.find((card) => card.text().includes('失败请求'))
     expect(accessCard.get('.stat-value').text()).toBe('1,200')
     expect(accessCard.get('.stat-hint').text()).toContain('4xx 36')
     expect(accessCard.get('.stat-hint').text()).toContain('5xx 4')
+    expect(accessCard.get('.stat-hint').text()).toContain('不含成功的 2xx / 3xx')
 
     // 错误码 Top 10：只有报错日志里的 5xx
     expect(wrapper.get('.errors-table').text()).toContain('INTERNAL_ERROR')

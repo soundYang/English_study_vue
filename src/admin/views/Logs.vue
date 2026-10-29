@@ -100,8 +100,9 @@ function refresh() {
     </div>
 
     <p class="logs-note">
-      4xx 只在「访问」里出现（报错日志只记 5xx）；访问日志保留 30 天、报错 90 天、登录记录 180
-      天，到期由数据库自动清理，页面不提供删除。
+      访问日志只记失败请求（4xx / 5xx 与响应完成前断开），成功的 2xx / 3xx 不落库，
+      所以概览与「访问」里的数字是失败量、不是全站流量；报错日志只记 5xx。 访问日志保留 30 天、报错
+      90 天、登录记录 180 天，到期由数据库自动清理，页面不提供删除。
     </p>
 
     <LogsOverview v-if="tab === 'overview'" :days="rangeDays" :reload-token="refreshToken" />

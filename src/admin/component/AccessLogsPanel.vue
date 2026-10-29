@@ -2,8 +2,9 @@
 /**
  * 访问日志面板
  *
- * 用途：`/admin/logs?tab=access`——每次 API 请求一条，回答「谁在什么时候调了什么、
- *       返回多少、花了多久」。4xx 只在这里出现，报错日志只有 5xx（md/53 §5.2）。
+ * 用途：`/admin/logs?tab=access`——每个**失败**的 API 请求一条，回答「谁在什么时候调了什么、
+ *       返回多少、花了多久」。4xx 只在这里出现，报错日志只有 5xx（md/53 §5.2）；
+ *       成功的 2xx / 3xx 不落库（md/53 §12），这里看不到。
  * 用法：<AccessLogsPanel :range="range" :reload-token="token" />，由 Logs.vue 持有时间范围。
  *
  * 约定：

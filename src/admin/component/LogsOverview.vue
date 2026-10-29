@@ -2,8 +2,9 @@
 /**
  * 日志概览
  *
- * 用途：`/admin/logs?tab=overview`——最近 N 天的请求量、唯一 IP、错误数、登录情况，
+ * 用途：`/admin/logs?tab=overview`——最近 N 天的失败请求量、唯一 IP、错误数、登录情况，
  *       加一张错误码 Top 10 表（`md/53 §10` 的 `/summary`）。
+ *       访问日志自 md/53 §12 起只写失败请求，所以「失败请求」不是全站流量。
  * 用法：<LogsOverview :days="7" :reload-token="token" />，由 Logs.vue 持有时间窗口。
  *
  * 约定：
@@ -78,9 +79,9 @@ watch(() => [props.days, props.reloadToken], load, { immediate: true })
       :class="{ 'is-stale': errorMessage && summary }"
     >
       <StatCard
-        label="请求总量"
+        label="失败请求"
         :value="formatCount(access.total)"
-        :hint="`2xx ${formatCount(access.ok)} · 4xx ${formatCount(access.clientError)} · 5xx ${formatCount(access.serverError)}`"
+        :hint="`4xx ${formatCount(access.clientError)} · 5xx ${formatCount(access.serverError)} · 不含成功的 2xx / 3xx`"
         :loading="loading && !summary"
       />
       <StatCard
