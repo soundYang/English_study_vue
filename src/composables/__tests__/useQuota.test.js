@@ -100,7 +100,7 @@ describe('useQuota', () => {
 
     expect(state.isBlocked.value).toBe(true)
     expect(state.canGenerate.value).toBe(false)
-    expect(state.blockedHint.value).toContain('网络每天最多生成 10 次')
+    expect(state.blockedHint.value).toContain('网络每天最多免费生成 10 次')
     // resetAt 按北京时间展示，不跟本机时区走
     expect(state.blockedHint.value).toContain('10月30日 00:00')
     expect(state.quotaNote.value).toBe(state.blockedHint.value)
@@ -116,7 +116,7 @@ describe('useQuota', () => {
 
     expect(state.isBlocked.value).toBe(true)
     expect(state.canGenerate.value).toBe(false)
-    expect(state.blockedHint.value).toContain('设备每天最多生成 3 次')
+    expect(state.blockedHint.value).toContain('设备每天最多免费生成 3 次')
   })
 
   it('should fail open when the quota request fails', async () => {

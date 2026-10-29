@@ -6,7 +6,7 @@
  * 生成失败、取消与重试统一由全局 GenerateOverlay 处理。
  */
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import BaseButton from '../../component/BaseButton.vue'
 import AllowNewWordsPicker from './component/AllowNewWordsPicker.vue'
 import DifficultyPicker from './component/DifficultyPicker.vue'
@@ -285,6 +285,13 @@ function runGenerate() {
           role="status"
         >
           {{ quotaNote }}
+          <RouterLink
+            v-if="quotaBlocked"
+            class="quota-link"
+            :to="{ path: '/profile', hash: '#api-settings' }"
+          >
+            去接入 API Key
+          </RouterLink>
         </p>
 
         <div class="actions">
@@ -392,6 +399,17 @@ function runGenerate() {
 
 .quota-note.is-blocked {
   color: var(--color-warning);
+}
+
+.quota-link {
+  margin-left: var(--space-2);
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.quota-link:hover {
+  color: var(--color-ink);
 }
 
 .actions {

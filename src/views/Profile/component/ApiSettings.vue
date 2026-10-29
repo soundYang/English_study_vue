@@ -236,7 +236,12 @@ async function handleDelete() {
 </script>
 
 <template>
-  <section v-if="visible" class="settings-card api-settings" aria-labelledby="api-settings-title">
+  <section
+    v-if="visible"
+    id="api-settings"
+    class="settings-card api-settings"
+    aria-labelledby="api-settings-title"
+  >
     <header class="card-head">
       <span class="card-icon" aria-hidden="true">
         <KeyRound :size="18" :stroke-width="1.8" />

@@ -13,8 +13,10 @@
  *   - 词汇不够（INSUFFICIENT_VOCABULARY / VOCABULARY_TOO_SMALL）：
  *     去添加单词 / 降低难度 / 缩短文章，按当前处境只显示有效的那个
  *   - 限流（429 RATE_LIMITED）：说「太频繁」，不给重试（窗口内重试必然还是 429）
+ *   - 免费次数用尽（429 QUOTA_EXCEEDED）：说明这是「免费」额度，并给
+ *     「去接入 API Key」+「返回修改」（md/35 §9 第 3 条）
  *   - 免费池用尽（503 FREE_BUDGET_EXHAUSTED）：不会自行恢复，没有倒计时，
- *     原样透传后端 message，只给「知道了」（md/36 §10）
+ *     原样透传后端 message，给「去接入 API Key」+「知道了」（md/36 §10）
  *   - 自备 Key 失效（403 USER_API_KEY_INVALID / 409 USER_API_KEY_MISSING）：
  *     Key 不变时重试没有意义，不给「重试」，只给「去设置」（md/43 §9）
  *   - 其他错误：retryable 为 false 时只给「返回修改」，否则「重试」走任务 /retry，
@@ -227,10 +229,10 @@ function backToSettings() {
   if (route.name !== 'settings') router.push('/settings')
 }
 
-/** Key 失效的唯一出口：换掉 Key 再回来重新生成 */
+/** 自备 Key 的唯一出口：额度用尽或 Key 失效都落到个人中心的 API 设置卡 */
 function goApiSettings() {
   dismiss()
-  if (route.name !== 'profile') router.push('/profile')
+  if (route.name !== 'profile') router.push({ path: '/profile', hash: '#api-settings' })
 }
 
 async function handleRetry() {
@@ -352,15 +354,21 @@ onBeforeUnmount(() => {
                 去添加单词
               </BaseButton>
             </div>
-            <!-- 免费池用尽后改参数也没用（任何入口都会 503），只留「知道了」 -->
+            <!-- 免费池用尽后改参数也没用（任何入口都会 503），出口是接入自己的 Key -->
             <div v-else-if="isFreeBudgetExhausted" class="generate-actions">
-              <BaseButton @click="dismiss">知道了</BaseButton>
+              <BaseButton variant="secondary" @click="dismiss">知道了</BaseButton>
+              <BaseButton @click="goApiSettings">去接入 API Key</BaseButton>
             </div>
             <!-- Key 失效：改参数 / 重试都没用，先换 Key 再回来生成 -->
             <div v-else-if="isApiKeyProblem" class="generate-actions">
               <BaseButton @click="goApiSettings">去设置</BaseButton>
             </div>
-            <div v-else-if="rateLimit || quotaExceeded" class="generate-actions">
+            <!-- 每日免费次数用完：可以等明天，也可以接入自己的 Key 继续生成 -->
+            <div v-else-if="quotaExceeded" class="generate-actions">
+              <BaseButton variant="secondary" @click="backToSettings">返回修改</BaseButton>
+              <BaseButton @click="goApiSettings">去接入 API Key</BaseButton>
+            </div>
+            <div v-else-if="rateLimit" class="generate-actions">
               <BaseButton variant="secondary" @click="backToSettings">返回修改</BaseButton>
               <BaseButton @click="dismiss">知道了</BaseButton>
             </div>

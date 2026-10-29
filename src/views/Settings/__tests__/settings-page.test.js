@@ -47,6 +47,7 @@ function createTestRouter() {
     history: createMemoryHistory(),
     routes: [
       { path: '/settings', name: 'settings', component: SettingsPage },
+      { path: '/profile', name: 'profile', component: { template: '<div />' } },
       { path: '/login', name: 'login', component: { template: '<div />' } },
     ],
   })
@@ -233,8 +234,13 @@ describe('settings page daily quota', () => {
     const generate = wrapper.findAll('button').find((button) => button.text() === '开始生成')
 
     expect(generate.attributes('disabled')).toBeDefined()
-    expect(wrapper.get('.quota-note').text()).toContain('设备每天最多生成 3 次')
-    expect(wrapper.get('.quota-note').classes()).toContain('is-blocked')
+    const note = wrapper.get('.quota-note')
+    expect(note.classes()).toContain('is-blocked')
+    // 免费次数用完 ≠ 不能生成：说明是免费额度，并给出接入自备 Key 的入口
+    expect(note.text()).toContain('设备每天最多免费生成 3 次')
+    expect(note.text()).toContain('接入自己的 API Key')
+    expect(note.get('a').text()).toBe('去接入 API Key')
+    expect(note.get('a').attributes('href')).toBe('/profile#api-settings')
   })
 
   it('should stay usable when the quota request fails', async () => {

@@ -64,10 +64,13 @@ function resetPhraseOf(resetAt) {
 }
 
 /**
- * 429 QUOTA_EXCEEDED 的文案（md/35 §7.2 / §9 第 3 条）
+ * 429 QUOTA_EXCEEDED 的文案（md/35 §7.2 / §9 第 3 条、md/43 §12）
  *
  * 与 RATE_LIMITED 分开：限流是「等一分钟」，额度是「等明天」，按钮也不同。
  * scope 说明哪一档先用尽——换账号或换浏览器都绕不过剩下的那档。
+ *
+ * 这是「免费生成次数」而不是「账号最多只能生成 N 次」：接入自备 API Key 的用户
+ * 花自己的额度，不占免费次数。所以正文必须说清「免费」，并给出继续生成的出口。
  *
  * @param {{ details?: { scope?: string, limit?: number, used?: number, resetAt?: string } }} error
  * @returns {{ scope: string, title: string, hint: string }}
@@ -77,14 +80,15 @@ export function describeQuotaExceeded({ details = {} } = {}) {
   const label = QUOTA_SCOPE_LABELS[scope] || '设备'
   const limit = toNumber(details.limit)
   const reset = resetPhraseOf(details.resetAt)
+  const ownKeyHint = '接入自己的 API Key 后可不占用免费次数继续生成。'
 
   return {
     scope,
-    title: '今天的生成次数用完了',
+    title: '今天的免费生成次数用完了',
     hint:
       limit !== null
-        ? `${label}每天最多生成 ${limit} 次，${reset}重置。`
-        : `${label}今天的次数已经用完，${reset}重置。`,
+        ? `${label}每天最多免费生成 ${limit} 次，${reset}重置。${ownKeyHint}`
+        : `${label}今天的免费次数已经用完，${reset}重置。${ownKeyHint}`,
   }
 }
 

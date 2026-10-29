@@ -62,6 +62,7 @@ function createTestRouter() {
       { path: '/words', name: 'words', component: { template: '<div />' } },
       { path: '/generating', name: 'generating', component: { template: '<div />' } },
       { path: '/readings/:id', name: 'reading', component: { template: '<div />' } },
+      { path: '/profile', name: 'profile', component: { template: '<div />' } },
       { path: '/login', name: 'login', component: { template: '<div />' } },
     ],
   })
@@ -171,8 +172,13 @@ describe('home entry branches', () => {
 
     expect(card.attributes('disabled')).toBeDefined()
     expect(card.classes()).toContain('is-disabled')
-    // 网络桶用尽、设备桶还有次数：说明必须是「哪一档」用完了
-    expect(card.text()).toContain('网络每天最多生成 10 次')
+    // 卡内只留结论，完整说明在卡组上方；网络桶用尽、设备桶还有次数必须说清是哪一档
+    expect(card.text()).toContain('今天的免费次数用完了')
+    const notice = wrapper.get('.home-quota')
+    expect(notice.text()).toContain('网络每天最多免费生成 10 次')
+    expect(notice.text()).toContain('接入自己的 API Key')
+    // 跳转方式：个人中心的 API 设置卡
+    expect(notice.get('a').attributes('href')).toBe('/profile#api-settings')
 
     await card.trigger('click')
     await flushPromises()

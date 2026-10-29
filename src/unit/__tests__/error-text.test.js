@@ -117,18 +117,29 @@ describe('describeQuotaExceeded', () => {
       details: { scope: 'device', limit: 3, used: 3, resetAt },
     })
 
-    expect(result.title).toBe('今天的生成次数用完了')
-    expect(result.hint).toBe('设备每天最多生成 3 次，10月30日 00:00（北京时间）重置。')
+    // 这是「免费次数」用完，不是账号生成上限：接入自备 Key 还能继续生成
+    expect(result.title).toBe('今天的免费生成次数用完了')
+    expect(result.hint).toBe(
+      '设备每天最多免费生成 3 次，10月30日 00:00（北京时间）重置。接入自己的 API Key 后可不占用免费次数继续生成。',
+    )
   })
 
   // 三档额度文案必须能区分开：用户要知道是换账号有用，还是整个网络都被限了
   it('should word the account and network scopes differently', () => {
     expect(
       describeQuotaExceeded({ details: { scope: 'account', limit: 3, resetAt } }).hint,
-    ).toContain('账号每天最多生成 3 次')
+    ).toContain('账号每天最多免费生成 3 次')
     expect(
       describeQuotaExceeded({ details: { scope: 'network', limit: 10, resetAt } }).hint,
-    ).toContain('网络每天最多生成 10 次')
+    ).toContain('网络每天最多免费生成 10 次')
+  })
+
+  // 提示必须给出继续生成的出口，否则用户会以为「今天不能再生成」
+  it('should point to the own API key as the way to keep generating', () => {
+    const result = describeQuotaExceeded({ details: { scope: 'account', limit: 3, resetAt } })
+
+    expect(result.hint).toContain('接入自己的 API Key')
+    expect(result.hint).toContain('继续生成')
   })
 
   // resetAt 缺失或被改坏时不能显示 NaN / Invalid Date

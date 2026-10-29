@@ -154,6 +154,9 @@ const router = createRouter({
   routes,
   scrollBehavior(to, from, savedPosition) {
     if (savedPosition) return savedPosition
+    // 带锚点时滚到目标（个人中心 #api-settings）：卡片是异步渲染的，
+    // vue-router 会轮询等元素出现；top 留出顶栏高度
+    if (to.hash) return { el: to.hash, top: -72 }
     return { top: 0 }
   },
 })

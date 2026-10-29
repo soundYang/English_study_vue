@@ -7,7 +7,7 @@
  * 每日额度由 useQuota 取一次：有剩余时显示「今日剩余 N 次」，用尽时直接禁用入口。
  */
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { BookOpen, NotebookPen, Sparkles } from 'lucide-vue-next'
 import BaseButton from '../../component/BaseButton.vue'
 import BaseModal from '../../component/BaseModal.vue'
@@ -28,7 +28,11 @@ const auth = useAuthStore()
 const { requireAuth } = useAuthGate()
 const settings = useSettingsStore()
 // 游客不请求额度与自备 Key；入口仍可点击，由 requireAuth 带去登录（md/42）
-const { quotaNote, canGenerate } = useQuota({ enabled: () => auth.isAuthenticated })
+const {
+  quotaNote,
+  canGenerate,
+  isBlocked: quotaBlocked,
+} = useQuota({ enabled: () => auth.isAuthenticated })
 
 const totalWords = ref(null)
 const availableWords = ref(null)
@@ -41,7 +45,8 @@ const wordMeta = computed(() => {
 
 const startReadingMeta = computed(() => {
   if (!auth.isAuthenticated) return '登录后即可生成专属阅读'
-  return quotaNote.value
+  // 用尽时卡内只留一句结论，完整说明与接入入口放在卡组上方的提示条里
+  return quotaBlocked.value ? '今天的免费次数用完了' : quotaNote.value
 })
 
 async function loadUserSummary() {
@@ -120,6 +125,14 @@ function tryAnyway() {
   <section class="home">
     <HeroPanel />
 
+    <!-- 免费次数用尽：入口被禁用，这里给出唯一可行的一条路 -->
+    <p v-if="quotaBlocked" class="home-quota" role="status">
+      {{ quotaNote }}
+      <RouterLink class="home-quota-link" :to="{ path: '/profile', hash: '#api-settings' }">
+        去接入 API Key
+      </RouterLink>
+    </p>
+
     <div class="entries">
       <EntryCard
         title="我的单词"
@@ -165,6 +178,28 @@ function tryAnyway() {
 
 <style scoped>
 /* 首页走 meta.flush，内容区没有内边距，这里自己补回左右留白 */
+.home-quota {
+  width: 100%;
+  max-width: var(--content-max-wide);
+  margin: var(--space-5) auto 0;
+  padding: 0 var(--content-pad-x);
+  color: var(--color-warning);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+}
+
+.home-quota-link {
+  margin-left: var(--space-1);
+  color: var(--color-accent);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.home-quota-link:hover {
+  color: var(--color-ink);
+}
+
 .entries {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
