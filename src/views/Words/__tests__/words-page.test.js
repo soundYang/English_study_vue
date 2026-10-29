@@ -79,6 +79,28 @@ describe('Words page', () => {
     expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(10)
   })
 
+  it('should keep the current rows while a status filter is loading', async () => {
+    const wrapper = await mountPage()
+    const store = useWordsStore()
+
+    expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(10)
+
+    // 真实网络下切换状态需要时间：这段时间继续显示旧行，
+    // 不能整表换成骨架屏，否则每点一次标签都会闪一下。
+    setMockLatency(60)
+    await wrapper.findAll('[role="radio"]')[1].trigger('click')
+
+    expect(store.status).toBe('mastered')
+    expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
+    expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(10)
+
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    await flushPromises()
+
+    expect(store.items.every((item) => item.status === 'mastered')).toBe(true)
+    expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(10)
+  })
+
   it('should show the word detail when the word itself is clicked', async () => {
     const wrapper = await mountPage()
     const trigger = wrapper.findAll('tbody .word-text')[0]

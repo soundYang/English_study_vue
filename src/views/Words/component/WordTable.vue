@@ -9,7 +9,7 @@
  *
  * props:
  *   items        — 词汇数组
- *   loading      — 加载中，表头保留并显示 8 行骨架
+ *   loading      — 加载中；列表为空时显示 8 行骨架，已有内容时保留旧行直到新数据到达
  *   error        — 错误文案，存在时整块替换为错误卡
  *   highlightId  — 新增/编辑后需要高亮的行 id
  *   expandedWord — 详情浮层当前显示的单词，用来同步 aria-expanded
@@ -19,6 +19,7 @@
  *   retry — 错误卡中的重试
  *   detail — 点击单词查看详情，参数 { item, anchor }
  */
+import { computed } from 'vue'
 import { Pencil, Trash2 } from 'lucide-vue-next'
 import BaseButton from '../../../component/BaseButton.vue'
 import SkeletonBlock from '../../../component/SkeletonBlock.vue'
@@ -41,7 +42,7 @@ function extraSenseCount(item) {
   return Math.max(0, (item.senses?.length || 0) - 1)
 }
 
-defineProps({
+const props = defineProps({
   items: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
   error: { type: String, default: '' },
@@ -50,6 +51,10 @@ defineProps({
 })
 
 const emit = defineEmits(['edit', 'remove', 'retry', 'detail'])
+
+// 切换状态 / 翻页 / 搜索时列表里还有旧数据，继续展示它们等新结果，
+// 只有首次加载（列表为空）才出骨架屏；否则每点一次标签都会闪一次灰条。
+const showSkeleton = computed(() => props.loading && props.items.length === 0)
 
 function detail(item, event) {
   emit('detail', { item, anchor: event.currentTarget })
@@ -65,10 +70,6 @@ function remove(item) {
 
 function retry() {
   emit('retry')
-}
-
-function rowDelay(index) {
-  return { '--row-delay': `${Math.min(index, 9) * 30}ms` }
 }
 </script>
 
@@ -104,7 +105,7 @@ function rowDelay(index) {
           </tr>
         </thead>
 
-        <tbody v-if="loading">
+        <tbody v-if="showSkeleton" key="skeleton">
           <tr v-for="row in 8" :key="`skeleton-${row}`" class="skeleton-row">
             <td><SkeletonBlock width="58%" height="14px" /></td>
             <td><SkeletonBlock width="76%" height="12px" /></td>
@@ -115,13 +116,12 @@ function rowDelay(index) {
           </tr>
         </tbody>
 
-        <TransitionGroup v-else name="word-item" tag="tbody">
+        <tbody v-else key="rows" class="word-rows">
           <tr
-            v-for="(item, index) in items"
+            v-for="item in items"
             :key="item.id"
             class="word-row"
             :class="{ 'is-highlight': item.id === highlightId }"
-            :style="rowDelay(index)"
           >
             <td class="cell-word">
               <button
@@ -194,11 +194,11 @@ function rowDelay(index) {
               </div>
             </td>
           </tr>
-        </TransitionGroup>
+        </tbody>
       </table>
     </div>
 
-    <ul v-if="loading" class="word-cards" aria-hidden="true">
+    <ul v-if="showSkeleton" key="card-skeleton" class="word-cards" aria-hidden="true">
       <li v-for="row in 4" :key="`card-skeleton-${row}`" class="word-card">
         <div class="card-text">
           <SkeletonBlock width="42%" height="15px" />
@@ -208,13 +208,12 @@ function rowDelay(index) {
       </li>
     </ul>
 
-    <TransitionGroup v-else name="word-item" tag="ul" class="word-cards">
+    <ul v-else key="card-rows" class="word-cards word-rows">
       <li
-        v-for="(item, index) in items"
+        v-for="item in items"
         :key="item.id"
         class="word-card"
         :class="{ 'is-highlight': item.id === highlightId }"
-        :style="rowDelay(index)"
       >
         <div class="card-text">
           <span class="card-line">
@@ -285,7 +284,7 @@ function rowDelay(index) {
           </button>
         </div>
       </li>
-    </TransitionGroup>
+    </ul>
   </template>
 </template>
 
@@ -354,9 +353,14 @@ function rowDelay(index) {
 }
 
 .word-row {
-  animation: word-row-in var(--dur-base) var(--ease-out) both;
-  animation-delay: var(--row-delay, 0ms);
   transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+/* 只在「骨架屏 → 内容」时整块淡入一次。
+   筛选 / 翻页 / 搜索时 tbody 不重建，行直接换数据；
+   若逐行重播入场，内容会先整片消失再出现，用户看到的就是「闪一下」。 */
+.word-rows {
+  animation: word-rows-in var(--dur-base) var(--ease-out) both;
 }
 
 .word-row:hover {
@@ -554,32 +558,13 @@ function rowDelay(index) {
   overflow-wrap: anywhere;
 }
 
-.word-item-enter-active {
-  animation: word-row-in var(--dur-base) var(--ease-out) both;
-  animation-delay: var(--row-delay, 0ms);
-}
-
-.word-item-leave-active {
-  transition: opacity var(--dur-base) var(--ease-in-out);
-}
-
-.word-item-leave-to {
-  opacity: 0;
-}
-
-.word-item-move {
-  transition: transform var(--dur-base) var(--ease-in-out);
-}
-
-@keyframes word-row-in {
+@keyframes word-rows-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -684,9 +669,8 @@ function rowDelay(index) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .word-row,
-  .word-item-enter-active {
-    animation-delay: 0ms !important;
+  .word-rows {
+    animation: none;
   }
 }
 </style>
