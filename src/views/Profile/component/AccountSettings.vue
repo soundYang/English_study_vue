@@ -75,7 +75,7 @@ const emit = defineEmits(['edit-nickname', 'change-password', 'feedback', 'logou
           </span>
           <span class="row-copy">
             <span class="row-title">退出登录</span>
-            <span class="row-desc">退出当前账号，回到登录页</span>
+            <span class="row-desc">退出当前账号，回到首页</span>
           </span>
           <ChevronRight class="row-arrow" :size="16" aria-hidden="true" />
         </button>

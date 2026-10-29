@@ -88,7 +88,8 @@ function handleFeedbackSubmitted() {
 async function handleLogout() {
   await auth.logout()
   toast.success('已退出登录')
-  router.replace('/login')
+  // 退出后回公开首页，而不是立刻又被登录页拦住（md/42）
+  router.replace('/')
 }
 </script>
 

@@ -10,6 +10,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import ResultPage from '../index.vue'
 import { registerGuards } from '../../../router/guards'
 import { resetMockDb, setMockLatency } from '../../../mock/adapter'
+import { localStore, storageKeys } from '../../../unit/storage'
 
 const { startMock } = vi.hoisted(() => ({ startMock: vi.fn() }))
 
@@ -72,6 +73,8 @@ async function mountResult(path) {
 beforeEach(() => {
   localStorage.clear()
   sessionStorage.clear()
+  // 结果页是受保护路由：预置令牌，让用例只验证页面自身逻辑
+  localStore.set(storageKeys.accessToken, 'sess_result_test')
   resetMockDb()
   setMockLatency(0)
   startMock.mockReset()

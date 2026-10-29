@@ -2,6 +2,7 @@
  * 路由表
  * 页面路由 + 404；meta.module 决定侧栏激活项，meta.hideMobileNav 控制底部标签栏，
  * meta.flush 取消内容区最大宽度与内边距（首页 Hero、设置页装饰栏、生成页纸舞台需要贴住窗口边缘）。
+ * 鉴权默认拦截：只有显式 meta.public 的页面允许游客进入，登录 / 注册页用 meta.bare。
  */
 import { createRouter, createWebHistory } from 'vue-router'
 import { registerGuards } from './guards'
@@ -11,7 +12,8 @@ const routes = [
     path: '/',
     name: 'home',
     component: () => import('../views/Home/index.vue'),
-    meta: { title: '首页', module: 'home', flush: true },
+    // 游客落地页：只展示公共内容，不请求个人接口（md/42）
+    meta: { title: '首页', module: 'home', flush: true, public: true },
   },
   {
     path: '/words',
@@ -122,7 +124,8 @@ const routes = [
     path: '/:pathMatch(.*)*',
     name: 'not-found',
     component: () => import('../views/NotFound/index.vue'),
-    meta: { title: '页面不存在' },
+    // 输错网址不应该被送去登录，404 本身就是公开页
+    meta: { title: '页面不存在', public: true },
   },
 ]
 
@@ -132,7 +135,7 @@ if (import.meta.env.DEV) {
     path: '/dev/components',
     name: 'component-preview',
     component: () => import('../views/Dev/index.vue'),
-    meta: { title: '组件预览', module: '' },
+    meta: { title: '组件预览', module: '', public: true },
   })
 }
 

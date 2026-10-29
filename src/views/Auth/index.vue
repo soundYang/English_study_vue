@@ -38,6 +38,10 @@ const auth = useAuthStore()
 const toast = useToastStore()
 
 const isRegister = computed(() => route.meta.authMode === 'register')
+// 登录 / 注册互相切换时保留 redirect，注册成功后才能回到原目标页
+const redirectQuery = computed(() =>
+  route.query.redirect ? { redirect: route.query.redirect } : {},
+)
 const submitting = ref(false)
 const formError = ref('')
 const errors = reactive({
@@ -282,7 +286,7 @@ onMounted(() => {
 
         <nav class="auth-tabs" aria-label="登录或注册">
           <RouterLink
-            to="/login"
+            :to="{ name: 'login', query: redirectQuery }"
             class="auth-tab"
             :class="{ 'is-active': !isRegister }"
             :aria-current="!isRegister ? 'page' : undefined"
@@ -290,7 +294,7 @@ onMounted(() => {
             登录
           </RouterLink>
           <RouterLink
-            to="/register"
+            :to="{ name: 'register', query: redirectQuery }"
             class="auth-tab"
             :class="{ 'is-active': isRegister }"
             :aria-current="isRegister ? 'page' : undefined"
@@ -342,7 +346,10 @@ onMounted(() => {
 
           <BaseButton type="submit" size="lg" block :loading="submitting">登录</BaseButton>
 
-          <p class="auth-switch">还没有账号？<RouterLink to="/register">立即注册</RouterLink></p>
+          <p class="auth-switch">
+            还没有账号？
+            <RouterLink :to="{ name: 'register', query: redirectQuery }">立即注册</RouterLink>
+          </p>
 
           <p v-if="showDemoHint" class="auth-demo">
             Mock 演示账号：{{ MOCK_DEMO_CREDENTIALS.username }} /
@@ -411,7 +418,10 @@ onMounted(() => {
 
           <BaseButton type="submit" size="lg" block :loading="submitting">注册</BaseButton>
 
-          <p class="auth-switch">已有账号？<RouterLink to="/login">立即登录</RouterLink></p>
+          <p class="auth-switch">
+            已有账号？
+            <RouterLink :to="{ name: 'login', query: redirectQuery }">立即登录</RouterLink>
+          </p>
         </form>
       </section>
     </main>

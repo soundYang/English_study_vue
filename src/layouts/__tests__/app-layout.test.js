@@ -3,11 +3,12 @@
  * 重点验证：路由已经变化、旧页面还在淡出时，内容容器继续使用旧页面的宽度 / 内边距；
  * 等新页面入场（opacity: 0）时才换成目标页的 flush / wide 布局。
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import AppLayout from '../AppLayout.vue'
+import { localStore, storageKeys } from '../../unit/storage'
 
 const flushPage = {
   name: 'FlushPage',
@@ -21,13 +22,22 @@ const wordsPage = {
 
 let wrapper = null
 
+beforeEach(() => {
+  localStorage.clear()
+})
+
 afterEach(() => {
   if (wrapper) wrapper.unmount()
   wrapper = null
   document.body.innerHTML = ''
 })
 
-async function mountLayout() {
+async function mountLayout({ authenticated = false } = {}) {
+  if (authenticated) {
+    localStore.set(storageKeys.accessToken, 'sess_layout_test')
+    localStore.set(storageKeys.authUser, { id: 'u_1', username: 'Sound', nickname: 'Sound' })
+  }
+
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -50,6 +60,25 @@ async function mountLayout() {
 
   return { wrapper, router }
 }
+
+describe('AppLayout guest header', () => {
+  it('should show a login action instead of a fake demo identity', async () => {
+    const { wrapper } = await mountLayout()
+
+    expect(wrapper.get('.topbar-login').text()).toContain('登录 / 注册')
+    expect(wrapper.get('.topbar-login').attributes('href')).toBe('/login')
+    expect(wrapper.find('.topbar-user').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Sound')
+  })
+
+  it('should keep the profile entry for signed-in users', async () => {
+    const { wrapper } = await mountLayout({ authenticated: true })
+
+    expect(wrapper.get('.topbar-user').text()).toContain('Sound')
+    expect(wrapper.get('.topbar-user').attributes('href')).toBe('/profile')
+    expect(wrapper.find('.topbar-login').exists()).toBe(false)
+  })
+})
 
 describe('AppLayout page transition', () => {
   it('should keep the old content width until the next page enters', async () => {

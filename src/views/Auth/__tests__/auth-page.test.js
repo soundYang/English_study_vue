@@ -128,6 +128,17 @@ describe('Auth page', () => {
     expect(wrapper.find('.captcha-image img').attributes('src')).toContain('data:image/svg+xml')
   })
 
+  it('should keep the redirect target when switching to register', async () => {
+    await mountPage('/login?redirect=/profile')
+
+    await wrapper.findAll('.auth-tab')[1].trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    expect(router.currentRoute.value.name).toBe('register')
+    expect(router.currentRoute.value.query.redirect).toBe('/profile')
+  })
+
   it('should reject an empty login form before calling the api', async () => {
     await mountPage('/login')
     await submit()

@@ -1,23 +1,11 @@
 /**
  * 后台守卫测试
  * 后台是独立会话：用户令牌进不了台账，管理员令牌也放不进用户页面。
- * 这里把 VITE_AUTH_ENFORCED 打开，验证两条守卫的先后与互不干扰（md/40 §1.3）。
+ * 验证用户守卫与后台守卫的先后与互不干扰（md/40 §1.3、md/42）。
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { registerGuards } from '../guards'
 import { adminAuth } from '../../admin/auth'
-
-vi.mock('../../config', () => ({
-  config: {
-    apiBaseUrl: 'http://localhost:3000/api',
-    useMock: true,
-    authEnforced: true,
-    requestTimeout: 15000,
-    generateTimeout: 90000,
-    isDev: true,
-    isProd: false,
-  },
-}))
 
 const handlers = {}
 
@@ -109,12 +97,27 @@ describe('admin guard', () => {
   })
 
   // 后台的改动不能松动用户侧：管理员令牌不算用户登录
-  it('should still send anonymous user routes to the user login page', async () => {
+  it('should still send anonymous protected user routes to the user login page', async () => {
     adminAuth.setSession({ token: 'admin_sess', expiresAt: futureIso(), username: 'root' })
 
-    expect(await handlers.before({ name: 'home', fullPath: '/', meta: {} })).toEqual({
+    expect(
+      await handlers.before({
+        name: 'profile',
+        fullPath: '/profile?tab=stats',
+        meta: {},
+      }),
+    ).toEqual({
       name: 'login',
-      query: {},
+      query: { redirect: '/profile?tab=stats' },
     })
+  })
+
+  // 管理员令牌也不该影响公开页
+  it('should leave the public home page alone for an admin token', async () => {
+    adminAuth.setSession({ token: 'admin_sess', expiresAt: futureIso(), username: 'root' })
+
+    expect(await handlers.before({ name: 'home', fullPath: '/', meta: { public: true } })).toBe(
+      true,
+    )
   })
 })

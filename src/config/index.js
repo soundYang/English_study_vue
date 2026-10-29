@@ -12,7 +12,8 @@ const IMPORT_TIMEOUT = 30000
 const rawBaseUrl = (import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL).trim()
 const useMock = import.meta.env.VITE_USE_MOCK !== 'false'
 const apiBaseUrl = rawBaseUrl.replace(/\/+$/, '')
-// 与后端 AUTH_ENFORCED 一一对应：true 时没有令牌的访问会被路由守卫送到 /login
+// 与后端 AUTH_ENFORCED 一一对应：表示匿名 API 是否返回 401。
+// 前端路由门禁由 meta.public 决定，不再依赖这个开关（md/42）。
 const authEnforced = import.meta.env.VITE_AUTH_ENFORCED === 'true'
 
 export const config = Object.freeze({

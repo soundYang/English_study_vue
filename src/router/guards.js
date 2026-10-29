@@ -6,7 +6,6 @@
  * 后台路由（meta.admin）走独立令牌：用户守卫放行，后台守卫决定去登录页还是概览。
  */
 import { adminAuth } from '../admin/auth'
-import { config } from '../config'
 import { useReadingStore } from '../stores/model/reading'
 import { localStore, storageKeys } from '../unit/storage'
 
@@ -55,15 +54,18 @@ async function guardResult(to) {
 }
 
 /**
- * 未登录拦截。
- * 只在 VITE_AUTH_ENFORCED=true 时生效——后端默认 false（回落 local-user），
- * 前端若强行拦路由，会让现在这套「不登录也能用」的开发方式直接坏掉（md/33 §7.3）。
+ * 未登录拦截：公开页白名单 + 其余默认拦截（md/42）。
+ * 前端门禁不再跟随后端 VITE_AUTH_ENFORCED 开关，否则「游客浏览 + 功能登录」
+ * 会在本地开发模式下失效；令牌是否有效仍由接口 401 兜底。
  */
 function guardAuth(to) {
   // 后台有自己的令牌与登录页，不能被用户鉴权拦下（md/40 §1.3）
   if (to?.meta?.admin) return true
-  // 测试会直接构造只带 params 的 to；meta 缺失按普通页面处理即可
-  if (to?.meta?.bare || !config.authEnforced) return true
+  // 登录 / 注册页本身
+  if (to?.meta?.bare) return true
+  // 首页、404 等显式公开页
+  if (to?.meta?.public === true) return true
+  // 默认：需要登录
   if (localStore.get(storageKeys.accessToken, '')) return true
 
   return {

@@ -5,7 +5,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { defineComponent } from 'vue'
+import { defineComponent, ref } from 'vue'
 import { useQuota } from '../useQuota'
 import { fetchQuota } from '../../api/quota'
 import { fetchApiKey } from '../../api/profile'
@@ -23,10 +23,10 @@ const ALLOWED = {
 
 let state = null
 
-function mountQuota() {
+function mountQuota(options) {
   const Host = defineComponent({
     setup() {
-      state = useQuota()
+      state = useQuota(options)
       return () => null
     },
   })
@@ -42,6 +42,43 @@ beforeEach(() => {
 })
 
 describe('useQuota', () => {
+  it('should skip all requests while disabled, then load when enabled', async () => {
+    const active = ref(false)
+    fetchQuota.mockResolvedValue(ALLOWED)
+
+    mountQuota({ enabled: () => active.value })
+    await flushPromises()
+
+    expect(fetchApiKey).not.toHaveBeenCalled()
+    expect(fetchQuota).not.toHaveBeenCalled()
+    expect(state.canGenerate.value).toBe(true)
+    expect(state.quotaNote.value).toBe('')
+
+    active.value = true
+    await flushPromises()
+
+    expect(fetchApiKey).toHaveBeenCalledTimes(1)
+    expect(fetchQuota).toHaveBeenCalledTimes(1)
+    expect(state.quotaNote.value).toBe('今日剩余 2 次')
+  })
+
+  it('should drop the previous quota when the gate is disabled again', async () => {
+    const active = ref(true)
+    fetchQuota.mockResolvedValue(ALLOWED)
+
+    mountQuota({ enabled: () => active.value })
+    await flushPromises()
+    expect(state.remaining.value).toBe(2)
+    expect(state.canGenerate.value).toBe(true)
+
+    active.value = false
+    await flushPromises()
+
+    expect(state.quota.value).toBeNull()
+    expect(state.canGenerate.value).toBe(true)
+    expect(state.quotaNote.value).toBe('')
+  })
+
   it('should expose the remaining count when generating is allowed', async () => {
     fetchQuota.mockResolvedValue(ALLOWED)
     mountQuota()

@@ -18,6 +18,7 @@ import {
 } from '../../../composables/useGenerationHandoff'
 import { useSettingsStore } from '../../../stores/model/settings'
 import { useToastStore } from '../../../stores/model/toast'
+import { localStore, storageKeys } from '../../../unit/storage'
 
 vi.mock('../../../api/words', () => ({ fetchWords: vi.fn() }))
 vi.mock('../../../api/readings', () => ({
@@ -61,11 +62,14 @@ function createTestRouter() {
       { path: '/words', name: 'words', component: { template: '<div />' } },
       { path: '/generating', name: 'generating', component: { template: '<div />' } },
       { path: '/readings/:id', name: 'reading', component: { template: '<div />' } },
+      { path: '/login', name: 'login', component: { template: '<div />' } },
     ],
   })
 }
 
-async function mountHome() {
+async function mountHome({ authenticated = true } = {}) {
+  if (authenticated) localStore.set(storageKeys.accessToken, 'sess_home_test')
+
   const pinia = createPinia()
   setActivePinia(pinia)
   const router = createTestRouter()
@@ -91,6 +95,25 @@ beforeEach(() => {
 })
 
 describe('home entry branches', () => {
+  it('should keep guests on the public page without calling personal apis', async () => {
+    const { wrapper, router } = await mountHome({ authenticated: false })
+
+    // 游客不请求词库 / 预检 / 额度 / 自备 Key
+    expect(fetchWords).not.toHaveBeenCalled()
+    expect(fetchCapacity).not.toHaveBeenCalled()
+    expect(fetchQuota).not.toHaveBeenCalled()
+    expect(fetchApiKey).not.toHaveBeenCalled()
+
+    expect(wrapper.text()).toContain('登录后查看你的词库')
+    expect(wrapper.text()).toContain('登录后即可生成专属阅读')
+
+    await wrapper.get('button.entry').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/login?redirect=/settings')
+    expect(takeGenerationHandoff()).toBeNull()
+  })
+
   it('should send users to settings when no settings were saved', async () => {
     const { wrapper, router } = await mountHome()
 

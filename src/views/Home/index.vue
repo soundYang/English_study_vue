@@ -2,6 +2,7 @@
 /**
  * 首页视图
  * 呈现 Hero 与三个入口；负责“开始阅读”的未设置 / 空词库 / 交给生成页三条分支。
+ * 游客可浏览首页，但不请求词库 / 预检 / 额度 / 自备 Key；点「开始阅读」去登录（md/42）。
  * 词汇总数只用于提示，请求失败时静默隐藏，不阻塞页面。
  * 每日额度由 useQuota 取一次：有剩余时显示「今日剩余 N 次」，用尽时直接禁用入口。
  */
@@ -14,26 +15,42 @@ import EntryCard from './component/EntryCard.vue'
 import HeroPanel from './component/HeroPanel.vue'
 import { fetchCapacity } from '../../api/readings'
 import { fetchWords } from '../../api/words'
+import { useAuthGate } from '../../composables/useAuthGate'
 import { hasGenerationHandoff, setGenerationHandoff } from '../../composables/useGenerationHandoff'
 import { useQuota } from '../../composables/useQuota'
 import { useToast } from '../../composables/useToast'
+import { useAuthStore } from '../../stores/model/auth'
 import { useSettingsStore } from '../../stores/model/settings'
 
 const router = useRouter()
 const toast = useToast()
+const auth = useAuthStore()
+const { requireAuth } = useAuthGate()
 const settings = useSettingsStore()
-// 额度用尽时直接禁用「开始阅读」，不让用户点进生成页才吃 429（后端 md/35 §7.1）
-const { quotaNote, canGenerate } = useQuota()
+// 游客不请求额度与自备 Key；入口仍可点击，由 requireAuth 带去登录（md/42）
+const { quotaNote, canGenerate } = useQuota({ enabled: () => auth.isAuthenticated })
 
 const totalWords = ref(null)
 const availableWords = ref(null)
 const emptyDialogOpen = ref(false)
 
-const wordMeta = computed(() =>
-  totalWords.value === null ? '' : `已收录 ${totalWords.value} 个单词`,
-)
+const wordMeta = computed(() => {
+  if (!auth.isAuthenticated) return '登录后查看你的词库'
+  return totalWords.value === null ? '' : `已收录 ${totalWords.value} 个单词`
+})
 
-onMounted(async () => {
+const startReadingMeta = computed(() => {
+  if (!auth.isAuthenticated) return '登录后即可生成专属阅读'
+  return quotaNote.value
+})
+
+async function loadUserSummary() {
+  if (!auth.isAuthenticated) {
+    totalWords.value = null
+    availableWords.value = null
+    return
+  }
+
   try {
     const result = await fetchWords({ page: 1, pageSize: 1 })
     totalWords.value = result.total
@@ -54,7 +71,9 @@ onMounted(async () => {
   } catch {
     // 静默失败：首页只需要一个提示数字，弹错反而挡住「开始阅读」
   }
-})
+}
+
+onMounted(loadUserSummary)
 
 function beginGeneration() {
   // 参数与词库口径交给生成页；动画和请求都在那一页完成，这里只负责跳转。
@@ -65,7 +84,7 @@ function beginGeneration() {
   router.push('/generating')
 }
 
-function handleStartReading() {
+function startReadingFlow() {
   if (!settings.hasSavedSettings) {
     toast.info('先完成阅读设置，再开始生成')
     router.push('/settings')
@@ -79,6 +98,11 @@ function handleStartReading() {
   }
 
   beginGeneration()
+}
+
+function handleStartReading() {
+  // 游客先去登录；登录后回到设置页，避免直接进生成页时缺交接单
+  requireAuth(startReadingFlow, { redirect: '/settings' })
 }
 
 function goAddWords() {
@@ -116,7 +140,7 @@ function tryAnyway() {
         title="开始阅读"
         desc="AI 为你生成专属阅读材料，开启你的学习之旅。"
         :icon="Sparkles"
-        :meta="quotaNote"
+        :meta="startReadingMeta"
         :delay="160"
         :disabled="!canGenerate"
         @select="handleStartReading"

@@ -42,9 +42,9 @@ const route = useRoute()
 const auth = useAuthStore()
 const mainRef = ref(null)
 const activeModule = computed(() => route.meta.module || '')
-// 未登录时沿用本地演示身份，界面不会因为少一个字段而空一块
-const topbarName = computed(() => auth.displayName || 'Sound')
-const topbarInitial = computed(() => (auth.displayName ? auth.initial : 'S'))
+// 游客不伪装成演示账号：顶栏直接显示「登录 / 注册」（md/42）
+const topbarName = computed(() => auth.displayName)
+const topbarInitial = computed(() => auth.initial)
 const hideMobileNav = computed(() => route.meta.hideMobileNav === true)
 // 内容区宽度 / 内边距只在页面入场时切换：旧的页面淡出期间还挂在同一容器里，
 // 若立刻换成目标页的布局，旧页会突然横向撑开（看起来像先放大再切换）
@@ -96,10 +96,19 @@ function handlePageEnter() {
             <BookOpen :size="18" :stroke-width="1.7" aria-hidden="true" />
             <span>Word Reading</span>
           </RouterLink>
-          <RouterLink class="topbar-user" to="/profile" aria-label="打开个人中心">
+          <RouterLink
+            v-if="auth.isAuthenticated"
+            class="topbar-user"
+            to="/profile"
+            aria-label="打开个人中心"
+          >
             <span class="user-avatar" aria-hidden="true">{{ topbarInitial }}</span>
             <span class="user-name">{{ topbarName }}</span>
             <ChevronDown class="user-chevron" :size="14" :stroke-width="1.8" aria-hidden="true" />
+          </RouterLink>
+          <RouterLink v-else class="topbar-login" to="/login" aria-label="登录或注册">
+            <UserRound :size="16" :stroke-width="1.7" aria-hidden="true" />
+            <span>登录 / 注册</span>
           </RouterLink>
         </div>
       </header>
@@ -311,6 +320,29 @@ function handlePageEnter() {
   color: var(--color-ink);
 }
 
+.topbar-login {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-pill);
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.topbar-login:hover {
+  border-color: var(--color-line-strong);
+  background: var(--color-bg-deep);
+  color: var(--color-ink);
+}
+
 .user-chevron {
   color: var(--color-muted);
 }
@@ -417,8 +449,9 @@ function handlePageEnter() {
     letter-spacing: 0.01em;
   }
 
-  /* 顶部头像也是个人中心入口，触控目标补到 44px */
-  .topbar-user {
+  /* 顶部头像 / 登录入口也是导航入口，触控目标补到 44px */
+  .topbar-user,
+  .topbar-login {
     min-height: 44px;
   }
 

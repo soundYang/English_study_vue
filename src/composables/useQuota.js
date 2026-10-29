@@ -4,6 +4,7 @@
  * 「今日剩余 N 次」与「额度用尽」两种状态。
  *
  * 用法：const { quotaNote, isBlocked, canGenerate, refresh } = useQuota()
+ *       useQuota({ enabled: () => auth.isAuthenticated })  // 游客不请求额度与自备 Key
  *
  * 口径与后端一致：blocking === null && primary.remaining > 0 才能生成。
  * 任一维度（账号 / 设备 / 网络）用尽都算 blocked——设备还有次数、但同一网络
@@ -14,14 +15,14 @@
  * 所以额度用尽也不拦。先读 Key 状态再取额度，避免「额度 0 次」先闪一下禁用。
  * 有 Key 时额度文案改成「使用我的 API Key」，不把免费口径说成「今天不能生成」。
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { fetchQuota } from '../api/quota'
 import { describeQuotaExceeded } from '../unit/error-text'
 import { useUserApiKey } from './useUserApiKey'
 
 const OWN_KEY_NOTE = '使用我的 API Key，不占用免费次数'
 
-export function useQuota() {
+export function useQuota({ enabled = () => true } = {}) {
   const quota = ref(null)
   const loading = ref(false)
   const error = ref('')
@@ -31,6 +32,9 @@ export function useQuota() {
   let seq = 0
 
   async function refresh() {
+    // 游客 / 未启用时不发请求，避免公开页打出 401
+    if (!enabled()) return
+
     // 序列号而不是请求先后：慢的旧请求回来时不能覆盖新结果
     const current = (seq += 1)
     controller?.abort()
@@ -57,8 +61,26 @@ export function useQuota() {
   // 先确认有没有自备 Key，再取额度：顺序反过来时，额度用尽的用户会先看到
   // 「今日剩余 0 次」和禁用按钮，随后才被 Key 状态解开，属于可见的闪动
   onMounted(async () => {
+    if (!enabled()) return
     await loadOwnKey()
     await refresh()
+  })
+
+  // 登录态可能在页面存活期间变化（例如同页登录 / 掉线）：
+  // 启用后补一次请求；停用时清掉旧额度，避免游客看到上一账号的剩余次数
+  watch(enabled, (value) => {
+    if (!value) {
+      seq += 1
+      controller?.abort()
+      controller = null
+      quota.value = null
+      error.value = ''
+      loading.value = false
+      return
+    }
+
+    loadOwnKey()
+    refresh()
   })
 
   onBeforeUnmount(() => {

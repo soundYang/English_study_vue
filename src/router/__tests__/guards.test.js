@@ -7,6 +7,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { registerGuards } from '../guards'
 import { resetMockDb, setMockLatency } from '../../mock/adapter'
 import { useReadingStore } from '../../stores/model/reading'
+import { localStore, storageKeys } from '../../unit/storage'
 
 const handlers = {}
 
@@ -24,6 +25,8 @@ function createRouter() {
 beforeEach(() => {
   localStorage.clear()
   sessionStorage.clear()
+  // 阅读路由默认需要登录：预置令牌后，这些用例只验证阅读页自身的跳转逻辑
+  localStore.set(storageKeys.accessToken, 'sess_guard_test')
   resetMockDb()
   setMockLatency(0)
   setActivePinia(createPinia())
