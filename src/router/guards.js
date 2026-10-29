@@ -3,7 +3,9 @@
  * 同步页面标题；答题页与结果页进入前拉取阅读详情。
  * 答题页：已提交替换到结果页；结果页：未提交替换回答题页。
  * 加载失败不阻断导航，由页面展示错误卡与重试，避免白屏。
+ * 后台路由（meta.admin）走独立令牌：用户守卫放行，后台守卫决定去登录页还是概览。
  */
+import { adminAuth } from '../admin/auth'
 import { config } from '../config'
 import { useReadingStore } from '../stores/model/reading'
 import { localStore, storageKeys } from '../unit/storage'
@@ -58,6 +60,8 @@ async function guardResult(to) {
  * 前端若强行拦路由，会让现在这套「不登录也能用」的开发方式直接坏掉（md/33 §7.3）。
  */
 function guardAuth(to) {
+  // 后台有自己的令牌与登录页，不能被用户鉴权拦下（md/40 §1.3）
+  if (to?.meta?.admin) return true
   // 测试会直接构造只带 params 的 to；meta 缺失按普通页面处理即可
   if (to?.meta?.bare || !config.authEnforced) return true
   if (localStore.get(storageKeys.accessToken, '')) return true
@@ -68,10 +72,27 @@ function guardAuth(to) {
   }
 }
 
+/**
+ * 后台鉴权。
+ * 只是 UX：令牌过期判断用本地 expiresAt，服务端 12 小时 TTL 仍是唯一权威；
+ * 真过期时接口会 401，请求层清会话后由 AdminLayout 送回登录页。
+ */
+function guardAdmin(to) {
+  if (!to?.meta?.admin) return true
+
+  const hasToken = adminAuth.hasValidToken()
+
+  if (to.name === 'admin-login') return hasToken ? { name: 'admin-overview' } : true
+  return hasToken ? true : { name: 'admin-login', query: { redirect: to.fullPath } }
+}
+
 export function registerGuards(router) {
   router.beforeEach((to) => {
     const authRedirect = guardAuth(to)
     if (authRedirect !== true) return authRedirect
+
+    const adminRedirect = guardAdmin(to)
+    if (adminRedirect !== true) return adminRedirect
 
     if (to.name === 'reading') return guardReading(to)
     if (to.name === 'reading-result') return guardResult(to)

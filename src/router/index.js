@@ -74,6 +74,50 @@ const routes = [
     component: () => import('../views/Auth/index.vue'),
     meta: { title: '注册', bare: true, authMode: 'register' },
   },
+  // 管理后台：独立布局与独立会话（md/40）；必须放在 404 通配之前
+  {
+    path: '/admin/login',
+    name: 'admin-login',
+    component: () => import('../admin/views/Login.vue'),
+    meta: { admin: true, bare: true, title: '后台登录' },
+  },
+  {
+    path: '/admin',
+    component: () => import('../admin/layouts/AdminLayout.vue'),
+    meta: { admin: true },
+    children: [
+      {
+        path: '',
+        name: 'admin-overview',
+        component: () => import('../admin/views/Overview.vue'),
+        meta: { title: '概览' },
+      },
+      {
+        path: 'users',
+        name: 'admin-users',
+        component: () => import('../admin/views/Users.vue'),
+        meta: { title: '用户台账' },
+      },
+      {
+        path: 'users/:dataKey',
+        name: 'admin-user',
+        component: () => import('../admin/views/UserDetail.vue'),
+        meta: { title: '用户详情' },
+      },
+      {
+        path: 'feedback',
+        name: 'admin-feedback',
+        component: () => import('../admin/views/Feedback.vue'),
+        meta: { title: '用户反馈' },
+      },
+      {
+        path: 'feedback/:id',
+        name: 'admin-feedback-detail',
+        component: () => import('../admin/views/FeedbackDetail.vue'),
+        meta: { title: '反馈详情' },
+      },
+    ],
+  },
   {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
