@@ -43,6 +43,11 @@ const FINAL_MODE_MAX_WORDS = 1000
 const LENGTH_STEP = 100
 // hard 的实测下限（md/27 §4.6–§4.8）；easy / medium 没有采样，只走 A 门折算
 const HARD_MEASURED_MIN_KNOWN = { 100: 638, 200: 647, 300: 661, 400: 676, 500: 690, 600: 704 }
+// 用户反馈（md/37 §5.1）：与后端 zod schema 同一口径，本地实现只用于无后端时演示
+const FEEDBACK_CONTENT_MIN = 10
+const FEEDBACK_CONTENT_MAX = 2000
+const FEEDBACK_FIELD_MAX = 100
+const FEEDBACK_CATEGORIES = ['bug', 'feature', 'content', 'data', 'privacy', 'other']
 
 /** 写 targetWords 词至少要认识多少词；与后端 capacity-table.js 的 minKnownFor 同构 */
 function mockMinKnown(targetWords, level) {
@@ -869,6 +874,67 @@ export const mockProfile = {
   async stats() {
     await wait(latency)
     return buildProfileStats(readDb().readings)
+  },
+}
+
+/**
+ * 用户反馈接口的本地实现（md/37 §5.1）
+ * 只做校验并回 201，不落库——本地开发不需要回看自己提交过什么。
+ * 错误结构（code / field / details）与真实后端一致，方便切换后直接对照。
+ */
+export const mockFeedback = {
+  async submit({ category = 'other', content = '', contact = '', page = '' } = {}) {
+    await wait(latency)
+
+    if (!FEEDBACK_CATEGORIES.includes(category)) {
+      throw new MockApiError('INVALID_REQUEST', '反馈类型不合法', 400, 'category')
+    }
+
+    const text = String(content ?? '').trim()
+    if (text.length < FEEDBACK_CONTENT_MIN) {
+      throw new MockApiError(
+        'FEEDBACK_TOO_SHORT',
+        `反馈内容至少 ${FEEDBACK_CONTENT_MIN} 个字`,
+        400,
+        'content',
+        { minLength: FEEDBACK_CONTENT_MIN, maxLength: FEEDBACK_CONTENT_MAX },
+      )
+    }
+    if (text.length > FEEDBACK_CONTENT_MAX) {
+      throw new MockApiError(
+        'FEEDBACK_TOO_LONG',
+        `反馈内容最多 ${FEEDBACK_CONTENT_MAX} 个字`,
+        400,
+        'content',
+        { minLength: FEEDBACK_CONTENT_MIN, maxLength: FEEDBACK_CONTENT_MAX },
+      )
+    }
+
+    const contactText = String(contact ?? '').trim()
+    if (contactText.length > FEEDBACK_FIELD_MAX) {
+      throw new MockApiError(
+        'INVALID_REQUEST',
+        `联系方式最多 ${FEEDBACK_FIELD_MAX} 个字`,
+        400,
+        'contact',
+      )
+    }
+
+    const pageText = String(page ?? '').trim()
+    if (pageText.length > FEEDBACK_FIELD_MAX) {
+      throw new MockApiError(
+        'INVALID_REQUEST',
+        `页面地址最多 ${FEEDBACK_FIELD_MAX} 个字`,
+        400,
+        'page',
+      )
+    }
+
+    return {
+      id: `fb_${Date.now().toString(36)}`,
+      status: 'open',
+      createdAt: new Date().toISOString(),
+    }
   },
 }
 

@@ -17,6 +17,7 @@ import BaseButton from '../../component/BaseButton.vue'
 import SkeletonBlock from '../../component/SkeletonBlock.vue'
 import AccountSettings from './component/AccountSettings.vue'
 import ApiSettings from './component/ApiSettings.vue'
+import FeedbackModal from './component/FeedbackModal.vue'
 import PasswordModal from './component/PasswordModal.vue'
 import ProfileEditModal from './component/ProfileEditModal.vue'
 import ProfileHero from './component/ProfileHero.vue'
@@ -38,6 +39,7 @@ const errorRequestId = ref('')
 
 const editOpen = ref(false)
 const passwordOpen = ref(false)
+const feedbackOpen = ref(false)
 
 onMounted(load)
 
@@ -76,6 +78,10 @@ function handleProfileSaved(next) {
 
 function handlePasswordChanged() {
   toast.success('密码已更新')
+}
+
+function handleFeedbackSubmitted() {
+  toast.success('感谢反馈，我们已经收到')
 }
 
 async function handleLogout() {
@@ -121,6 +127,7 @@ async function handleLogout() {
           :nickname="user.nickname || user.username"
           @edit-nickname="editOpen = true"
           @change-password="passwordOpen = true"
+          @feedback="feedbackOpen = true"
           @logout="handleLogout"
         />
         <ApiSettings />
@@ -129,6 +136,7 @@ async function handleLogout() {
 
     <ProfileEditModal v-model:open="editOpen" :user="user" @saved="handleProfileSaved" />
     <PasswordModal v-model:open="passwordOpen" @changed="handlePasswordChanged" />
+    <FeedbackModal v-model:open="feedbackOpen" @submitted="handleFeedbackSubmitted" />
   </section>
 </template>
 

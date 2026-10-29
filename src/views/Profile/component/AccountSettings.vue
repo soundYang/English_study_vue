@@ -2,21 +2,21 @@
 /**
  * 账户设置卡
  *
- * 用途：个人中心左栏，提供修改昵称、修改密码与退出登录三个入口
- * 用法：<AccountSettings :nickname="user.nickname" @edit-nickname="editOpen = true" @change-password="passwordOpen = true" @logout="handleLogout" />
+ * 用途：个人中心左栏，提供修改昵称、修改密码、意见反馈与退出登录四个入口
+ * 用法：<AccountSettings :nickname="user.nickname" @edit-nickname="editOpen = true" @change-password="passwordOpen = true" @feedback="feedbackOpen = true" @logout="handleLogout" />
  *
  * props:
  *   nickname — 当前昵称，显示在「修改昵称」说明里
  * emits:
- *   edit-nickname / change-password / logout
+ *   edit-nickname / change-password / feedback / logout
  */
-import { ChevronRight, LockKeyhole, LogOut, UserRound } from 'lucide-vue-next'
+import { ChevronRight, LockKeyhole, LogOut, MessageSquareText, UserRound } from 'lucide-vue-next'
 
 defineProps({
   nickname: { type: String, default: '' },
 })
 
-const emit = defineEmits(['edit-nickname', 'change-password', 'logout'])
+const emit = defineEmits(['edit-nickname', 'change-password', 'feedback', 'logout'])
 </script>
 
 <template>
@@ -50,6 +50,19 @@ const emit = defineEmits(['edit-nickname', 'change-password', 'logout'])
           <span class="row-copy">
             <span class="row-title">修改密码</span>
             <span class="row-desc">定期更换密码，保障账户安全</span>
+          </span>
+          <ChevronRight class="row-arrow" :size="16" aria-hidden="true" />
+        </button>
+      </li>
+
+      <li>
+        <button class="setting-row" type="button" @click="emit('feedback')">
+          <span class="row-icon" aria-hidden="true">
+            <MessageSquareText :size="17" :stroke-width="1.8" />
+          </span>
+          <span class="row-copy">
+            <span class="row-title">意见反馈</span>
+            <span class="row-desc">遇到问题或有建议，告诉我们</span>
           </span>
           <ChevronRight class="row-arrow" :size="16" aria-hidden="true" />
         </button>

@@ -147,6 +147,21 @@ describe('Profile page', () => {
     expect(useToastStore().items.map((item) => item.message)).toContain('密码已更新')
   })
 
+  // 反馈入口在账户设置卡第 3 行（昵称 / 密码 / 反馈 / 退出）
+  it('should open the feedback modal from the account settings card', async () => {
+    mountPage()
+    await flushPromises()
+
+    const feedbackRow = wrapper
+      .findAll('button.setting-row')
+      .find((row) => row.text().includes('意见反馈'))
+    await feedbackRow.trigger('click')
+    await nextTick()
+
+    expect(wrapper.find('#feedback-form').exists()).toBe(true)
+    expect(wrapper.get('.modal-title').text()).toBe('意见反馈')
+  })
+
   it('should explain a failed load and retry', async () => {
     vi.mocked(fetchProfile).mockRejectedValueOnce(
       new BusinessError('服务暂时不可用', 'INTERNAL_ERROR', { requestId: 'req-profile-1' }),
