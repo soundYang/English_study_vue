@@ -11,8 +11,9 @@
  *   - 小于 768px 时侧栏隐藏，改为顶部栏 + 底部四标签
  *   - 答题页通过 meta.hideMobileNav 隐藏底部标签，避免误触离开
  *   - meta.flush 的页面取消内容区最大宽度与内边距，让图片等装饰面贴到窗口边缘
+ *   - 最大宽度 / 内边距在页面入场时才切换，旧页淡出期间保持原布局，避免旧页先被撑开
  */
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import {
   BookOpen,
@@ -25,6 +26,7 @@ import {
 } from 'lucide-vue-next'
 import GenerateOverlay from '../component/GenerateOverlay.vue'
 import ToastHost from '../component/ToastHost.vue'
+import { usePageLayoutMode } from '../composables/usePageLayoutMode'
 import { useAuthStore } from '../stores/model/auth'
 
 const navItems = [
@@ -44,15 +46,15 @@ const activeModule = computed(() => route.meta.module || '')
 const topbarName = computed(() => auth.displayName || 'Sound')
 const topbarInitial = computed(() => (auth.displayName ? auth.initial : 'S'))
 const hideMobileNav = computed(() => route.meta.hideMobileNav === true)
-const isWide = computed(() => route.meta.wide === true)
-const isFlush = computed(() => route.meta.flush === true)
+// 内容区宽度 / 内边距只在页面入场时切换：旧的页面淡出期间还挂在同一容器里，
+// 若立刻换成目标页的布局，旧页会突然横向撑开（看起来像先放大再切换）
+const { layoutMode, syncLayoutMode } = usePageLayoutMode(route)
 
-watch(
-  () => route.fullPath,
-  () => {
-    if (mainRef.value) mainRef.value.scrollTop = 0
-  },
-)
+/** 新页面入场（旧页已离场）：同步布局并回到顶部，此时新页还是 opacity: 0 */
+function handlePageEnter() {
+  syncLayoutMode()
+  if (mainRef.value) mainRef.value.scrollTop = 0
+}
 </script>
 
 <template>
@@ -103,9 +105,12 @@ watch(
       </header>
 
       <main id="main-content" ref="mainRef" class="main" tabindex="-1">
-        <div class="main-inner" :class="{ 'is-wide': isWide, 'is-flush': isFlush }">
+        <div
+          class="main-inner"
+          :class="{ 'is-wide': layoutMode.wide, 'is-flush': layoutMode.flush }"
+        >
           <RouterView v-slot="{ Component }">
-            <Transition name="page" mode="out-in">
+            <Transition name="page" mode="out-in" @before-enter="handlePageEnter">
               <component :is="Component" />
             </Transition>
           </RouterView>
