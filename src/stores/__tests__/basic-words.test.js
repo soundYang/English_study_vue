@@ -1,11 +1,12 @@
 /**
  * 基础词表 store 测试
  * 本页不做 mock 适配器，api 层用 vi.mock 替身，测试不能落到真实后端。
- * 重点固定两件事：换条件必须回第 1 页；写操作在有筛选时要重拉而不是就地改行。
+ * 重点固定三件事：换条件必须回第 1 页；写操作在有筛选时要重拉而不是就地改行；
+ * 三态标记走同一个 PATCH，state 原样透传（md/52）。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { fetchBasicWords, removeBasicWord, restoreBasicWord } from '../../api/basic-words'
+import { fetchBasicWords, setBasicWordMark } from '../../api/basic-words'
 import { BusinessError } from '../../errors'
 import { useBasicWordsStore } from '../model/basic-words'
 import { localStore, storageKeys } from '../../unit/storage'
@@ -13,8 +14,7 @@ import { localStore, storageKeys } from '../../unit/storage'
 vi.mock('../../api/basic-words', () => ({
   fetchBasicWords: vi.fn(),
   fetchPublicBasicWords: vi.fn(),
-  removeBasicWord: vi.fn(),
-  restoreBasicWord: vi.fn(),
+  setBasicWordMark: vi.fn(),
 }))
 
 const COUNTS = {
@@ -24,6 +24,7 @@ const COUNTS = {
   abbreviation: 32,
   removable: 421,
   functionWord: 179,
+  known: 0,
   learned: 0,
   removed: 0,
   untouched: 650,
@@ -36,7 +37,8 @@ function makeItem(overrides = {}) {
     kind: 'basic',
     isFunctionWord: false,
     removable: true,
-    removed: false,
+    personalState: 'untouched',
+    knownSource: null,
     personalStatus: null,
     wordId: null,
     cocaRank: 2201,
@@ -186,13 +188,13 @@ describe('basic words store · 列表', () => {
   })
 })
 
-describe('basic words store · 标记与恢复', () => {
-  it('should replace the row and the counts immediately when no status filter is active', async () => {
+describe('basic words store · 三态标记', () => {
+  it('should patch the row and the counts immediately when no status filter is active', async () => {
     const store = useBasicWordsStore()
     await store.fetchList()
 
-    removeBasicWord.mockResolvedValueOnce({
-      item: makeItem({ removed: true, personalStatus: 'new', wordId: 'w-1' }),
+    setBasicWordMark.mockResolvedValueOnce({
+      item: makeItem({ personalState: 'removed', wordId: 'w-1' }),
       counts: { ...COUNTS, removed: 1, untouched: 649 },
     })
 
@@ -203,18 +205,18 @@ describe('basic words store · 标记与恢复', () => {
       }),
     )
 
-    const pending = store.markRemoved('abandon')
+    const pending = store.setMark('abandon', 'unknown')
     await flush()
 
     // 对账还没回来，界面已经能显示新状态
     expect(store.counts.removed).toBe(1)
-    expect(store.items[0]).toMatchObject({ word: 'abandon', removed: true, personalStatus: 'new' })
+    expect(store.items[0]).toMatchObject({ word: 'abandon', personalState: 'removed' })
 
-    resolveRefetch(makePage({ items: [makeItem({ word: 'abandon', removed: true })] }))
+    resolveRefetch(makePage({ items: [makeItem({ word: 'abandon', personalState: 'removed' })] }))
     const result = await pending
 
     expect(result.ok).toBe(true)
-    expect(removeBasicWord).toHaveBeenCalledWith('abandon')
+    expect(setBasicWordMark).toHaveBeenCalledWith('abandon', 'unknown')
     expect(store.pendingWord).toBe('')
   })
 
@@ -223,9 +225,9 @@ describe('basic words store · 标记与恢复', () => {
     await store.fetchList()
     await store.setStatus('unknown')
 
-    removeBasicWord.mockResolvedValueOnce({
-      item: makeItem({ removed: true, personalStatus: 'new' }),
-      counts: { ...COUNTS, removed: 1, untouched: 649 },
+    setBasicWordMark.mockResolvedValueOnce({
+      item: makeItem({ personalState: 'known', knownSource: 'mark' }),
+      counts: { ...COUNTS, known: 1, untouched: 649 },
     })
 
     let resolveRefetch
@@ -235,11 +237,11 @@ describe('basic words store · 标记与恢复', () => {
       }),
     )
 
-    const pending = store.markRemoved('abandon')
+    const pending = store.setMark('abandon', 'known')
     await flush()
 
-    // 「未标记」筛选下这一行已经不该出现，不能就地改成不认识留在原地
-    expect(store.items.find((row) => row.word === 'abandon')?.removed).toBe(false)
+    // 「未标记」筛选下这一行已经不该出现，不能就地改成认识留在原地
+    expect(store.items.find((row) => row.word === 'abandon')?.personalState).toBe('untouched')
     expect(fetchBasicWords).toHaveBeenLastCalledWith(
       expect.objectContaining({ status: 'unknown', page: 1 }),
     )
@@ -250,19 +252,19 @@ describe('basic words store · 标记与恢复', () => {
     expect(store.items.map((row) => row.word)).toEqual(['ability'])
   })
 
-  it('should restore a word and refresh the counts', async () => {
+  it('should clear a mark with state none and refresh the counts', async () => {
     const store = useBasicWordsStore()
     await store.fetchList()
 
-    restoreBasicWord.mockResolvedValueOnce({
-      item: makeItem({ removed: false, personalStatus: null }),
+    setBasicWordMark.mockResolvedValueOnce({
+      item: makeItem({ personalState: 'untouched', knownSource: null }),
       counts: { ...COUNTS, removed: 0, untouched: 650 },
     })
 
-    const result = await store.restore('abandon')
+    const result = await store.setMark('abandon', 'none')
 
     expect(result.ok).toBe(true)
-    expect(restoreBasicWord).toHaveBeenCalledWith('abandon')
+    expect(setBasicWordMark).toHaveBeenCalledWith('abandon', 'none')
     expect(store.counts.removed).toBe(0)
   })
 
@@ -270,14 +272,14 @@ describe('basic words store · 标记与恢复', () => {
     const store = useBasicWordsStore()
     await store.fetchList()
 
-    removeBasicWord.mockRejectedValueOnce(
+    setBasicWordMark.mockRejectedValueOnce(
       new BusinessError(
         '“book”已经在你的词库里（已掌握），请到词汇页修改它的状态。',
         'BASIC_WORD_ALREADY_LEARNED',
       ),
     )
 
-    const result = await store.markRemoved('book')
+    const result = await store.setMark('book', 'known')
 
     expect(result).toMatchObject({ ok: false, code: 'BASIC_WORD_ALREADY_LEARNED' })
     expect(result.message).toContain('词汇页')

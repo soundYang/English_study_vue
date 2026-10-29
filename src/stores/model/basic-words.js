@@ -1,17 +1,12 @@
 /**
  * 基础词表状态
- * 维护分组 / 状态 / 搜索 / 分页与「标记不认识 / 恢复」；
+ * 维护分组 / 状态 / 搜索 / 分页与三态标记（认识 / 不认识 / 取消）；
  * 视图不直接调用 api/basic-words，写操作后的列表同步规则集中在 applyMutation。
- * 游客态改用公开只读接口，写操作直接返回 AUTH_REQUIRED（md/45 §5.3）。
+ * 游客态改用公开只读接口，写操作直接返回 AUTH_REQUIRED（md/45 §5.3、md/52）。
  */
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import {
-  fetchBasicWords,
-  fetchPublicBasicWords,
-  removeBasicWord,
-  restoreBasicWord,
-} from '../../api/basic-words'
+import { fetchBasicWords, fetchPublicBasicWords, setBasicWordMark } from '../../api/basic-words'
 import { normalizeApiError } from '../../errors'
 import { BASIC_PAGE_SIZES } from '../../unit/basic-words'
 import { useAuthStore } from './auth'
@@ -155,30 +150,18 @@ export const useBasicWordsStore = defineStore('basic-words', () => {
     return fetchList({ quiet: true })
   }
 
-  /** 标记不认识；词已收录进个人词库时后端给 409，文案里自带出口 */
-  async function markRemoved(word) {
+  /**
+   * 设置个人标记：known 认识 / unknown 不认识 / none 取消标记（md/52 §2.2）。
+   * PATCH 是设状态且幂等，重复点同一项等于空操作；
+   * 词已在个人词库里时后端给 409 BASIC_WORD_ALREADY_LEARNED，文案里自带出口。
+   */
+  async function setMark(word, state) {
     // 写操作必须有账号：游客态即便绕过界面调用也不发请求（md/45 §5.3）
-    if (!auth.isAuthenticated) return authRequired('登录后才能标记不认识的单词')
+    if (!auth.isAuthenticated) return authRequired('登录后才能标记基础词')
 
     pendingWord.value = word
     try {
-      const result = await removeBasicWord(word)
-      await applyMutation(result, word)
-      return { ok: true, item: result.item, counts: result.counts }
-    } catch (caught) {
-      return toFailure(caught)
-    } finally {
-      pendingWord.value = ''
-    }
-  }
-
-  /** 恢复：只对 source = basic-removed 的记录有效，用户自建的词后端会拒绝 */
-  async function restore(word) {
-    if (!auth.isAuthenticated) return authRequired('登录后才能恢复单词')
-
-    pendingWord.value = word
-    try {
-      const result = await restoreBasicWord(word)
+      const result = await setBasicWordMark(word, state)
       await applyMutation(result, word)
       return { ok: true, item: result.item, counts: result.counts }
     } catch (caught) {
@@ -223,8 +206,7 @@ export const useBasicWordsStore = defineStore('basic-words', () => {
     setStatus,
     setPageSize,
     goToPage,
-    markRemoved,
-    restore,
+    setMark,
     reset,
   }
 })

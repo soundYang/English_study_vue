@@ -3,7 +3,7 @@
  * 基础词库视图
  * 三张词表（基础词 / 日历词 / 缩写）的分页浏览，数字卡与分组标签读接口 counts。
  * 请求、筛选与分页状态都在 basic-words store，本页只负责交互、空态与提示。
- * 「标为不认识」需二次确认，「恢复」不可撤销但影响小，直接执行。
+ * 三态标记（md/52）：标为认识 / 取消立即生效；标为不认识需二次确认，因为它会改变生成词表。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import BaseButton from '../../component/BaseButton.vue'
@@ -88,6 +88,12 @@ const emptyMeta = computed(() => {
 
 const confirmTitle = computed(() => `标记 “${removeTarget.value?.word || ''}” 为不认识？`)
 
+const MARK_TOASTS = {
+  known: (word) => `已标记 “${word}” 为认识`,
+  unknown: (word) => `已标记 “${word}” 为不认识`,
+  none: (word) => `已取消 “${word}” 的标记`,
+}
+
 const detailData = computed(() =>
   detailTarget.value ? basicWordDetail(detailTarget.value.item) : null,
 )
@@ -140,14 +146,31 @@ function handleDetailOpen(value) {
   if (!value) detailTarget.value = null
 }
 
-function handleRemove(item) {
+/** 菜单里的三个可提交状态；只有「不认识」需要二次确认（会改变生成词表） */
+async function applyMark(word, state) {
+  const result = await store.setMark(word, state)
+
+  if (result.ok) {
+    detailTarget.value = null
+    toast.success(MARK_TOASTS[state](word))
+  } else {
+    toast.error(result.message)
+  }
+}
+
+function handleAction({ item, type }) {
   // 游客态菜单已隐藏，这里兜底：任何路径走到写操作都先去登录
   if (isGuest.value) {
     goLogin('/basic-words')
     return
   }
 
-  removeTarget.value = item
+  if (type === 'unknown') {
+    removeTarget.value = item
+    return
+  }
+
+  applyMark(item.word, type)
 }
 
 function handleDialogOpen(value) {
@@ -159,29 +182,13 @@ async function handleConfirmRemove() {
 
   const word = removeTarget.value.word
   removing.value = true
-  const result = await store.markRemoved(word)
+  const result = await store.setMark(word, 'unknown')
   removing.value = false
   removeTarget.value = null
   detailTarget.value = null
 
-  if (result.ok) toast.success(`已标记 “${word}” 为不认识`)
+  if (result.ok) toast.success(MARK_TOASTS.unknown(word))
   else toast.error(result.message)
-}
-
-async function handleRestore(item) {
-  if (isGuest.value) {
-    goLogin('/basic-words')
-    return
-  }
-
-  const result = await store.restore(item.word)
-
-  if (result.ok) {
-    detailTarget.value = null
-    toast.success(`已恢复 “${item.word}”`)
-  } else {
-    toast.error(result.message)
-  }
 }
 </script>
 
@@ -211,7 +218,7 @@ async function handleRestore(item) {
       v-if="isGuest"
       class="guest-notice"
       title="登录后可标记认识程度"
-      description="浏览公开词表不需要登录，登录后可以标记「不认识」并恢复。"
+      description="浏览公开词表不需要登录，登录后可以标记「认识」或「不认识」，也能随时取消标记。"
       @login="goLogin('/basic-words')"
     />
 
@@ -225,8 +232,7 @@ async function handleRestore(item) {
         :expanded-word="detailTarget?.item.word || ''"
         :readonly="isGuest"
         @retry="store.fetchList()"
-        @remove="handleRemove"
-        @restore="handleRestore"
+        @select="handleAction"
         @detail="handleDetail"
       />
 
@@ -260,7 +266,7 @@ async function handleRestore(item) {
     <ConfirmDialog
       :open="Boolean(removeTarget)"
       :title="confirmTitle"
-      description="它会从阅读生成的基础词里移除，可以随时在本页恢复。"
+      description="它会从阅读生成的基础词里移除，之后可以随时改回认识或取消标记。"
       confirm-text="标记不认识"
       danger
       :loading="removing"

@@ -1,6 +1,6 @@
 /**
  * 单词详情映射测试
- * 覆盖基础词的四类词、已移除 / 已收录 / 功能词的事实行，以及我的单词的两种来源。
+ * 覆盖基础词的四类词、三态标记 / 已收录 / 功能词的事实行，以及我的单词的两种来源。
  */
 import { describe, expect, it } from 'vitest'
 import { basicWordDetail, myWordDetail } from '../word-detail'
@@ -11,7 +11,8 @@ function makeBasic(overrides = {}) {
     kinds: ['basic'],
     isFunctionWord: false,
     removable: true,
-    removed: false,
+    personalState: 'untouched',
+    knownSource: null,
     personalStatus: null,
     cocaRank: 2201,
     phonetic: { uk: '/əˈbæn.dən/', us: '/əˈbæn.dɑːn/' },
@@ -42,7 +43,7 @@ describe('basicWordDetail', () => {
     expect(facts['状态']).toBe('未标记')
     expect(facts['词表']).toBe('基础词')
     expect(facts['词频']).toBe('COCA 2201 · 高频')
-    expect(facts['标记']).toBe('可标为不认识')
+    expect(facts['标记']).toBe('可标为认识或不认识')
   })
 
   it('should join multiple kinds without treating may as calendar only', () => {
@@ -80,17 +81,30 @@ describe('basicWordDetail', () => {
     expect(facts['词频']).toBe('COCA 2201 · 高频')
   })
 
-  it('should mark a removed word as restorable', () => {
-    const facts = factMap(basicWordDetail(makeBasic({ removed: true })))
+  it('should mark a removed word as switchable back', () => {
+    const facts = factMap(basicWordDetail(makeBasic({ personalState: 'removed' })))
 
     expect(facts['状态']).toBe('不认识')
-    expect(facts['标记']).toBe('已标为不认识，可恢复')
+    expect(facts['标记']).toBe('已标为不认识，可改回认识或取消')
+  })
+
+  it('should describe a manually marked known word as cancellable', () => {
+    const facts = factMap(
+      basicWordDetail(makeBasic({ personalState: 'known', knownSource: 'mark' })),
+    )
+
+    expect(facts['状态']).toBe('认识')
+    expect(facts['标记']).toBe('已标为认识，可取消')
   })
 
   it('should show the personal status and point to my words when learned', () => {
-    const facts = factMap(basicWordDetail(makeBasic({ personalStatus: 'mastered' })))
+    const facts = factMap(
+      basicWordDetail(
+        makeBasic({ personalState: 'known', knownSource: 'library', personalStatus: 'mastered' }),
+      ),
+    )
 
-    expect(facts['状态']).toBe('已知')
+    expect(facts['状态']).toBe('认识')
     expect(facts['我的单词']).toBe('已掌握')
     expect(facts['标记']).toBe('已在词库中，去我的单词修改')
   })

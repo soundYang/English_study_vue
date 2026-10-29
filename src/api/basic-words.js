@@ -1,9 +1,9 @@
 /**
  * 基础词表 API
- * 列表、标记不认识、恢复三项；本页不做 mock，直接请求真实后端（md/16 §4.2）。
+ * 列表、公开列表、三态标记三项；本页不做 mock，直接请求真实后端（md/16 §4.2、md/52）。
  * 650 条词表与个人状态只有后端有，本地造一份只会和维护第二份真相。
  */
-import { apiDelete, apiGet, apiPut } from '../unit/request'
+import { apiGet, apiPatch } from '../unit/request'
 
 /** 获取基础词表（分组 / 状态 / 关键词 / 分页） */
 export function fetchBasicWords(params = {}) {
@@ -18,12 +18,11 @@ export function fetchPublicBasicWords(params = {}) {
   return apiGet('/public/basic-words', params)
 }
 
-/** 标记不认识：从个人基础词里移除这个词 */
-export function removeBasicWord(word) {
-  return apiDelete(`/basic-words/${encodeURIComponent(word)}`)
-}
-
-/** 恢复：撤销本页的「不认识」，词回到未标记 */
-export function restoreBasicWord(word) {
-  return apiPut(`/basic-words/${encodeURIComponent(word)}`)
+/**
+ * 设置个人标记（md/52 §2.2）
+ * state: known 认识 / unknown 不认识 / none 取消标记
+ * PATCH 是设状态且幂等，重复提交同一状态返回 200 空操作
+ */
+export function setBasicWordMark(word, state) {
+  return apiPatch(`/basic-words/${encodeURIComponent(word)}`, { state })
 }

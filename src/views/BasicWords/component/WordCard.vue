@@ -3,11 +3,11 @@
  * 基础词卡片
  *
  * 用途：一张卡展示一个词条，四个槽位固定——单词 / 音标或英文全称 / 释义或中文全称 /
- *       底部类型徽标 + 状态。四类词（实词、功能词、日历词、缩写）只换内容不换版式，
- *       这样同一行的卡片高度一致、状态标签能对成一条线（md/16 §6.1）。
+ *       底部类型徽标 + 状态。四类词（基础词、功能词、日期词、缩写）只换内容不换版式，
+ *       每张卡都有徽标，同一行卡片高度一致、状态标签能对成一条线（md/16 §6.1、md/52）。
  * 用法：<WordCard :item="item" :pending="pendingWord === item.word"
  *          :expanded="expandedWord === item.word"
- *          @remove="onRemove" @restore="onRestore" @detail="onDetail" />
+ *          @select="onSelect" @detail="onDetail" />
  *
  * props:
  *   item     — 基础词表接口返回的单条记录
@@ -15,8 +15,8 @@
  *   expanded — 详情浮层当前显示的是这个词
  *   readonly — 游客态：不渲染个人状态 pill 与操作菜单，只保留公开词条内容
  * emits:
- *   remove / restore — 菜单动作，是否二次确认由页面决定
- *   detail           — 查看详情，参数 { item, anchor }，anchor 是单词按钮
+ *   select — 菜单动作，参数 { item, type }，type 为 known / unknown / none，确认与提交由页面决定
+ *   detail — 查看详情，参数 { item, anchor }，anchor 是单词按钮
  */
 import { computed } from 'vue'
 import StatusPill from '../../../component/StatusPill.vue'
@@ -31,7 +31,7 @@ const props = defineProps({
   readonly: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['remove', 'restore', 'detail'])
+const emit = defineEmits(['select', 'detail'])
 
 const isAbbreviation = computed(() => Boolean(props.item.kinds?.includes('abbreviation')))
 const isFunctionWord = computed(() => Boolean(props.item.isFunctionWord))
@@ -73,8 +73,7 @@ function openDetail(event) {
         v-if="!readonly"
         :item="item"
         :pending="pending"
-        @remove="emit('remove', $event)"
-        @restore="emit('restore', $event)"
+        @select="emit('select', { item, type: $event })"
       />
     </header>
 
@@ -88,8 +87,7 @@ function openDetail(event) {
     <p v-if="meaning" class="card-line is-meaning" :title="meaning">{{ meaning }}</p>
 
     <footer class="card-foot">
-      <span v-if="meta" class="card-meta" :title="meta.hint">{{ meta.label }}</span>
-      <span v-else class="card-meta-space" aria-hidden="true" />
+      <span class="card-meta" :title="meta.hint">{{ meta.label }}</span>
       <StatusPill v-if="!readonly" :value="status.value" :label="status.label" />
     </footer>
   </article>
@@ -237,9 +235,5 @@ function openDetail(event) {
   line-height: var(--leading-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.card-meta-space {
-  flex: 1;
 }
 </style>

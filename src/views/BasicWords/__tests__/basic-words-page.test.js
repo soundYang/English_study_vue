@@ -7,15 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import BasicWordsView from '../index.vue'
-import { fetchBasicWords, removeBasicWord, restoreBasicWord } from '../../../api/basic-words'
+import { fetchBasicWords, setBasicWordMark } from '../../../api/basic-words'
 import { useToastStore } from '../../../stores/model/toast'
 import { localStore, storageKeys } from '../../../unit/storage'
 
 vi.mock('../../../api/basic-words', () => ({
   fetchBasicWords: vi.fn(),
   fetchPublicBasicWords: vi.fn(),
-  removeBasicWord: vi.fn(),
-  restoreBasicWord: vi.fn(),
+  setBasicWordMark: vi.fn(),
 }))
 
 const COUNTS = {
@@ -25,9 +24,10 @@ const COUNTS = {
   abbreviation: 32,
   removable: 421,
   functionWord: 179,
+  known: 12,
   learned: 0,
   removed: 32,
-  untouched: 618,
+  untouched: 606,
 }
 
 function makeItem(overrides = {}) {
@@ -37,7 +37,8 @@ function makeItem(overrides = {}) {
     kind: 'basic',
     isFunctionWord: false,
     removable: true,
-    removed: false,
+    personalState: 'untouched',
+    knownSource: null,
     personalStatus: null,
     wordId: null,
     cocaRank: 2201,
@@ -204,23 +205,27 @@ describe('Basic words page · 筛选', () => {
   })
 })
 
-describe('Basic words page · 标记与恢复', () => {
-  async function chooseFirstAction(wrapper) {
+describe('Basic words page · 三态标记', () => {
+  async function chooseAction(wrapper, label) {
     await wrapper.get('.menu-trigger').trigger('click')
     await flushPromises()
 
-    await wrapper.get('[role="menuitem"]').trigger('click')
+    const action = wrapper.findAll('[role="menuitem"]').find((node) => node.text() === label)
+    await action.trigger('click')
     await flushPromises()
   }
 
   it('should confirm before marking a word as unknown', async () => {
-    removeBasicWord.mockResolvedValue({ item: makeItem({ removed: true }), counts: COUNTS })
+    setBasicWordMark.mockResolvedValue({
+      item: makeItem({ personalState: 'removed' }),
+      counts: COUNTS,
+    })
     const wrapper = await mountPage()
 
-    await chooseFirstAction(wrapper)
+    await chooseAction(wrapper, '标为不认识')
 
     expect(wrapper.get('.modal-title').text()).toBe('标记 “abandon” 为不认识？')
-    expect(removeBasicWord).not.toHaveBeenCalled()
+    expect(setBasicWordMark).not.toHaveBeenCalled()
 
     const confirm = wrapper.findAll('.modal-footer button').at(-1)
     expect(confirm.text()).toBe('标记不认识')
@@ -228,7 +233,7 @@ describe('Basic words page · 标记与恢复', () => {
     await confirm.trigger('click')
     await flushPromises()
 
-    expect(removeBasicWord).toHaveBeenCalledWith('abandon')
+    expect(setBasicWordMark).toHaveBeenCalledWith('abandon', 'unknown')
     // 写成功后静默对账一次，拿到新的数字与列表
     expect(fetchBasicWords).toHaveBeenCalledTimes(2)
     expect(wrapper.find('.modal-dialog').exists()).toBe(false)
@@ -237,37 +242,82 @@ describe('Basic words page · 标记与恢复', () => {
   it('should not mark anything when the dialog is cancelled', async () => {
     const wrapper = await mountPage()
 
-    await chooseFirstAction(wrapper)
+    await chooseAction(wrapper, '标为不认识')
 
     const cancel = wrapper.findAll('.modal-footer button').at(0)
     await cancel.trigger('click')
     await flushPromises()
 
-    expect(removeBasicWord).not.toHaveBeenCalled()
+    expect(setBasicWordMark).not.toHaveBeenCalled()
     expect(wrapper.find('.modal-dialog').exists()).toBe(false)
   })
 
-  it('should restore a removed word without asking', async () => {
-    fetchBasicWords.mockResolvedValue(
-      makePage({ items: [makeItem({ word: 'ai', removed: true })] }),
-    )
-    restoreBasicWord.mockResolvedValue({ item: makeItem({ word: 'ai' }), counts: COUNTS })
+  it('should mark a word as known without asking', async () => {
+    setBasicWordMark.mockResolvedValue({
+      item: makeItem({ personalState: 'known', knownSource: 'mark' }),
+      counts: COUNTS,
+    })
     const wrapper = await mountPage()
 
-    await chooseFirstAction(wrapper)
+    await chooseAction(wrapper, '标为认识')
 
     expect(wrapper.find('.modal-dialog').exists()).toBe(false)
-    expect(restoreBasicWord).toHaveBeenCalledWith('ai')
+    expect(setBasicWordMark).toHaveBeenCalledWith('abandon', 'known')
+    expect(useToastStore().items.at(-1)).toMatchObject({
+      type: 'success',
+      message: '已标记 “abandon” 为认识',
+    })
+  })
+
+  it('should clear the mark of a removed word without asking', async () => {
+    fetchBasicWords.mockResolvedValue(
+      makePage({ items: [makeItem({ word: 'ai', personalState: 'removed' })] }),
+    )
+    setBasicWordMark.mockResolvedValue({ item: makeItem({ word: 'ai' }), counts: COUNTS })
+    const wrapper = await mountPage()
+
+    await chooseAction(wrapper, '取消标记')
+
+    expect(wrapper.find('.modal-dialog').exists()).toBe(false)
+    expect(setBasicWordMark).toHaveBeenCalledWith('ai', 'none')
+    expect(useToastStore().items.at(-1)).toMatchObject({
+      type: 'success',
+      message: '已取消 “ai” 的标记',
+    })
+  })
+
+  it('should offer the library explanation instead of actions for a word in my list', async () => {
+    fetchBasicWords.mockResolvedValue(
+      makePage({
+        items: [
+          makeItem({
+            word: 'abandon',
+            personalState: 'known',
+            knownSource: 'library',
+            wordId: 'w1',
+          }),
+        ],
+      }),
+    )
+    const wrapper = await mountPage()
+
+    await wrapper.get('.menu-trigger').trigger('click')
+    await flushPromises()
+
+    const items = wrapper.findAll('[role="menuitem"]')
+    expect(items).toHaveLength(1)
+    expect(items[0].text()).toContain('已在词库中')
+    expect(items[0].attributes('disabled')).toBeDefined()
   })
 
   it('should surface the backend message when marking fails', async () => {
     const message = '这个单词已经在你的词库里了'
-    removeBasicWord.mockRejectedValue({
+    setBasicWordMark.mockRejectedValue({
       response: { status: 409, data: { error: { code: 'BASIC_WORD_ALREADY_LEARNED', message } } },
     })
     const wrapper = await mountPage()
 
-    await chooseFirstAction(wrapper)
+    await chooseAction(wrapper, '标为不认识')
     await wrapper.findAll('.modal-footer button').at(-1).trigger('click')
     await flushPromises()
 

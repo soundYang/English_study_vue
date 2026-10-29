@@ -2,37 +2,36 @@
 /**
  * 词卡操作菜单
  *
- * 用途：一张卡上的两种动作——标为不认识 / 恢复为基础词；只读词不渲染（action 为 null）
- * 用法：<WordCardMenu :item="item" :pending="pending" @remove="..." @restore="..." />
+ * 用途：一张卡上的标记动作——标为认识 / 标为不认识 / 取消标记；只读词不渲染（actions 为 null）
+ * 用法：<WordCardMenu :item="item" :pending="pending" @select="type => ..." />
  *
  * 行为：
- *   - 点击外部关闭；Esc 关闭并把焦点还给触发按钮
+ *   - 点击外部关闭；Esc 关闭并把焦点还给触发按钮；上下方向键在菜单项间移动
  *   - pending 时触发器 aria-disabled 而不是 disabled，避免焦点丢失
  *   - 已在个人词库里的词也能展开，里面是一条禁用项说明原因，比凭空没有菜单清楚
  *
  * props:
- *   item    — 词表项；用 menuActionOf 决定菜单内容
+ *   item    — 词表项；用 menuActionsOf 决定菜单内容
  *   pending — 该词的写请求进行中
  * emits:
- *   remove / restore
+ *   select — 选中某一项，携带 type（known / unknown / none）
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { MoreVertical } from 'lucide-vue-next'
-import { menuActionOf } from '../../../unit/basic-words'
+import { menuActionsOf } from '../../../unit/basic-words'
 
 const props = defineProps({
   item: { type: Object, required: true },
   pending: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['remove', 'restore'])
+const emit = defineEmits(['select'])
 
 const rootRef = ref(null)
 const triggerRef = ref(null)
 const isOpen = ref(false)
 
-const action = computed(() => menuActionOf(props.item))
-const isLocked = computed(() => action.value?.type === 'locked')
+const actions = computed(() => menuActionsOf(props.item))
 
 function toggle() {
   if (props.pending) return
@@ -47,23 +46,34 @@ function close() {
   isOpen.value = false
 }
 
-function choose() {
-  if (props.pending || isLocked.value) return
+function choose(action) {
+  if (props.pending || action.type === 'locked') return
 
-  const type = action.value?.type
   close()
   triggerRef.value?.focus()
-
-  if (type === 'remove') emit('remove', props.item)
-  if (type === 'restore') emit('restore', props.item)
+  emit('select', action.type)
 }
 
 function handleKeydown(event) {
-  if (event.key !== 'Escape' || !isOpen.value) return
+  if (!isOpen.value) return
+
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    close()
+    triggerRef.value?.focus()
+    return
+  }
+
+  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
 
   event.preventDefault()
-  close()
-  triggerRef.value?.focus()
+  const nodes = Array.from(rootRef.value?.querySelectorAll('[role="menuitem"]') || [])
+  if (nodes.length === 0) return
+
+  const current = nodes.indexOf(document.activeElement)
+  const step = event.key === 'ArrowDown' ? 1 : -1
+  const next = (current + step + nodes.length) % nodes.length
+  nodes[next].focus()
 }
 
 function handleOutside(event) {
@@ -78,7 +88,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleOutside)
 </script>
 
 <template>
-  <div v-if="action" ref="rootRef" class="card-menu" @keydown="handleKeydown">
+  <div v-if="actions" ref="rootRef" class="card-menu" @keydown="handleKeydown">
     <button
       ref="triggerRef"
       type="button"
@@ -93,14 +103,14 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleOutside)
     </button>
 
     <ul v-if="isOpen" class="menu-list" role="menu">
-      <li role="none">
+      <li v-for="action in actions" :key="action.type" role="none">
         <button
           type="button"
           role="menuitem"
           class="menu-item"
-          :class="{ 'is-danger': action.type === 'remove', 'is-locked': isLocked }"
-          :disabled="pending || isLocked"
-          @click="choose"
+          :class="{ 'is-danger': action.type === 'unknown', 'is-locked': action.type === 'locked' }"
+          :disabled="pending || action.type === 'locked'"
+          @click="choose(action)"
         >
           {{ action.label }}
         </button>

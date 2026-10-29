@@ -11,8 +11,7 @@ import { fetchBasicWords, fetchPublicBasicWords } from '../../../api/basic-words
 vi.mock('../../../api/basic-words', () => ({
   fetchBasicWords: vi.fn(),
   fetchPublicBasicWords: vi.fn(),
-  removeBasicWord: vi.fn(),
-  restoreBasicWord: vi.fn(),
+  setBasicWordMark: vi.fn(),
 }))
 
 const COUNTS = {
@@ -22,6 +21,7 @@ const COUNTS = {
   abbreviation: 32,
   removable: 421,
   functionWord: 179,
+  known: 0,
   learned: 0,
   removed: 0,
   untouched: 650,
@@ -34,7 +34,8 @@ function makeItem(overrides = {}) {
     kind: 'basic',
     isFunctionWord: false,
     removable: true,
-    removed: false,
+    personalState: 'untouched',
+    knownSource: null,
     personalStatus: null,
     wordId: null,
     cocaRank: 2201,

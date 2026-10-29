@@ -5,7 +5,7 @@
  * 用途：词表的网格视图，含加载骨架与错误卡；空态由页面用 EmptyState 承担
  * 用法：<WordCardGrid :items="items" :loading="loading" :error="error" :pending-word="pendingWord"
  *         :expanded-word="expandedWord"
- *         @retry="reload" @remove="onRemove" @restore="onRestore" @detail="onDetail" />
+ *         @retry="reload" @select="onSelect" @detail="onDetail" />
  *
  * 列数按视口固定：桌面 4 列，1440 起 5 列，1800 起 6 列。不用 auto-fill——
  * 设计要求是「4–5 列、宽屏 5–6 列」，自动流会让 1200px 自己滑成 5 列。
@@ -19,7 +19,7 @@
  *   readonly    — 游客态：只渲染公开词条，隐藏个人状态与写操作菜单
  * emits:
  *   retry — 错误卡中的重试
- *   remove / restore — 逐张卡片转发上去
+ *   select — 卡片菜单动作 { item, type }，逐张卡片转发上去
  *   detail — 查看详情 { item, anchor }
  */
 import BaseButton from '../../../component/BaseButton.vue'
@@ -35,7 +35,7 @@ defineProps({
   readonly: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['retry', 'remove', 'restore', 'detail'])
+const emit = defineEmits(['retry', 'select', 'detail'])
 </script>
 
 <template>
@@ -61,8 +61,7 @@ const emit = defineEmits(['retry', 'remove', 'restore', 'detail'])
         :pending="item.word === pendingWord"
         :expanded="item.word === expandedWord"
         :readonly="readonly"
-        @remove="emit('remove', $event)"
-        @restore="emit('restore', $event)"
+        @select="emit('select', $event)"
         @detail="emit('detail', $event)"
       />
     </li>

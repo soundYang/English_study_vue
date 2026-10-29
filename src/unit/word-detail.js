@@ -39,6 +39,26 @@ function basicSensesOf(item) {
   return meaning ? [{ pos: '', meaning }] : []
 }
 
+/** 基础词的标记说明：与菜单口径一致（md/52 §2.3 / §2.5） */
+function basicMarkFact(item) {
+  if (!item.removable) {
+    return { label: '标记', value: item.isFunctionWord ? '功能词，不可标记' : '只读词，不可标记' }
+  }
+
+  if (item.personalState === 'removed') {
+    return { label: '标记', value: '已标为不认识，可改回认识或取消' }
+  }
+
+  if (item.personalState === 'known') {
+    return {
+      label: '标记',
+      value: item.knownSource === 'library' ? '已在词库中，去我的单词修改' : '已标为认识，可取消',
+    }
+  }
+
+  return { label: '标记', value: '可标为认识或不认识' }
+}
+
 /** 基础词：状态、词表、词频、是否已进个人词库、可不可以标记，缩写补英文全称 */
 export function basicWordDetail(item) {
   const status = statusOf(item)
@@ -57,18 +77,7 @@ export function basicWordDetail(item) {
     })
   }
 
-  if (item.removed) {
-    facts.push({ label: '标记', value: '已标为不认识，可恢复' })
-  } else if (!item.removable) {
-    facts.push({
-      label: '标记',
-      value: item.isFunctionWord ? '功能词，不可标记' : '只读词，不可标记',
-    })
-  } else if (!item.personalStatus) {
-    facts.push({ label: '标记', value: '可标为不认识' })
-  } else {
-    facts.push({ label: '标记', value: '已在词库中，去我的单词修改' })
-  }
+  facts.push(basicMarkFact(item))
 
   if (item.expansion) facts.push({ label: '英文全称', value: item.expansion })
 
