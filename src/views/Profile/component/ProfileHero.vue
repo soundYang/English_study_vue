@@ -3,6 +3,7 @@
  * 个人中心头图
  *
  * 用途：展示头像、昵称、账号与个性签名，铅笔按钮打开资料编辑
+ *       头像用昵称（缺省时用用户名）的首字母大写，与顶栏头像同一规则
  * 用法：<ProfileHero :user="user" @edit="editOpen = true" />
  *
  * props:
@@ -28,6 +29,12 @@ const displayName = computed(
 )
 const signature = computed(() => String(props.user?.signature || '').trim())
 const username = computed(() => String(props.user?.username || '').trim())
+
+// 与顶栏 .user-avatar 同规则：取展示名的第一个字符，英文转大写，中文原样
+const avatarInitial = computed(() => {
+  const name = displayName.value || username.value
+  return name ? Array.from(name)[0].toUpperCase() : '?'
+})
 </script>
 
 <template>
@@ -38,8 +45,8 @@ const username = computed(() => String(props.user?.username || '').trim())
     </div>
 
     <span class="hero-avatar" aria-hidden="true">
-      <img v-if="!masked" :src="mountains" alt="" />
-      <span v-else class="avatar-question">?</span>
+      <span v-if="masked" class="avatar-question">?</span>
+      <span v-else class="avatar-initial">{{ avatarInitial }}</span>
     </span>
 
     <div class="hero-info">
@@ -115,28 +122,28 @@ const username = computed(() => String(props.user?.username || '').trim())
   overflow: hidden;
   border: 3px solid rgba(255, 252, 246, 0.9);
   border-radius: 50%;
-  background: var(--color-bg-deep);
+  background: var(--color-sidebar);
   box-shadow: var(--shadow-md);
 }
 
-.hero-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  /* 从同一张山景里裁出主峰，头像和右侧装饰保持同一套画 */
-  object-position: 82% 62%;
-}
-
-/* 游客态头像不展示任何用户图片，只留一个问号示意 */
+/* 首字母头像：和顶栏小头像同一套配色 */
+.avatar-initial,
 .avatar-question {
   display: grid;
   width: 100%;
   height: 100%;
   place-items: center;
-  color: var(--color-muted);
+  color: var(--color-sidebar-text);
   font-family: var(--font-display);
-  font-size: 26px;
+  font-size: 30px;
+  font-weight: 600;
   line-height: 1;
+}
+
+/* 游客态不展示任何用户信息，只留一个问号示意 */
+.avatar-question {
+  color: var(--color-sidebar-muted);
+  font-weight: 400;
 }
 
 .hero-info {
@@ -224,6 +231,11 @@ const username = computed(() => String(props.user?.username || '').trim())
     flex-basis: 56px;
     width: 56px;
     height: 56px;
+  }
+
+  .avatar-initial,
+  .avatar-question {
+    font-size: 24px;
   }
 
   .hero-name {

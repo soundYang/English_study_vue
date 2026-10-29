@@ -81,6 +81,8 @@ describe('Profile page', () => {
 
     expect(wrapper.get('h1').text()).toBe('个人中心')
     expect(wrapper.get('.hero-name').text()).toBe('Sound')
+    // 头像用昵称首字母大写，和顶栏小头像同一规则
+    expect(wrapper.get('.avatar-initial').text()).toBe('S')
     expect(wrapper.get('.hero-id').text()).toBe('ID: local-user')
     expect(wrapper.get('.hero-signature').text()).toBe('「少年，大胆走，怎么都是路。」')
 
@@ -118,6 +120,8 @@ describe('Profile page', () => {
     await flushPromises()
 
     expect(wrapper.get('.hero-name').text()).toBe('小树')
+    // 改名后头像跟随展示名：中文取第一个字
+    expect(wrapper.get('.avatar-initial').text()).toBe('小')
     expect(wrapper.get('.hero-signature').text()).toBe('「慢一点也没关系」')
     expect(wrapper.find('#profile-edit-form').exists()).toBe(false)
     expect(useToastStore().items.map((item) => item.message)).toContain('个人资料已更新')
