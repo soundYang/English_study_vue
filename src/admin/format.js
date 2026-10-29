@@ -134,7 +134,11 @@ export function formatQuota(quota) {
 
 /**
  * 手机号遮中间四位：`13812348000` → `138****8000`
- * 反馈里的 phone 是提交时的明文快照，展示前必须自己遮（md/40 §10 第 6 条）。
+ *
+ * 2026-10-29 起后端 `GET /admin/feedback` 的列表项已经打过码，详情仍给完整值
+ * （md/45 M6）。这里保留前端这一道是纵深防御：对已打码的值是幂等的
+ * （`138****8000` 再遮一次还是 `138****8000`），对旧后端或 mock 返回的明文则
+ * 兜住不露（md/40 §10 第 6 条）。
  */
 export function maskPhone(phone) {
   const value = String(phone ?? '').trim()

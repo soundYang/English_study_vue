@@ -57,7 +57,8 @@ export function normalizeApiError(error) {
   const payload = error?.error || error?.response?.data?.error
   const status = error?.status || error?.response?.status || 0
   const message = payload?.message || ''
-  // 后端把 requestId 放在响应体顶层，不在 error 里；400 JSON 解析失败与 413 没有这个字段
+  // 后端把 requestId 放在响应体顶层，不在 error 里。404 / 400（JSON 解析失败）/
+  // 413 自 2026-10-29 起也带了（md/45 L4），所以这里对三类响应一视同仁地取
   const requestId = error?.response?.data?.requestId || ''
 
   if (payload?.code) {
