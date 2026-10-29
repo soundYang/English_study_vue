@@ -1405,8 +1405,30 @@ function sameTaskParams(left, right) {
     left.level === right.level &&
     Number(left.targetWords) === Number(right.targetWords) &&
     Number(left.questionCount) === Number(right.questionCount) &&
-    normalizeScopeList(left.vocabScope) === normalizeScopeList(right.vocabScope)
+    normalizeScopeList(left.vocabScope) === normalizeScopeList(right.vocabScope) &&
+    // 三态比较：null（自动）与显式 true / false 是三种不同参数（后端 md/42 §3.2）
+    (left.allowNewWords ?? null) === (right.allowNewWords ?? null)
   )
+}
+
+/**
+ * 生词容忍开关的请求校验（后端 md/41 §3.1）
+ * 只接受布尔值或缺省；easy 的 0 生词是难度承诺，显式 true 直接 400。
+ */
+function assertAllowNewWords(payload) {
+  const value = payload.allowNewWords
+
+  if (value !== undefined && typeof value !== 'boolean') {
+    throw new MockApiError('INVALID_REQUEST', 'allowNewWords 必须是布尔值', 400, 'allowNewWords')
+  }
+  if (payload.level === 'easy' && value === true) {
+    throw new MockApiError(
+      'INVALID_REQUEST',
+      'easy 难度不支持生词，allowNewWords 只能用于 medium / hard',
+      400,
+      'allowNewWords',
+    )
+  }
 }
 
 function isTaskActive(task) {
@@ -1640,6 +1662,7 @@ export const mockReadings = {
       const { field, message } = firstError(errors)
       throw new MockApiError('INVALID_REQUEST', message, 400, field)
     }
+    assertAllowNewWords(payload)
 
     const db = readDb()
     const gates = evaluateGenerationGates(payload, db)
@@ -1660,6 +1683,7 @@ export const mockReadings = {
       const { field, message } = firstError(errors)
       throw new MockApiError('INVALID_REQUEST', message, 400, field)
     }
+    assertAllowNewWords(payload)
 
     // clientToken 命中：任何状态的已有任务都直接返回，不扣第二次钱
     const token = typeof payload.clientToken === 'string' ? payload.clientToken.trim() : ''
@@ -1692,6 +1716,8 @@ export const mockReadings = {
         targetWords: payload.targetWords,
         questionCount: payload.questionCount,
         vocabScope: normalizeVocabScope(payload.vocabScope),
+        // 三态原样保留：null = 自动，不能压成 false（后端 md/42 §3.2）
+        allowNewWords: typeof payload.allowNewWords === 'boolean' ? payload.allowNewWords : null,
       },
       status: 'queued',
       stage: 'queued',

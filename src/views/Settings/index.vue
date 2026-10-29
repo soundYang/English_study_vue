@@ -1,12 +1,14 @@
 <script setup>
 /**
  * 阅读设置视图
- * 难度整卡、文章长度步进器、题目数量分段控件；保存到 localStorage 后交给 /generating 生成。
+ * 难度整卡、文章长度步进器、题目数量分段控件、生词容忍开关；
+ * 保存到 localStorage 后交给 /generating 生成。
  * 生成失败、取消与重试统一由全局 GenerateOverlay 处理。
  */
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import BaseButton from '../../component/BaseButton.vue'
+import AllowNewWordsPicker from './component/AllowNewWordsPicker.vue'
 import DifficultyPicker from './component/DifficultyPicker.vue'
 import LengthPicker from './component/LengthPicker.vue'
 import QuestionCountPicker from './component/QuestionCountPicker.vue'
@@ -41,6 +43,8 @@ const draft = reactive({
   targetWords: settings.targetWords,
   questionCount: settings.questionCount,
   vocabScope: [...settings.vocabScope],
+  // null = 自动（最终模式默认开、其余关）；用户点过开关才变成显式 true / false
+  allowNewWords: settings.allowNewWords,
 })
 
 const saving = ref(false)
@@ -55,7 +59,9 @@ const isDirty = computed(
     draft.level !== settings.level ||
     draft.targetWords !== settings.targetWords ||
     draft.questionCount !== settings.questionCount ||
-    !sameScope(draft.vocabScope, settings.vocabScope),
+    !sameScope(draft.vocabScope, settings.vocabScope) ||
+    // null（自动）与 false（显式关）语义不同，不能用真假判断
+    draft.allowNewWords !== settings.allowNewWords,
 )
 
 // 首次进入时允许直接保存默认值；之后有改动才可再次保存
@@ -92,16 +98,31 @@ const capacityNote = computed(() =>
     wordRangeLabel: capacity.value?.wordRange?.label || '',
   }),
 )
+// 最终模式（hard + 篇幅 > 600 + 个人词库 ≥ 3000）下不传开关就是开启（后端 md/42）。
+// 只信预检回来的 active，不自己用 targetWords / 词库数字推
+const isFinalMode = computed(() => Boolean(gateOf(draft.level)?.finalMode?.active))
+// 只是上限（medium 3 / hard 5），不表示这篇一定有生词；预检回来之前显示通用文案
+const unknownBudget = computed(() => {
+  const budget = capacity.value?.levels?.[draft.level]?.unknownBudget
+  return typeof budget === 'number' ? budget : null
+})
 
 // 生成失败覆盖层里的“降低难度 / 缩短文章”会改写已保存设置（路由仍是本页），
 // 这里同步回草稿，避免再次生成时把调整覆盖回去
 watch(
-  () => [settings.level, settings.targetWords, settings.questionCount, settings.vocabScope],
-  ([level, targetWords, questionCount, vocabScope]) => {
+  () => [
+    settings.level,
+    settings.targetWords,
+    settings.questionCount,
+    settings.vocabScope,
+    settings.allowNewWords,
+  ],
+  ([level, targetWords, questionCount, vocabScope, allowNewWords]) => {
     draft.level = level
     draft.targetWords = targetWords
     draft.questionCount = questionCount
     draft.vocabScope = [...vocabScope]
+    draft.allowNewWords = allowNewWords
   },
 )
 
@@ -109,6 +130,15 @@ watch(
 watch(lengthMax, (max) => {
   if (draft.targetWords > max) draft.targetWords = max
 })
+
+// easy 固定 0 生词、不渲染开关；从 medium / hard 切回来时把遗留的显式值清成自动，
+// 否则保存后请求会带 easy + true，被后端直接 400（md/41 §3.1）
+watch(
+  () => draft.level,
+  (level) => {
+    if (level === 'easy') draft.allowNewWords = null
+  },
+)
 
 // 难度、篇幅或词源一变就重预检：一个接口同时回答「这个难度认识词够不够」「这个篇幅凑不凑得齐」
 // 词源收窄后候选池跟着变小，不重新预检的话，界面上还挂着上一个范围的成功结论
@@ -188,6 +218,14 @@ function handleGenerate() {
               :disabled="isGenerating"
             />
             <QuestionCountPicker v-model="draft.questionCount" :disabled="isGenerating" />
+            <!-- easy 的 0 生词是难度承诺的一部分，不提供开关（后端收到 easy + true 会 400） -->
+            <AllowNewWordsPicker
+              v-if="draft.level !== 'easy'"
+              v-model="draft.allowNewWords"
+              :budget="unknownBudget"
+              :auto-on="isFinalMode"
+              :disabled="isGenerating"
+            />
           </div>
 
           <!-- 预检是防抖的：加载中说明这一块还是上一次参数的结果，弱化而不是清空 -->

@@ -451,6 +451,48 @@ describe('mockReadings generation tasks', () => {
     })
   })
 
+  it('should reject easy + allowNewWords and non-boolean values', async () => {
+    await expect(
+      mockReadings.createTask({ ...SETTINGS, allowNewWords: true }),
+    ).rejects.toMatchObject({
+      error: { code: 'INVALID_REQUEST', field: 'allowNewWords' },
+    })
+
+    await expect(
+      mockReadings.generate({ ...SETTINGS, allowNewWords: 'yes' }),
+    ).rejects.toMatchObject({
+      error: { code: 'INVALID_REQUEST', field: 'allowNewWords' },
+    })
+  })
+
+  it('should keep the allowNewWords tri-state in task params', async () => {
+    const params = { ...SETTINGS, level: 'medium', targetWords: 200 }
+
+    const auto = await mockReadings.createTask(params)
+    // 自动 = null，不能压成 false：最终模式要靠「没传」判定默认开启（md/42 §3.2）
+    expect(auto.params.allowNewWords).toBeNull()
+    await mockReadings.cancelTask(auto.taskId)
+
+    const on = await mockReadings.createTask({ ...params, allowNewWords: true })
+    expect(on.params.allowNewWords).toBe(true)
+    expect((await mockReadings.getTask(on.taskId)).params.allowNewWords).toBe(true)
+    await mockReadings.cancelTask(on.taskId)
+
+    const off = await mockReadings.createTask({ ...params, allowNewWords: false })
+    expect(off.params.allowNewWords).toBe(false)
+  })
+
+  it('should treat a different allowNewWords as different params', async () => {
+    const params = { ...SETTINGS, level: 'medium', targetWords: 200 }
+    const first = await mockReadings.createTask(params)
+
+    await expect(mockReadings.createTask({ ...params, allowNewWords: true })).rejects.toMatchObject(
+      {
+        error: { code: 'TASK_IN_PROGRESS', details: { taskId: first.taskId } },
+      },
+    )
+  })
+
   it('should return TASK_NOT_FOUND for unknown tasks and after a reset', async () => {
     await expect(mockReadings.getTask('g999')).rejects.toMatchObject({
       error: { code: 'TASK_NOT_FOUND' },

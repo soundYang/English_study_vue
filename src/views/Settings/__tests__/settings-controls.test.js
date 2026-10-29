@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
+import AllowNewWordsPicker from '../component/AllowNewWordsPicker.vue'
 import DifficultyPicker from '../component/DifficultyPicker.vue'
 import LengthPicker from '../component/LengthPicker.vue'
 import QuestionCountPicker from '../component/QuestionCountPicker.vue'
@@ -273,6 +274,70 @@ describe('ScopePicker', () => {
     const wrapper = mount(ScopePicker, { props: { modelValue: ['all'], disabled: true } })
 
     await wrapper.findAll('[role="checkbox"]')[0].trigger('click')
+
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
+})
+
+describe('AllowNewWordsPicker', () => {
+  it('should start off outside final mode and flip to an explicit true', async () => {
+    const wrapper = mount(AllowNewWordsPicker, {
+      props: { modelValue: null, budget: 3, autoOn: false },
+    })
+    const toggle = wrapper.get('[role="switch"]')
+
+    // 自动 + 非最终模式 = 关；但值是 null，还没落成显式 false
+    expect(toggle.attributes('aria-checked')).toBe('false')
+    expect(wrapper.text()).toContain('只用你认识的词')
+
+    await toggle.trigger('click')
+
+    expect(wrapper.emitted('update:modelValue')[0]).toEqual([true])
+  })
+
+  it('should show on for final mode without writing an explicit value', () => {
+    const wrapper = mount(AllowNewWordsPicker, {
+      props: { modelValue: null, budget: 5, autoOn: true },
+    })
+
+    expect(wrapper.get('[role="switch"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.text()).toContain('最终模式默认开启')
+  })
+
+  it('should let final mode be switched off explicitly', async () => {
+    const wrapper = mount(AllowNewWordsPicker, {
+      props: { modelValue: null, budget: 5, autoOn: true },
+    })
+
+    await wrapper.get('[role="switch"]').trigger('click')
+
+    // 自动默认开，用户关掉要落成显式 false，不能被自动再覆盖回来
+    expect(wrapper.emitted('update:modelValue')[0]).toEqual([false])
+  })
+
+  it('should keep an explicit false even when final mode would default on', () => {
+    const wrapper = mount(AllowNewWordsPicker, {
+      props: { modelValue: false, budget: 5, autoOn: true },
+    })
+
+    expect(wrapper.get('[role="switch"]').attributes('aria-checked')).toBe('false')
+  })
+
+  it('should describe the budget as an upper bound only', () => {
+    const wrapper = mount(AllowNewWordsPicker, {
+      props: { modelValue: true, budget: 3, autoOn: false },
+    })
+
+    expect(wrapper.text()).toContain('最多 3 个生词')
+    expect(wrapper.text()).toContain('不保证出现')
+  })
+
+  it('should not emit when disabled', async () => {
+    const wrapper = mount(AllowNewWordsPicker, {
+      props: { modelValue: null, budget: 3, autoOn: false, disabled: true },
+    })
+
+    await wrapper.get('[role="switch"]').trigger('click')
 
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
   })

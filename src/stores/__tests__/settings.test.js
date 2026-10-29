@@ -130,6 +130,74 @@ describe('settings store', () => {
     expect(store.hasSavedSettings).toBe(false)
   })
 
+  it('should keep allowNewWords out of the payload while it is automatic', () => {
+    const store = useSettingsStore()
+
+    store.save({ level: 'medium', targetWords: 200, questionCount: 5 })
+
+    // 自动 = 请求里不出现这个键，后端按「最终模式开、其余关」判定（md/42 §3.2）
+    expect('allowNewWords' in store.payload).toBe(false)
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)).allowNewWords).toBeNull()
+  })
+
+  it('should persist an explicit allowNewWords choice', () => {
+    const store = useSettingsStore()
+
+    store.save({ level: 'medium', targetWords: 200, questionCount: 5, allowNewWords: true })
+
+    expect(store.allowNewWords).toBe(true)
+    expect(store.payload.allowNewWords).toBe(true)
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)).allowNewWords).toBe(true)
+  })
+
+  it('should restore an explicit false without turning it into automatic', () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        level: 'hard',
+        targetWords: 300,
+        questionCount: 5,
+        allowNewWords: false,
+        updatedAt: '2026-10-29T08:00:00.000Z',
+      }),
+    )
+
+    const store = useSettingsStore()
+
+    expect(store.allowNewWords).toBe(false)
+    expect(store.payload.allowNewWords).toBe(false)
+  })
+
+  it('should read old settings without the field as automatic', () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        level: 'hard',
+        targetWords: 300,
+        questionCount: 5,
+        updatedAt: '2026-10-29T08:00:00.000Z',
+      }),
+    )
+
+    const store = useSettingsStore()
+
+    expect(store.allowNewWords).toBeNull()
+    expect('allowNewWords' in store.payload).toBe(false)
+  })
+
+  it('should drop the switch back to automatic when the level becomes easy', () => {
+    const store = useSettingsStore()
+    store.save({ level: 'medium', targetWords: 200, questionCount: 5, allowNewWords: true })
+
+    // easy 的 0 生词是承诺：后端对 easy + true 直接 400，本地先清成自动
+    const result = store.save({ level: 'easy', targetWords: 100, questionCount: 5 })
+
+    expect(result.valid).toBe(true)
+    expect(store.allowNewWords).toBeNull()
+    expect('allowNewWords' in store.payload).toBe(false)
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)).allowNewWords).toBeNull()
+  })
+
   it('should clear storage and restore defaults on reset', () => {
     const store = useSettingsStore()
     store.save({

@@ -121,6 +121,65 @@ describe('settings page capacity note', () => {
     ])
   })
 
+  it('should show the new-words switch only outside easy', async () => {
+    const wrapper = await mountSettings()
+
+    // easy 的 0 生词是难度承诺，不提供开关（后端对 easy + true 直接 400）
+    expect(wrapper.find('[role="switch"]').exists()).toBe(false)
+
+    await wrapper.findAll('[role="radio"]')[1].trigger('click')
+    await settle()
+
+    const toggle = wrapper.get('[role="switch"]')
+    expect(toggle.attributes('aria-checked')).toBe('false')
+    // 自动 + 非最终模式 = 关；额度只是上限
+    expect(wrapper.text()).toContain('只用你认识的词')
+  })
+
+  it('should save an explicit allowNewWords choice', async () => {
+    const wrapper = await mountSettings()
+
+    await wrapper.findAll('[role="radio"]')[1].trigger('click')
+    await settle()
+    await wrapper.get('[role="switch"]').trigger('click')
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '保存设置')
+      .trigger('click')
+    await settle()
+
+    const stored = JSON.parse(localStorage.getItem(storageKeys.settings))
+    expect(stored).toMatchObject({ level: 'medium', allowNewWords: true })
+    expect(wrapper.get('[role="switch"]').attributes('aria-checked')).toBe('true')
+  })
+
+  it('should drop the switch back to automatic when the level returns to easy', async () => {
+    seedSettings({
+      level: 'medium',
+      targetWords: 100,
+      questionCount: 5,
+      allowNewWords: true,
+      updatedAt: new Date().toISOString(),
+    })
+    const wrapper = await mountSettings()
+    expect(wrapper.get('[role="switch"]').attributes('aria-checked')).toBe('true')
+
+    await wrapper.findAll('[role="radio"]')[0].trigger('click')
+    await settle()
+
+    expect(wrapper.find('[role="switch"]').exists()).toBe(false)
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '保存设置')
+      .trigger('click')
+    await settle()
+
+    // easy + true 会被后端 400，保存时必须清成自动（请求里不带这个键）
+    expect(JSON.parse(localStorage.getItem(storageKeys.settings)).allowNewWords).toBeNull()
+  })
+
   it('should clamp the length when the level max shrinks', async () => {
     // 先落一份 hard / 600 的设置，让页面从一个超出现有难度上限的篇幅起步
     seedSettings(HARD_600)

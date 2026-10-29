@@ -105,13 +105,30 @@ export function normalizeVocabScope(scope) {
 }
 
 /**
+ * 归一化生词容忍开关（后端 md/42）
+ * null / undefined 表示「自动」：最终模式默认开，其余难度默认关。
+ * 非布尔值一律回到自动，避免脏数据被当成显式选择发出去。
+ */
+export function normalizeAllowNewWords(value) {
+  return value === true || value === false ? value : null
+}
+
+/**
  * 校验阅读设置；文章长度必须是 10 的倍数且在 100～1000 之间
  * 这里只管契约范围：能不能写到这么长由 /capacity 与后端判定——hard 的最终模式
  * （601–1000）取决于个人词库，本地拿不到解锁状态，所以不在这里按难度卡上限。
  * vocabScope 缺省视为合法（老数据没有这个字段），显式传空数组或未知值算错——
  * 后端对空数组回 400，前端不该把它发出去。
+ * allowNewWords 缺省 / null 表示自动；easy + true 由 store 在保存时清成自动，
+ * 这里不拦截，因为页面在 easy 下根本不渲染开关。
  */
-export function validateSettings({ level, targetWords, questionCount, vocabScope } = {}) {
+export function validateSettings({
+  level,
+  targetWords,
+  questionCount,
+  vocabScope,
+  allowNewWords,
+} = {}) {
   const errors = {}
   const words = Number(targetWords)
 
@@ -132,6 +149,9 @@ export function validateSettings({ level, targetWords, questionCount, vocabScope
     if (!scopes.length || scopes.some((scope) => !VOCAB_SCOPES.includes(scope))) {
       errors.vocabScope = '请至少选择一个词源'
     }
+  }
+  if (allowNewWords !== undefined && allowNewWords !== null && typeof allowNewWords !== 'boolean') {
+    errors.allowNewWords = '生词容忍只能是开启或关闭'
   }
 
   return { valid: Object.keys(errors).length === 0, errors }
