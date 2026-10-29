@@ -2,6 +2,7 @@
  * 管理端反馈 API
  * 列表只给前 80 字摘要，全文、设备与 IP 只在详情（md/40 §10 第 6 条）。
  */
+import { pathSegment } from '../../unit/path'
 import { adminGet, adminPatch } from './http'
 
 /**
@@ -18,7 +19,7 @@ export function fetchAdminFeedback({ status = '', category = '', page = 1, size 
 
 /** 反馈详情（全文 + 设备 / IP / UA） */
 export function fetchAdminFeedbackDetail(id) {
-  return adminGet(`/admin/feedback/${encodeURIComponent(id)}`)
+  return adminGet(`/admin/feedback/${pathSegment(id)}`)
 }
 
 /**
@@ -27,5 +28,5 @@ export function fetchAdminFeedbackDetail(id) {
  * @param {{ status?: 'replied'|'closed', reply?: string }} payload
  */
 export function updateAdminFeedback(id, payload) {
-  return adminPatch(`/admin/feedback/${encodeURIComponent(id)}`, payload)
+  return adminPatch(`/admin/feedback/${pathSegment(id)}`, payload)
 }

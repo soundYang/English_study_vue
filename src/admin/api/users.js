@@ -2,6 +2,7 @@
  * 管理端用户台账 API
  * 列表只给脱敏手机号与个人词库；三档已知词、全量手机号、最近文章只在详情接口。
  */
+import { pathSegment } from '../../unit/path'
 import { adminGet } from './http'
 
 /**
@@ -26,5 +27,5 @@ export function fetchAdminUsers({
 
 /** 用户详情；dataKey 可能含 URL 特殊字符，必须编码 */
 export function fetchAdminUser(dataKey) {
-  return adminGet(`/admin/users/${encodeURIComponent(dataKey)}`)
+  return adminGet(`/admin/users/${pathSegment(dataKey)}`)
 }

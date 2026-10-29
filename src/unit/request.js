@@ -55,11 +55,17 @@ http.interceptors.response.use(
   (error) => {
     const status = error?.response?.status
     const code = error?.response?.data?.error?.code
-    if (status === 401) localStore.remove(storageKeys.accessToken)
 
-    // 只有「没登录 / 令牌失效」才广播；登录失败的 401 也有 code，但不是 AUTH_REQUIRED
-    if (status === 401 && code === 'AUTH_REQUIRED' && typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT))
+    // 401 分两种：登录接口的「账号或密码错误」与真正的「令牌失效 / 未登录」。
+    // 只看状态码会把前者也当成掉线：已登录用户在另一个标签页输错一次密码，
+    // 本地令牌就被删掉，而 Pinia 还认为自己是登录态（md/40 M-2）。
+    // 所以清令牌与广播都只认 AUTH_REQUIRED 这一个 code。
+    if (status === 401 && code === 'AUTH_REQUIRED') {
+      localStore.remove(storageKeys.accessToken)
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT))
+      }
     }
 
     const normalized = normalizeApiError(error)

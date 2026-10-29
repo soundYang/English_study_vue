@@ -11,6 +11,22 @@ import { fetchProfile } from '../../api/profile'
 import { normalizeApiError } from '../../errors'
 import { localStore, storageKeys } from '../../unit/storage'
 
+/**
+ * 本地只缓存展示所需的最小字段。
+ * 完整资料（手机号、签名、注册时间）只有个人中心按需请求；localStorage 是明文，
+ * 任何脚本都能读，缓存多一个字段就多一份泄露面（md/40 N-3）。
+ * 顶栏 / 头像 / 登录欢迎语只读这三项，改这里之前先确认 UI 没有新增读取。
+ */
+function pickCachedUser(nextUser) {
+  if (!nextUser) return null
+
+  return {
+    id: nextUser.id ?? null,
+    username: nextUser.username ?? '',
+    nickname: nextUser.nickname ?? '',
+  }
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(localStore.get(storageKeys.authUser, null))
   const token = ref(localStore.get(storageKeys.accessToken, ''))
@@ -27,18 +43,23 @@ export const useAuthStore = defineStore('auth', () => {
   })
 
   function persistSession(nextToken, nextUser) {
+    const cachedUser = pickCachedUser(nextUser)
+
     token.value = nextToken || ''
-    user.value = nextUser || null
+    user.value = cachedUser
 
     if (nextToken) localStore.set(storageKeys.accessToken, nextToken)
     else localStore.remove(storageKeys.accessToken)
 
-    if (nextUser) localStore.set(storageKeys.authUser, nextUser)
+    if (cachedUser) localStore.set(storageKeys.authUser, cachedUser)
     else localStore.remove(storageKeys.authUser)
   }
 
   function clearSession() {
     persistSession('', null)
+    // 生成任务缓存带着上一个账号的难度、篇幅与词库规模，退登后不清的话，
+    // 下一个账号在 /generating 会先看到别人的参数（md/40 N-2）
+    localStore.remove(storageKeys.generationTask)
   }
 
   /**
@@ -89,8 +110,8 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const data = await fetchProfile()
       if (data?.user) {
-        user.value = data.user
-        localStore.set(storageKeys.authUser, data.user)
+        user.value = pickCachedUser(data.user)
+        localStore.set(storageKeys.authUser, user.value)
       }
     } catch (error) {
       if (error?.code === 'AUTH_REQUIRED' || error?.name === 'AuthError') clearSession()
@@ -101,11 +122,11 @@ export const useAuthStore = defineStore('auth', () => {
     return user.value
   }
 
-  /** 资料弹窗保存成功后同步顶栏与缓存 */
+  /** 资料弹窗保存成功后同步顶栏与缓存（缓存同样只留最小字段） */
   function updateUser(nextUser) {
     if (!nextUser) return
-    user.value = nextUser
-    localStore.set(storageKeys.authUser, nextUser)
+    user.value = pickCachedUser(nextUser)
+    localStore.set(storageKeys.authUser, user.value)
   }
 
   return {

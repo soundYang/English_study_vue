@@ -5,6 +5,7 @@
  */
 import { config } from '../config'
 import { mockWords } from '../mock/adapter'
+import { pathSegment } from '../unit/path'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../unit/request'
 
 /** 获取词汇列表（分页、关键词搜索、学习状态筛选） */
@@ -65,11 +66,11 @@ export function extractWordImport(file, { mode = 'local' } = {}) {
 /** 局部更新单词：单词、释义或学习状态 */
 export function updateWord(id, patch) {
   if (config.useMock) return mockWords.update(id, patch)
-  return apiPatch(`/words/${id}`, patch)
+  return apiPatch(`/words/${pathSegment(id)}`, patch)
 }
 
 /** 删除单词；阅读中的词汇快照不受影响 */
 export function deleteWord(id) {
   if (config.useMock) return mockWords.remove(id)
-  return apiDelete(`/words/${id}`)
+  return apiDelete(`/words/${pathSegment(id)}`)
 }

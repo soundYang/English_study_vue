@@ -109,7 +109,10 @@ describe('request auth expiry', () => {
     window.removeEventListener(AUTH_EXPIRED_EVENT, handler)
   })
 
-  it('should not broadcast a failed login', async () => {
+  it('should leave the session alone when a login attempt fails', async () => {
+    // 已登录用户在另一个标签页输错密码也是 401；这里既不能广播，也不能删本地令牌，
+    // 否则「登录失败」会顺手把现有会话踢掉（md/40 M-2）
+    localStore.set(storageKeys.accessToken, 'sess_still_valid')
     rejectUnauthorized('AUTH_INVALID_CREDENTIALS')
 
     const handler = vi.fn()
@@ -120,6 +123,7 @@ describe('request auth expiry', () => {
     })
 
     expect(handler).not.toHaveBeenCalled()
+    expect(localStore.get(storageKeys.accessToken, '')).toBe('sess_still_valid')
     window.removeEventListener(AUTH_EXPIRED_EVENT, handler)
   })
 })
