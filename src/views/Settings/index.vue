@@ -420,6 +420,22 @@ function runGenerate() {
   border-top: 1px dashed var(--color-line-strong);
 }
 
+/* 桌面 / 平板：操作栏吸底。
+   表单有三屏高，开关一打开、滑条拖到中段，按钮都被推到很远；
+   吸附后「开始生成」始终在视口底部，滚到哪里都能点，不再需要先滚到底。
+   吸底时按钮会盖住上方内容，所以必须自带不透明底色（与页面同色）。 */
+@media (min-width: 768px) {
+  .actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin-top: var(--space-8);
+    padding: var(--space-4) 0;
+    border-top: 1px solid var(--color-line);
+    background: var(--color-bg);
+  }
+}
+
 .settings-aside {
   animation: settings-rise var(--dur-page) var(--ease-out) 60ms both;
 }
