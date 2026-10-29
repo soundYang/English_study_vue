@@ -11,9 +11,10 @@
  *   title — 卡片标题
  *   desc  — 描述文案
  *   icon  — lucide 图标组件
- *   to    — 目标路由；为空时渲染按钮
- *   meta  — 描述下方的小字（如“已收录 24 个单词”）
- *   delay — 入场动画延迟毫秒数，基准 200ms
+ *   to       — 目标路由；为空时渲染按钮
+ *   meta     — 描述下方的小字（如“已收录 24 个单词”）
+ *   delay    — 入场动画延迟毫秒数，基准 200ms
+ *   disabled — 禁用入口（如额度用尽）；按钮不再触发 select，链接也不再跳转
  * emits:
  *   select — 无 to 时点击触发
  */
@@ -28,6 +29,7 @@ const props = defineProps({
   to: { type: String, default: '' },
   meta: { type: String, default: '' },
   delay: { type: Number, default: 0 },
+  disabled: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['select'])
@@ -36,7 +38,12 @@ const tag = computed(() => (props.to ? RouterLink : 'button'))
 const linkProps = computed(() => (props.to ? { to: props.to } : {}))
 const entryStyle = computed(() => ({ '--entry-delay': `${200 + props.delay}ms` }))
 
-function handleClick() {
+function handleClick(event) {
+  // RouterLink 没有原生 disabled：用 preventDefault 拦住，按钮由原生 disabled 兜底
+  if (props.disabled) {
+    event?.preventDefault()
+    return
+  }
   if (!props.to) emit('select')
 }
 </script>
@@ -46,7 +53,11 @@ function handleClick() {
     :is="tag"
     v-bind="linkProps"
     :type="to ? undefined : 'button'"
+    :disabled="to ? undefined : disabled"
+    :aria-disabled="disabled || undefined"
+    :tabindex="to && disabled ? -1 : undefined"
     class="entry"
+    :class="{ 'is-disabled': disabled }"
     :style="entryStyle"
     @click="handleClick"
   >
@@ -86,6 +97,17 @@ function handleClick() {
   border-color: var(--color-line-strong);
   box-shadow: var(--shadow-md);
   transform: translateY(-3px);
+}
+
+.entry.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.entry.is-disabled:hover {
+  border-color: var(--color-line);
+  box-shadow: none;
+  transform: none;
 }
 
 .entry-icon {
@@ -130,6 +152,14 @@ function handleClick() {
 
 .entry:hover .entry-arrow {
   transform: translateX(4px);
+}
+
+.entry.is-disabled .entry-arrow {
+  color: var(--color-muted);
+}
+
+.entry.is-disabled:hover .entry-arrow {
+  transform: none;
 }
 
 @keyframes entry-rise {

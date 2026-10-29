@@ -17,6 +17,7 @@ import SettingsAside from './component/SettingsAside.vue'
 import { useCapacity } from '../../composables/useCapacity'
 import { useGenerateReading } from '../../composables/useGenerateReading'
 import { hasGenerationHandoff, setGenerationHandoff } from '../../composables/useGenerationHandoff'
+import { useQuota } from '../../composables/useQuota'
 import { useToast } from '../../composables/useToast'
 import { useSettingsStore } from '../../stores/model/settings'
 import { capacityNoteOf } from '../../unit/capacity'
@@ -37,6 +38,8 @@ const {
   maxTargetWords: maxOf,
   dispose: disposeCapacity,
 } = useCapacity()
+// 额度用尽时禁用「开始生成」；查询失败不拦（useQuota fail-open），交给后端 429 兜底
+const { quotaNote, isBlocked: quotaBlocked } = useQuota()
 
 const draft = reactive({
   level: settings.level,
@@ -172,6 +175,12 @@ async function handleSave() {
 
 function handleGenerate() {
   if (isGenerating.value || saving.value) return
+
+  // 按钮已禁用；回车提交也拦住，并说明为什么，别让用户对着没反应的按钮猜
+  if (quotaBlocked.value) {
+    toast.info(quotaNote.value)
+    return
+  }
   if (!persistDraft()) return
 
   // 生成页负责发请求与播纸页动画；这里只保存设置、把参数交接过去。
@@ -245,6 +254,16 @@ function handleGenerate() {
           </div>
         </section>
 
+        <!-- 额度提示放在按钮上方：移动端操作栏是 fixed，提示仍留在表单流里 -->
+        <p
+          v-if="quotaNote"
+          class="quota-note"
+          :class="{ 'is-blocked': quotaBlocked }"
+          role="status"
+        >
+          {{ quotaNote }}
+        </p>
+
         <div class="actions">
           <BaseButton
             class="action-button"
@@ -259,7 +278,7 @@ function handleGenerate() {
             class="action-button"
             type="submit"
             :loading="isGenerating"
-            :disabled="saving"
+            :disabled="saving || quotaBlocked"
           >
             开始生成
           </BaseButton>
@@ -340,6 +359,18 @@ function handleGenerate() {
   color: var(--color-warning);
 }
 
+.quota-note {
+  margin-top: var(--space-6);
+  color: var(--color-muted);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  text-align: right;
+}
+
+.quota-note.is-blocked {
+  color: var(--color-warning);
+}
+
 .actions {
   display: flex;
   gap: var(--space-3);
@@ -387,6 +418,10 @@ function handleGenerate() {
   .settings-main {
     max-width: none;
     padding: var(--content-pad-y) var(--content-pad-x) calc(72px + var(--space-6));
+  }
+
+  .quota-note {
+    text-align: left;
   }
 
   .actions {

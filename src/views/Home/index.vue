@@ -3,6 +3,7 @@
  * 首页视图
  * 呈现 Hero 与三个入口；负责“开始阅读”的未设置 / 空词库 / 交给生成页三条分支。
  * 词汇总数只用于提示，请求失败时静默隐藏，不阻塞页面。
+ * 每日额度由 useQuota 取一次：有剩余时显示「今日剩余 N 次」，用尽时直接禁用入口。
  */
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -14,12 +15,15 @@ import HeroPanel from './component/HeroPanel.vue'
 import { fetchCapacity } from '../../api/readings'
 import { fetchWords } from '../../api/words'
 import { hasGenerationHandoff, setGenerationHandoff } from '../../composables/useGenerationHandoff'
+import { useQuota } from '../../composables/useQuota'
 import { useToast } from '../../composables/useToast'
 import { useSettingsStore } from '../../stores/model/settings'
 
 const router = useRouter()
 const toast = useToast()
 const settings = useSettingsStore()
+// 额度用尽时直接禁用「开始阅读」，不让用户点进生成页才吃 429（后端 md/35 §7.1）
+const { quotaNote, canGenerate } = useQuota()
 
 const totalWords = ref(null)
 const availableWords = ref(null)
@@ -112,7 +116,9 @@ function tryAnyway() {
         title="开始阅读"
         desc="AI 为你生成专属阅读材料，开启你的学习之旅。"
         :icon="Sparkles"
+        :meta="quotaNote"
         :delay="160"
+        :disabled="!canGenerate"
         @select="handleStartReading"
       />
     </div>

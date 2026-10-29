@@ -3,14 +3,18 @@
  * 页面不再用词表估算可用词，改为 /capacity：上限跟难度走，篇幅超限要夹回。
  * 预检是 250ms 防抖，这里等真实时间（mock 延迟为 0）。
  */
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { flushPromises, mount } from '@vue/test-utils'
 import SettingsPage from '../index.vue'
 import LengthPicker from '../component/LengthPicker.vue'
+import { fetchQuota } from '../../../api/quota'
 import { resetMockDb, setMockLatency } from '../../../mock/adapter'
 import { storageKeys } from '../../../unit/storage'
+
+// 额度只影响「开始生成」按钮与提示，单独替换掉，避免每个页面用例都依赖 mock 快照
+vi.mock('../../../api/quota', () => ({ fetchQuota: vi.fn() }))
 
 const SETTLE_MS = 320
 // hard / 600：写 600 词要 708 个已知词，种子库只有 638 个
@@ -19,6 +23,19 @@ const HARD_600 = {
   targetWords: 600,
   questionCount: 5,
   updatedAt: new Date().toISOString(),
+}
+
+const QUOTA_ALLOWED = {
+  day: '2026-10-29',
+  resetAt: '2026-10-29T16:00:00.000Z',
+  primary: { scope: 'device', limit: 3, used: 1, remaining: 2 },
+  blocking: null,
+  breakdown: [],
+}
+
+const QUOTA_BLOCKED = {
+  ...QUOTA_ALLOWED,
+  blocking: { scope: 'device', limit: 3, used: 3, remaining: 0 },
 }
 
 function seedSettings(settings) {
@@ -58,6 +75,8 @@ beforeEach(() => {
   localStorage.clear()
   resetMockDb()
   setMockLatency(0)
+  vi.clearAllMocks()
+  fetchQuota.mockResolvedValue(QUOTA_ALLOWED)
 })
 
 describe('settings page capacity note', () => {
@@ -193,5 +212,33 @@ describe('settings page capacity note', () => {
 
     expect(wrapper.findComponent(LengthPicker).props('modelValue')).toBe(300)
     expect(wrapper.findComponent(LengthPicker).props('max')).toBe(300)
+  })
+})
+
+describe('settings page daily quota', () => {
+  it('should show the remaining quota next to the generate action', async () => {
+    const wrapper = await mountSettings()
+
+    expect(wrapper.get('.quota-note').text()).toBe('今日剩余 2 次')
+  })
+
+  it('should disable generating and explain when the quota runs out', async () => {
+    fetchQuota.mockResolvedValue(QUOTA_BLOCKED)
+    const wrapper = await mountSettings()
+    const generate = wrapper.findAll('button').find((button) => button.text() === '开始生成')
+
+    expect(generate.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.quota-note').text()).toContain('设备每天最多生成 3 次')
+    expect(wrapper.get('.quota-note').classes()).toContain('is-blocked')
+  })
+
+  it('should stay usable when the quota request fails', async () => {
+    fetchQuota.mockRejectedValue(new Error('网络错误'))
+    const wrapper = await mountSettings()
+    const generate = wrapper.findAll('button').find((button) => button.text() === '开始生成')
+
+    // fail-open：额度未知不挡人，真没额度时后端建任务会返回 429
+    expect(generate.attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('.quota-note').exists()).toBe(false)
   })
 })

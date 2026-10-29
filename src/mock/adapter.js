@@ -1867,3 +1867,58 @@ export const mockReadings = {
     }
   },
 }
+
+// 每日额度（md/35 §7.1）：mock 只保证字段形状，不真的扣次数。
+// 若这里也扣，生成却仍然立刻成功，界面会显示「剩余 0 次」而按钮照常可用，比固定演示数据更误导。
+const MOCK_QUOTA_LIMITS = { device: 3, network: 10 }
+const mockQuotaDayFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+/** 北京时间日期，如 '2026-10-29'；与后端 quotaDay 同口径 */
+function mockQuotaDay(now = new Date()) {
+  return mockQuotaDayFormatter.format(now)
+}
+
+/** 北京时间次日 0 点；东八区固定 UTC+8，不受运行环境时区影响 */
+function mockQuotaResetAt(now = new Date()) {
+  const shanghai = new Date(now.getTime() + 8 * 3600_000)
+  const nextMidnight = Date.UTC(
+    shanghai.getUTCFullYear(),
+    shanghai.getUTCMonth(),
+    shanghai.getUTCDate() + 1,
+  )
+
+  return new Date(nextMidnight - 8 * 3600_000).toISOString()
+}
+
+export const mockQuota = {
+  /** 今日额度快照；mock 始终满额，blocking 恒为 null */
+  async get(options = {}) {
+    await wait(latency, options.signal)
+
+    const device = {
+      scope: 'device',
+      limit: MOCK_QUOTA_LIMITS.device,
+      used: 0,
+      remaining: MOCK_QUOTA_LIMITS.device,
+    }
+    const network = {
+      scope: 'network',
+      limit: MOCK_QUOTA_LIMITS.network,
+      used: 0,
+      remaining: MOCK_QUOTA_LIMITS.network,
+    }
+
+    return {
+      day: mockQuotaDay(),
+      resetAt: mockQuotaResetAt(),
+      primary: device,
+      blocking: null,
+      breakdown: [device, network],
+    }
+  },
+}

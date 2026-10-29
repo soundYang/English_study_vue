@@ -10,6 +10,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import Home from '../index.vue'
 import { fetchWords } from '../../../api/words'
 import { fetchCapacity, generateReading } from '../../../api/readings'
+import { fetchQuota } from '../../../api/quota'
 import {
   clearGenerationHandoff,
   takeGenerationHandoff,
@@ -22,6 +23,7 @@ vi.mock('../../../api/readings', () => ({
   fetchCapacity: vi.fn(),
   generateReading: vi.fn(),
 }))
+vi.mock('../../../api/quota', () => ({ fetchQuota: vi.fn() }))
 
 const WORDS_RESPONSE = {
   total: 24,
@@ -31,6 +33,20 @@ const WORDS_RESPONSE = {
 const EMPTY_RESPONSE = {
   total: 0,
   counts: { all: 0, mastered: 0, learning: 0, new: 0 },
+}
+
+const QUOTA_ALLOWED = {
+  day: '2026-10-29',
+  resetAt: '2026-10-29T16:00:00.000Z',
+  primary: { scope: 'device', limit: 3, used: 1, remaining: 2 },
+  blocking: null,
+  breakdown: [],
+}
+
+const QUOTA_BLOCKED = {
+  ...QUOTA_ALLOWED,
+  primary: { scope: 'device', limit: 3, used: 1, remaining: 2 },
+  blocking: { scope: 'network', limit: 10, used: 10, remaining: 0 },
 }
 
 function createTestRouter() {
@@ -67,6 +83,7 @@ beforeEach(() => {
   fetchWords.mockResolvedValue(WORDS_RESPONSE)
   // 首页只用预检的 available 覆盖词表口径的数字，其余字段不消费
   fetchCapacity.mockResolvedValue({ available: 20 })
+  fetchQuota.mockResolvedValue(QUOTA_ALLOWED)
 })
 
 describe('home entry branches', () => {
@@ -101,6 +118,9 @@ describe('home entry branches', () => {
     useSettingsStore().save({ level: 'easy', targetWords: 100, questionCount: 5 })
 
     const { wrapper, router } = await mountHome()
+
+    expect(wrapper.get('button.entry').text()).toContain('今日剩余 2 次')
+
     await wrapper.get('button.entry').trigger('click')
     await flushPromises()
 
@@ -112,5 +132,25 @@ describe('home entry branches', () => {
       availableWords: 20,
       from: '/',
     })
+  })
+
+  it('should disable the start card when any quota dimension is used up', async () => {
+    setActivePinia(createPinia())
+    useSettingsStore().save({ level: 'easy', targetWords: 100, questionCount: 5 })
+    fetchQuota.mockResolvedValue(QUOTA_BLOCKED)
+
+    const { wrapper, router } = await mountHome()
+    const card = wrapper.get('button.entry')
+
+    expect(card.attributes('disabled')).toBeDefined()
+    expect(card.classes()).toContain('is-disabled')
+    // 网络桶用尽、设备桶还有次数：说明必须是「哪一档」用完了
+    expect(card.text()).toContain('网络每天最多生成 10 次')
+
+    await card.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/')
+    expect(takeGenerationHandoff()).toBeNull()
   })
 })

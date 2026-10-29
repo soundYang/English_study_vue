@@ -4,7 +4,7 @@
  * 以及任务化生成的状态机（建任务 → 轮询 → 取消 / 重试 / 幂等）。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mockReadings, mockWords, resetMockDb, setMockLatency } from '../adapter'
+import { mockQuota, mockReadings, mockWords, resetMockDb, setMockLatency } from '../adapter'
 
 beforeEach(() => {
   setMockLatency(0)
@@ -504,5 +504,18 @@ describe('mockReadings generation tasks', () => {
     await expect(mockReadings.getTask(taskId)).rejects.toMatchObject({
       error: { code: 'TASK_NOT_FOUND' },
     })
+  })
+})
+
+describe('mockQuota', () => {
+  it('should return a snapshot shaped like GET /api/quota', async () => {
+    const snapshot = await mockQuota.get()
+
+    expect(snapshot.day).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(snapshot.primary).toMatchObject({ scope: 'device', limit: 3, remaining: 3 })
+    expect(snapshot.blocking).toBeNull()
+    expect(snapshot.breakdown.map((item) => item.scope)).toEqual(['device', 'network'])
+    // 北京时间次日 0 点；至少是一个未来时间，前端可以直接拿来做「何时重置」
+    expect(new Date(snapshot.resetAt).getTime()).toBeGreaterThan(Date.now())
   })
 })
