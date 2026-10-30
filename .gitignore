@@ -1,5 +1,6 @@
 node_modules
 dist
+dist-prod
 dist-ssr
 coverage
 *.local
@@ -9,6 +10,8 @@ scripts/vendor/
 .env
 .env.*
 !.env.example
+# 生产基址必须随仓库走：缺了它本机的 .env 就会被编译进线上产物（2026-10-30 事故）
+!.env.production
 .DS_Store
 .vscode/*
 !.vscode/extensions.json
