@@ -6,7 +6,7 @@
   "description": "Word Reading · AI 英语阅读训练前端",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/gen-webp.mjs",
     "preview": "vite preview",
     "format": "prettier --write .",
     "test": "vitest run"
@@ -24,6 +24,7 @@
     "@vue/test-utils": "^2.5.1",
     "jsdom": "^29.1.1",
     "prettier": "^3.9.10",
+    "sharp": "^0.35.5",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"
   }
