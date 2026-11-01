@@ -61,6 +61,13 @@ export default defineConfig(({ command, mode }) => {
       host: true,
       port: 5173,
       open: false,
+      // 开发期也走同源 `/api`：手机或另一台电脑打开 http://<本机IP>:5173 时，
+      // 接口由**这台机器**的 dev server 转发到本机后端；若沿用绝对地址，
+      // 请求会打到访问者自己设备的 localhost 而失败（md/22 第 87 行）。
+      // 与 .env.production 的 `/api` 同一套路径，`.env` 里不再出现会漂移的局域网 IP。
+      proxy: {
+        '/api': { target: 'http://localhost:3000', changeOrigin: true },
+      },
     },
   }
 })

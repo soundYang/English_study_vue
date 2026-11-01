@@ -2,7 +2,9 @@
  * 运行配置
  * 集中读取并校验 Vite 环境变量，其他模块不直接访问 import.meta.env。
  */
-const DEFAULT_API_BASE_URL = 'http://localhost:3000/api'
+// 兜底用相对路径：dev 由 vite 的 server.proxy 转发到本机后端，生产由 nginx 反代，
+// 两处都不需要知道后端地址；写成绝对地址会让手机联调打到访问者自己的 localhost（md/22 第 87 行）
+const DEFAULT_API_BASE_URL = '/api'
 const REQUEST_TIMEOUT = 15000
 // AI 生成需要 20-60 秒，必须单独放宽；后端上游超时为 60 秒，这里留 30 秒余量
 const GENERATE_TIMEOUT = 90000
