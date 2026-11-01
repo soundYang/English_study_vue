@@ -30,6 +30,9 @@ const DB_VERSION = 4
 const DEFAULT_LATENCY = 300
 const MAX_PAGE_SIZE = 100
 const DEFAULT_PAGE_SIZE = 10
+// 列表的 study 筛选取值，与后端 WORD_STUDY_FILTERS 一致（md/22 第 96 行）；
+// 传别的值按「不筛选」处理，不报 400——沿用 status 的老规矩
+const STUDY_FILTERS = ['all', 'new', 'reviewing', 'mastered', 'removed']
 // 与后端 level-limits.js 保持一致：难度 → 生词预算 / 篇幅上限。
 // 原来的 requiredKnown（1000 / 1900 / 3778）已在 md/30 §7 删除，
 // 篇幅门槛改由 minKnownFor 按篇幅现算，见下面的 mockMinKnown
@@ -292,11 +295,29 @@ function normalizeSenses(senses) {
   }))
 }
 
-function toWordDto(item) {
+/**
+ * 学习阶段（与后端 `deriveStudyState` 同口径，md/56 §14.7）
+ *
+ * 顺序不能换：墓碑词优先（它是 `status='new'` 但用户从没学过）→ 已掌握 →
+ * 创建于今天的算「新词」→ 其余一律「复习中」。老数据时间缺失按复习中兜底，
+ * 宁可把老词叫复习中，也不要凭空多出一个「新词」
+ */
+function deriveStudyState(item, now = new Date()) {
+  if (item?.source === 'basic-removed') return 'removed'
+  if (item?.status === 'mastered') return 'mastered'
+
+  const created = new Date(item?.createdAt)
+  if (Number.isNaN(created.getTime())) return 'reviewing'
+  return created.toDateString() === now.toDateString() ? 'new' : 'reviewing'
+}
+
+function toWordDto(item, now = new Date()) {
   return {
     id: item.id,
     word: item.word,
     status: item.status,
+    // 展示一律用 studyState，`status` 只当筛选/写入参数用（md/22 第 91 / 96 行）
+    studyState: deriveStudyState(item, now),
     createdAt: item.createdAt,
     source: item.source,
     // 手填词没有词库名次：null 而不是 0（0 会被当成「第 0 名」= 最高频）
@@ -305,6 +326,11 @@ function toWordDto(item) {
     phonetic: item.phonetic ? normalizePhonetic(item.phonetic) : null,
     senses: normalizeSenses(item.senses),
     summary: buildSummary(item.senses),
+    // 复习排期（md/56 P1）；老数据没有这几个字段，全部兜底
+    reviewStage: item.reviewStage ?? 0,
+    nextReviewAt: item.nextReviewAt ?? null,
+    lapseCount: item.lapseCount ?? 0,
+    lastReviewedAt: item.lastReviewedAt ?? null,
   }
 }
 
@@ -347,6 +373,24 @@ function countWordsByStatus(words) {
       return counts
     },
     { all: 0, mastered: 0, learning: 0, new: 0 },
+  )
+}
+
+/**
+ * 按学习阶段分档计数（md/22 第 96 行）
+ * `all` 是前三档之和、**不含** `removed`：墓碑词不是学习进度，
+ * 否则「全部」的数字会比列表里能看到的条数多，标签页与列表对不上。
+ */
+function countWordsByStudyState(words, now = new Date()) {
+  return words.reduce(
+    (counts, item) => {
+      const state = deriveStudyState(item, now)
+
+      if (state !== 'removed') counts.all += 1
+      if (Object.prototype.hasOwnProperty.call(counts, state)) counts[state] += 1
+      return counts
+    },
+    { all: 0, new: 0, reviewing: 0, mastered: 0, removed: 0 },
   )
 }
 
@@ -1360,6 +1404,7 @@ function withWordMutationMeta(dto, action, duplicate, db, includeCounts) {
 
   if (includeCounts === true) {
     result.counts = countWordsByStatus(db.words)
+    result.studyCounts = countWordsByStudyState(db.words)
     result.total = db.words.length
   }
 
@@ -1676,16 +1721,42 @@ function applyMockAiImport(response) {
 }
 
 export const mockWords = {
-  async list({ q = '', status = 'all', page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
+  /**
+   * 词汇列表
+   *
+   * 两套筛选口径并存（md/22 第 96 行）：`study`（按 studyState，标签页用）优先，
+   * 不传或传 all 才看 `status`（老调用方）。基础词墓碑默认隐藏，
+   * 想看要么 `includeRemoved=true`（只认字符串 'true'），要么 `study=removed`。
+   */
+  async list({
+    q = '',
+    status = 'all',
+    study = 'all',
+    includeRemoved = false,
+    page = 1,
+    pageSize = DEFAULT_PAGE_SIZE,
+  } = {}) {
     await wait(latency)
 
     const db = readDb()
+    const now = new Date()
     const keyword = String(q).trim().toLowerCase()
     const activeStatus = status || 'all'
+    const activeStudy = STUDY_FILTERS.includes(study) ? study : 'all'
+    // 与后端一致：只认字符串 'true'，传 1 或布尔真值都不算（Boolean('false') === true 的坑）
+    const withRemoved = includeRemoved === true || includeRemoved === 'true'
 
     const filtered = db.words
       .filter((item) => {
-        const matchesStatus = activeStatus === 'all' || item.status === activeStatus
+        const state = deriveStudyState(item, now)
+
+        // 墓碑词只在明确要看时才出现；study=removed 本身就是「只看墓碑」
+        if (state === 'removed' && !withRemoved && activeStudy !== 'removed') return false
+
+        // study 有值时优先于 status：两者是两套口径，同时生效只会让人猜哪个赢了
+        const matchesStudy = activeStudy === 'all' || state === activeStudy
+        const matchesStatus =
+          activeStudy !== 'all' || activeStatus === 'all' || item.status === activeStatus
         const matchesKeyword =
           !keyword ||
           item.word.includes(keyword) ||
@@ -1694,18 +1765,19 @@ export const mockWords = {
               .toLowerCase()
               .includes(keyword),
           )
-        return matchesStatus && matchesKeyword
+        return matchesStudy && matchesStatus && matchesKeyword
       })
       .sort(byNewest)
 
     const paged = paginate(filtered, page, pageSize)
 
     return {
-      items: paged.items.map(toWordDto),
+      items: paged.items.map((item) => toWordDto(item, now)),
       total: filtered.length,
       page: paged.page,
       pageSize: paged.pageSize,
       counts: countWordsByStatus(db.words),
+      studyCounts: countWordsByStudyState(db.words, now),
     }
   },
 
@@ -2105,7 +2177,7 @@ export const mockWords = {
       skipped,
       failed: errors.length,
       total: entries.length,
-      items: items.map(toWordDto),
+      items: items.map((item) => toWordDto(item)),
       skippedItems,
       errors,
     }

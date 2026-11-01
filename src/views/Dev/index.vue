@@ -40,9 +40,9 @@ const countOptions = [
 
 const filterOptions = [
   { value: 'all', label: '全部', count: 120 },
+  { value: 'new', label: '新词', count: 20 },
+  { value: 'reviewing', label: '复习中', count: 35 },
   { value: 'mastered', label: '已掌握', count: 65 },
-  { value: 'learning', label: '学习中', count: 20 },
-  { value: 'new', label: '复习中', count: 35 },
 ]
 
 const levelOptions = [
@@ -122,9 +122,10 @@ function handleConfirm() {
     <article class="demo">
       <h2 class="demo-title">状态胶囊 StatusPill</h2>
       <div class="demo-row">
-        <StatusPill kind="status" value="mastered" />
-        <StatusPill kind="status" value="learning" />
         <StatusPill kind="status" value="new" />
+        <StatusPill kind="status" value="reviewing" />
+        <StatusPill kind="status" value="mastered" />
+        <StatusPill kind="status" value="removed" />
       </div>
       <div class="demo-row">
         <StatusPill kind="level" value="easy" />

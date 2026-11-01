@@ -39,7 +39,7 @@ describe('statusOf', () => {
       label: '认识',
     })
     expect(statusOf({ ...PLAIN, personalState: 'removed' })).toEqual({
-      value: 'new',
+      value: 'removed',
       label: '不认识',
     })
   })

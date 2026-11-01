@@ -60,20 +60,21 @@ const detailData = computed(() =>
 
 let highlightTimer = null
 
+// 标签页绑的是后端的 `study`（studyState 口径），不是 `status`
 const statusModel = computed({
-  get: () => store.status,
+  get: () => store.study,
   set: (value) => {
     if (isGuest.value) {
       goLogin('/words')
       return
     }
     rememberEmptyView()
-    store.filterByStatus(value)
+    store.filterByStudy(value)
   },
 })
 
 const allWordsLabel = computed(() => {
-  if (store.counts) return store.counts.all
+  if (store.studyCounts) return store.studyCounts.all
   return store.loading ? '—' : store.total
 })
 
@@ -95,7 +96,7 @@ const emptyMeta = computed(() => {
     }
   }
 
-  if (store.status !== 'all') {
+  if (store.study !== 'all') {
     return {
       action: 'status',
       title: '这个状态下还没有单词',
@@ -135,7 +136,7 @@ const deleteTitle = computed(() =>
 
 // 换筛选 / 翻页后原来的锚点可能已经不在列表里，浮层跟着关掉
 watch(
-  () => [store.query, store.status, store.page],
+  () => [store.query, store.study, store.page],
   () => {
     detailTarget.value = null
   },
@@ -236,7 +237,7 @@ function handleEmptyAction() {
   }
   if (action === 'status') {
     rememberEmptyView()
-    store.filterByStatus('all')
+    store.filterByStudy('all')
     return
   }
   openAddPanel()
@@ -364,7 +365,7 @@ function reload() {
           @batch="openBatchPanel"
         />
 
-        <WordStatusTabs v-model="statusModel" :counts="store.counts" :disabled="isGuest" />
+        <WordStatusTabs v-model="statusModel" :counts="store.studyCounts" :disabled="isGuest" />
 
         <GuestNotice
           v-if="isGuest"
@@ -470,7 +471,7 @@ function reload() {
       @update:open="handleDetailOpen"
     >
       <template #badges>
-        <StatusPill v-if="detailTarget" kind="status" :value="detailTarget.item.status" />
+        <StatusPill v-if="detailTarget" kind="status" :value="detailTarget.item.studyState" />
       </template>
     </WordDetailPopover>
   </section>

@@ -191,7 +191,7 @@ function retry() {
               <template v-else>—</template>
             </td>
             <td>
-              <StatusPill kind="status" :value="item.status" />
+              <StatusPill kind="status" :value="item.studyState" />
             </td>
             <td class="cell-created">{{ formatDate(item.createdAt) }}</td>
             <td>
@@ -301,7 +301,7 @@ function retry() {
           <span class="card-created">收录 {{ formatDate(item.createdAt) }}</span>
         </div>
 
-        <StatusPill kind="status" :value="item.status" />
+        <StatusPill kind="status" :value="item.studyState" />
 
         <div class="row-actions is-on-card">
           <button

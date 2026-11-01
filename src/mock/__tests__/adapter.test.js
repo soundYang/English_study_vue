@@ -12,6 +12,7 @@ import {
   resetMockDb,
   setMockLatency,
 } from '../adapter'
+import { storageKeys } from '../../unit/storage'
 
 beforeEach(() => {
   setMockLatency(0)
@@ -46,6 +47,52 @@ describe('mockWords.list', () => {
     expect(result.items).toHaveLength(10)
     expect(result.page).toBe(1)
     expect(result.counts).toEqual({ all: 24, mastered: 11, learning: 9, new: 4 })
+    // studyCounts 按 studyState 分档：种子里 4 个 status='new' 的词都是 9 月的，
+    // 早就过了「今天加的」，所以全部落在复习中，新词一档是 0（md/22 第 96 行）
+    expect(result.studyCounts).toEqual({
+      all: 24,
+      new: 0,
+      reviewing: 13,
+      mastered: 11,
+      removed: 0,
+    })
+  })
+
+  it('should filter by study state', async () => {
+    const reviewing = await mockWords.list({ study: 'reviewing', pageSize: 50 })
+    const mastered = await mockWords.list({ study: 'mastered', pageSize: 50 })
+    const newWords = await mockWords.list({ study: 'new', pageSize: 50 })
+
+    expect(reviewing.items.every((item) => item.studyState === 'reviewing')).toBe(true)
+    expect(mastered.items.every((item) => item.studyState === 'mastered')).toBe(true)
+    expect(newWords.items).toHaveLength(0)
+    expect(reviewing.items.length + mastered.items.length).toBe(24)
+  })
+
+  it('should hide tombstones unless asked for them', async () => {
+    const db = resetMockDb()
+    db.words.push({
+      id: 'word_tombstone',
+      word: 'tombstone',
+      status: 'new',
+      source: 'basic-removed',
+      senses: [],
+      createdAt: '2026-09-05T08:00:00.000Z',
+    })
+    localStorage.setItem(storageKeys.mockDb, JSON.stringify(db))
+
+    const hidden = await mockWords.list({ pageSize: 50 })
+    const shown = await mockWords.list({ includeRemoved: 'true', pageSize: 50 })
+    const onlyRemoved = await mockWords.list({ study: 'removed', pageSize: 50 })
+
+    expect(hidden.items.some((item) => item.id === 'word_tombstone')).toBe(false)
+    expect(hidden.total).toBe(24)
+    expect(shown.items.some((item) => item.id === 'word_tombstone')).toBe(true)
+    expect(shown.total).toBe(25)
+    expect(onlyRemoved.items.map((item) => item.id)).toEqual(['word_tombstone'])
+    // all 不含墓碑；removed 单独一档，徽章写的「不认识」才有地方对得上
+    expect(hidden.studyCounts.all).toBe(24)
+    expect(shown.studyCounts).toMatchObject({ all: 24, removed: 1 })
   })
 
   it('should sort newest first and clamp out-of-range pages', async () => {
@@ -117,7 +164,10 @@ describe('mockWords mutations', () => {
     const withCounts = await mockWords.create({ word: 'violet', includeCounts: true })
 
     expect(plain.counts).toBeUndefined()
+    expect(plain.studyCounts).toBeUndefined()
     expect(withCounts.counts).toEqual({ all: 26, mastered: 11, learning: 11, new: 4 })
+    // 新建的两个词 createdAt 是现在 → studyState='new'，与 status='learning' 分属两套口径
+    expect(withCounts.studyCounts).toMatchObject({ all: 26, new: 2, reviewing: 13, mastered: 11 })
     expect(withCounts.total).toBe(26)
   })
 

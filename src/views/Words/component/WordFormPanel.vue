@@ -30,9 +30,10 @@ import { searchDictionary } from '../../../api/dictionary'
 import { localStore, storageKeys } from '../../../unit/storage'
 import { isValidWordStatus, validateWordInput } from '../../../unit/validators'
 
+// 写的是 `status`（接口参数），与展示用的 studyState 分属两套口径（md/22 第 96 行）
 const STATUS_OPTIONS = [
-  { value: 'new', label: '复习中' },
-  { value: 'learning', label: '学习中' },
+  { value: 'new', label: '新词（明天开始复习）' },
+  { value: 'learning', label: '复习中' },
   { value: 'mastered', label: '已掌握' },
 ]
 

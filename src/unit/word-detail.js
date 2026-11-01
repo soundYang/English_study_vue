@@ -71,9 +71,11 @@ export function basicWordDetail(item) {
   if (coca) facts.push(coca)
 
   if (item.personalStatus) {
+    // 基础词页只拿得到 status，没有 studyState；learning 一律说「复习中」，
+    // 与词库页的徽章保持同一套叫法（md/22 第 91 行）
     facts.push({
       label: '我的单词',
-      value: item.personalStatus === 'mastered' ? '已掌握' : '学习中',
+      value: item.personalStatus === 'mastered' ? '已掌握' : '复习中',
     })
   }
 

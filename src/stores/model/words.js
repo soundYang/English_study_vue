@@ -22,9 +22,12 @@ export const DEFAULT_PAGE_SIZE = 10
 export const useWordsStore = defineStore('words', () => {
   const items = ref([])
   const total = ref(0)
-  const counts = ref(null)
+  // 标签页的数字来自 studyCounts（按 studyState 分档），不是 counts（按 status 分档）：
+  // 后者把「今天加的 / 结算前的老词 / 墓碑词」全算在 new 一档里，与列表条数对不上（md/22 第 96 行）
+  const studyCounts = ref(null)
   const query = ref('')
-  const status = ref('all')
+  // 筛选维度用后端的 `study`（对应 studyState），不是 `status`：墓碑词混不进前三档
+  const study = ref('all')
   const page = ref(1)
   const pageSize = ref(DEFAULT_PAGE_SIZE)
   const loading = ref(false)
@@ -37,7 +40,7 @@ export const useWordsStore = defineStore('words', () => {
   let requestSeq = 0
 
   const hasItems = computed(() => items.value.length > 0)
-  const isFiltered = computed(() => Boolean(query.value) || status.value !== 'all')
+  const isFiltered = computed(() => Boolean(query.value) || study.value !== 'all')
 
   function toFailure(caught) {
     const normalized = normalizeApiError(caught)
@@ -62,7 +65,7 @@ export const useWordsStore = defineStore('words', () => {
     try {
       const result = await fetchWords({
         q: query.value,
-        status: status.value,
+        study: study.value,
         page: page.value,
         pageSize: pageSize.value,
       })
@@ -71,7 +74,7 @@ export const useWordsStore = defineStore('words', () => {
 
       items.value = result.items
       total.value = result.total
-      counts.value = result.counts
+      studyCounts.value = result.studyCounts
       page.value = result.page
       pageSize.value = result.pageSize
       loading.value = false
@@ -97,8 +100,8 @@ export const useWordsStore = defineStore('words', () => {
     page.value = 1
   }
 
-  function setStatus(value) {
-    status.value = value || 'all'
+  function setStudy(value) {
+    study.value = value || 'all'
     page.value = 1
   }
 
@@ -107,8 +110,8 @@ export const useWordsStore = defineStore('words', () => {
     return fetchList()
   }
 
-  async function filterByStatus(value) {
-    setStatus(value)
+  async function filterByStudy(value) {
+    setStudy(value)
     return fetchList()
   }
 
@@ -144,8 +147,8 @@ export const useWordsStore = defineStore('words', () => {
       if (action !== 'kept') {
         page.value = 1
         await fetchList({ quiet: true })
-      } else if (result?.counts) {
-        counts.value = result.counts
+      } else if (result?.studyCounts) {
+        studyCounts.value = result.studyCounts
       }
 
       return { ok: true, item: result, action, duplicate }
@@ -181,12 +184,14 @@ export const useWordsStore = defineStore('words', () => {
       items.value = items.value.filter((item) => item.id !== id)
       total.value = Math.max(0, total.value - 1)
 
-      if (removed && counts.value) {
-        counts.value = {
-          ...counts.value,
-          all: Math.max(0, counts.value.all - 1),
-          [removed.status]: Math.max(0, (counts.value[removed.status] || 0) - 1),
-        }
+      // 本地先扣一次，避免删除后标签数字要等静默刷新才变。
+      // `all` 是前三档之和、不含「不认识」，所以删墓碑词时只动 removed 那一档
+      if (removed && studyCounts.value) {
+        const state = removed.studyState
+        const next = { ...studyCounts.value }
+        if (state !== 'removed') next.all = Math.max(0, (next.all || 0) - 1)
+        if (state) next[state] = Math.max(0, (next[state] || 0) - 1)
+        studyCounts.value = next
       }
 
       if (!items.value.length && total.value > 0 && page.value > 1) {
@@ -349,9 +354,9 @@ export const useWordsStore = defineStore('words', () => {
     requestSeq += 1
     items.value = []
     total.value = 0
-    counts.value = null
+    studyCounts.value = null
     query.value = ''
-    status.value = 'all'
+    study.value = 'all'
     page.value = 1
     pageSize.value = DEFAULT_PAGE_SIZE
     loading.value = false
@@ -362,9 +367,9 @@ export const useWordsStore = defineStore('words', () => {
   return {
     items,
     total,
-    counts,
+    studyCounts,
     query,
-    status,
+    study,
     page,
     pageSize,
     loading,
@@ -374,9 +379,9 @@ export const useWordsStore = defineStore('words', () => {
     isFiltered,
     fetchList,
     setQuery,
-    setStatus,
+    setStudy,
     search,
-    filterByStatus,
+    filterByStudy,
     goToPage,
     addWord,
     updateWord,

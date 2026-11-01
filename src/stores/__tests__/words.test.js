@@ -29,7 +29,7 @@ describe('words store', () => {
     expect(store.items).toHaveLength(10)
     expect(store.total).toBe(24)
     expect(store.page).toBe(1)
-    expect(store.counts.all).toBe(24)
+    expect(store.studyCounts.all).toBe(24)
     expect(store.loading).toBe(false)
   })
 
@@ -59,17 +59,18 @@ describe('words store', () => {
     expect(store.items[0].word).toBe('apple')
   })
 
-  it('should filter by status and keep the server counts', async () => {
+  // 标签页筛的是 `study`（studyState 口径），不是 `status`：后者把墓碑词也算进 new 一档
+  it('should filter by study state and keep the server counts', async () => {
     const store = useWordsStore()
     await store.fetchList()
 
-    const expected = store.counts.mastered
-    await store.filterByStatus('mastered')
+    const expected = store.studyCounts.mastered
+    await store.filterByStudy('mastered')
 
-    expect(store.status).toBe('mastered')
+    expect(store.study).toBe('mastered')
     expect(store.total).toBe(expected)
-    expect(store.items.every((item) => item.status === 'mastered')).toBe(true)
-    expect(store.counts.all).toBe(24)
+    expect(store.items.every((item) => item.studyState === 'mastered')).toBe(true)
+    expect(store.studyCounts.all).toBe(24)
   })
 
   it('should page through the vocabulary list', async () => {
@@ -85,14 +86,16 @@ describe('words store', () => {
   it('should add a normalized word at the top and refresh counts', async () => {
     const store = useWordsStore()
     await store.fetchList()
-    const learningBefore = store.counts.learning
+    // 今天加的 learning 词，studyState 是「新词」：两者本来就是两套口径
+    const newBefore = store.studyCounts.new
 
     const result = await store.addWord({ word: ' ZEBRA ', meaning: '斑马', status: 'learning' })
 
     expect(result.ok).toBe(true)
     expect(result.item.word).toBe('zebra')
+    expect(result.item.studyState).toBe('new')
     expect(store.total).toBe(25)
-    expect(store.counts.learning).toBe(learningBefore + 1)
+    expect(store.studyCounts.new).toBe(newBefore + 1)
     expect(store.items[0].word).toBe('zebra')
   })
 
@@ -105,7 +108,9 @@ describe('words store', () => {
     expect(result).toMatchObject({ ok: true, action: 'updated', duplicate: true })
     expect(result.item.word).toBe('apple')
     expect(store.total).toBe(24)
-    expect(store.counts.learning).toBe(10)
+    // apple 由已掌握改成学习中：种子里 9 个 learning 词都是 9 月的，全部算复习中
+    expect(store.studyCounts.reviewing).toBe(14)
+    expect(store.studyCounts.mastered).toBe(10)
   })
 
   it('should not refetch when the duplicate is kept unchanged', async () => {

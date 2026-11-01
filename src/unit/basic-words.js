@@ -31,11 +31,12 @@ const CALENDAR_TYPE_LABELS = Object.freeze({ weekday: '星期', month: '月份' 
 /**
  * 卡片底部状态：只看个人的三态标记 personalState（md/52 §2.3）。
  * untouched → 未标记、known → 认识、removed → 不认识。
- * value 交给 StatusPill 定颜色（new 红 / mastered 绿 / 其余灰），label 覆盖默认文案。
+ * value 交给 StatusPill 定颜色（removed 红 / mastered 绿 / 其余灰），label 覆盖默认文案。
  * 注意不再用 personalStatus 推断：它在词库中是学习中/已掌握，和这里的标记不是一回事。
+ * `removed` 与词库页的 studyState='removed' 同名同色，同一个「不认识」两页看起来一致。
  */
 export function statusOf(item) {
-  if (item.personalState === 'removed') return { value: 'new', label: '不认识' }
+  if (item.personalState === 'removed') return { value: 'removed', label: '不认识' }
   if (item.personalState === 'known') return { value: 'mastered', label: '认识' }
   return { value: 'unknown', label: '未标记' }
 }

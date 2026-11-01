@@ -20,10 +20,12 @@ import BaseModal from '../../../component/BaseModal.vue'
 import SegmentedControl from '../../../component/SegmentedControl.vue'
 import { isValidWordStatus, normalizeWord, validateWordInput } from '../../../unit/validators'
 
+// 这里写的是 `status`（接口参数），不是展示用的 studyState（md/22 第 96 行）：
+// 设 learning 会当天进复习队列、设 mastered 退出队列、设 new 退出队列等次日结算，
+// 所以「新词」后面补一句去向，免得用户选完发现徽章写着「复习中」
 const STATUS_OPTIONS = [
-  // `new` = 用户自己加、还没开始学，产品口径叫「复习中」（md/22 第 84 行）
-  { value: 'new', label: '复习中' },
-  { value: 'learning', label: '学习中' },
+  { value: 'new', label: '新词（明天开始复习）' },
+  { value: 'learning', label: '复习中' },
   { value: 'mastered', label: '已掌握' },
 ]
 

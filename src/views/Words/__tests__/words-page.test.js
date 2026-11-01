@@ -33,16 +33,6 @@ afterAll(() => {
   setMockLatency(300)
 })
 
-/**
- * 从 seed 数据库里去掉指定状态的单词，用来构造「某个状态没有单词」的场景。
- * resetMockDb() 会重新写入种子数据，随后用过滤后的副本覆盖 localStorage。
- */
-function seedWithoutStatuses(statuses) {
-  const db = resetMockDb()
-  const words = db.words.filter((item) => !statuses.includes(item.status))
-  localStorage.setItem(storageKeys.mockDb, JSON.stringify({ ...db, words }))
-}
-
 async function mountPage() {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -92,13 +82,13 @@ describe('Words page', () => {
     expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(10)
   })
 
-  // 已掌握 / 学习中 / 复习中都要覆盖：三个标签走的是同一条 fetchList，
-  // 但列表长度不同（11 / 9 / 4），曾经在点标签时整表换成骨架屏而闪一下。
+  // 已掌握 / 复习中都要覆盖：两个标签走的是同一条 fetchList，
+  // 但列表长度不同（11 / 13），曾经在点标签时整表换成骨架屏而闪一下。
+  // 标签页按 studyState 分档（md/22 第 96 行）：全部 / 新词 / 复习中 / 已掌握 / 不认识
   it.each([
-    ['已掌握', 1, 'mastered'],
-    ['学习中', 2, 'learning'],
-    ['复习中', 3, 'new'],
-  ])('should keep the current rows while switching to %s', async (_, tabIndex, status) => {
+    ['复习中', 2, 'reviewing'],
+    ['已掌握', 3, 'mastered'],
+  ])('should keep the current rows while switching to %s', async (_, tabIndex, study) => {
     const wrapper = await mountPage()
     const store = useWordsStore()
     const rows = wrapper.findAll('tbody tr.word-row')
@@ -111,7 +101,7 @@ describe('Words page', () => {
     setMockLatency(60)
     await wrapper.findAll('[role="radio"]')[tabIndex].trigger('click')
 
-    expect(store.status).toBe(status)
+    expect(store.study).toBe(study)
     expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
     // 旧行还是同一批 DOM 节点，没有被重建
     expect(wrapper.findAll('tbody tr.word-row')[0].element).toBe(firstRow)
@@ -121,19 +111,19 @@ describe('Words page', () => {
     await new Promise((resolve) => setTimeout(resolve, 80))
     await flushPromises()
 
-    expect(store.items.every((item) => item.status === status)).toBe(true)
+    expect(store.items.every((item) => item.studyState === study)).toBe(true)
     expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(store.items.length)
     expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
   })
 
-  // 用户反馈的场景：复习中为空，已掌握也为空，点标签时页面仍会闪一下。
+  // 用户反馈的场景：两个标签都为空，点标签时页面仍会闪一下。
   // 原因是旧列表为空时页面挂上了列表骨架，回来后又变回空态。
+  // 种子数据里「新词」「不认识」天然都是空的（没有今天的词、没有墓碑），不用造数据
   it('should keep the empty state when switching between two empty tabs', async () => {
-    seedWithoutStatuses(['mastered', 'new'])
     const wrapper = await mountPage()
     const store = useWordsStore()
 
-    await wrapper.findAll('[role="radio"]')[3].trigger('click')
+    await wrapper.findAll('[role="radio"]')[1].trigger('click')
     await flushPromises()
 
     expect(store.hasItems).toBe(false)
@@ -141,9 +131,9 @@ describe('Words page', () => {
     const emptyElement = wrapper.get('.words-empty').element
 
     setMockLatency(60)
-    await wrapper.findAll('[role="radio"]')[1].trigger('click')
+    await wrapper.findAll('[role="radio"]')[4].trigger('click')
 
-    expect(store.status).toBe('mastered')
+    expect(store.study).toBe('removed')
     // 空态切空态：不能挂上列表骨架，原来的空态节点保持不动
     expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
     expect(wrapper.find('.word-table-wrap').exists()).toBe(false)
@@ -159,21 +149,20 @@ describe('Words page', () => {
   })
 
   it('should keep the empty state until rows arrive when switching to a non-empty tab', async () => {
-    seedWithoutStatuses(['new'])
     const wrapper = await mountPage()
     const store = useWordsStore()
 
-    await wrapper.findAll('[role="radio"]')[3].trigger('click')
+    await wrapper.findAll('[role="radio"]')[1].trigger('click')
     await flushPromises()
 
     expect(store.hasItems).toBe(false)
     const emptyElement = wrapper.get('.words-empty').element
 
     setMockLatency(60)
-    await wrapper.findAll('[role="radio"]')[1].trigger('click')
+    await wrapper.findAll('[role="radio"]')[2].trigger('click')
 
     // 空态 → 有数据：加载中仍显示空态，不闪骨架，也不留下半张空表格
-    expect(store.status).toBe('mastered')
+    expect(store.study).toBe('reviewing')
     expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
     expect(wrapper.get('.words-empty').element).toBe(emptyElement)
 

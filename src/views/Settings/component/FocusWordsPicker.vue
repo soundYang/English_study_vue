@@ -3,7 +3,7 @@
  * 自选单词
  *
  * 用途：从个人词库里挑几个词，指定这次生成必须用上（后端 md/54）。
- *       只列「学习中 / 已掌握」——`new` 的词后端会判成「不在词库」，放进选项
+ *       只列「复习中 / 已掌握」（status=learning / mastered）——`new` 的词后端会判成「不在词库」，放进选项
  *       只会让用户选到必然 422 的词。
  * 用法：<FocusWordsPicker
  *         v-model="draft.focusWords"
@@ -41,10 +41,10 @@ const DEBOUNCE_MS = 250
 const PAGE_SIZE = 10
 
 const STATUS_OPTIONS = [
-  { value: 'learning', label: '学习中' },
+  { value: 'learning', label: '复习中' },
   { value: 'mastered', label: '已掌握' },
 ]
-const STATUS_LABELS = { learning: '学习中', mastered: '已掌握' }
+const STATUS_LABELS = { learning: '复习中', mastered: '已掌握' }
 
 const props = defineProps({
   modelValue: { type: Array, default: () => [] },
@@ -204,7 +204,7 @@ onBeforeUnmount(() => clearTimeout(timer))
     <BaseModal
       v-model:open="open"
       title="选择必须用上的单词"
-      description="只列「学习中」和「已掌握」的词；选中的词会作为本次生成的重点词。"
+      description="只列「复习中」和「已掌握」的词；选中的词会作为本次生成的重点词。"
       :max-width="560"
     >
       <div class="picker-toolbar">

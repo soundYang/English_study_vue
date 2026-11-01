@@ -2,23 +2,27 @@
 /**
  * 状态胶囊
  *
- * 用途：展示学习状态（复习中 / 学习中 / 已掌握）或阅读难度（简单 / 进阶 / 挑战）
- * 用法：<StatusPill kind="status" value="mastered" />
+ * 用途：展示学习状态（新词 / 复习中 / 已掌握 / 不认识）或阅读难度（简单 / 进阶 / 挑战）
+ * 用法：<StatusPill kind="status" value="reviewing" />
  *       <StatusPill kind="level" value="easy" />
  *
  * props:
- *   kind  — status（默认）/ level
+ *   kind  — status（默认，取 studyState）/ level
  *   value — 对应枚举值；未知值原样显示并使用中性色
  *   label — 可选，覆盖默认文案
  */
 import { computed } from 'vue'
 
+// 键是**后端派生字段 `studyState`**，不是 `status`（md/22 第 91 / 96 行、md/56 §14.7）：
+// `status` 同时承载学习进度与基础词减法标记（墓碑词也是 status='new'），直接拿它做文案
+// 会把「还没开始学」说成「复习中」。新旧对应：new→新词、learning→复习中、mastered→已掌握。
+// 新词与复习中同用 info：两者都是常态，也不该与「已掌握」的绿色抢眼
 const STATUS_MAP = {
-  // `new` 是「用户自己加进来、还没开始学」的词，产品口径统一叫「复习中」（md/22 第 84 行）。
-  // 用 info 而不是 danger：它是常态不是异常；也不复用 warning，否则与「学习中」撞色
-  new: { label: '复习中', tone: 'info' },
-  learning: { label: '学习中', tone: 'warning' },
+  new: { label: '新词', tone: 'info' },
+  reviewing: { label: '复习中', tone: 'info' },
   mastered: { label: '已掌握', tone: 'success' },
+  // 基础词表里标「不认识」产生的墓碑词，单独一档；红色沿用改名前的语气
+  removed: { label: '不认识', tone: 'danger' },
 }
 
 const LEVEL_MAP = {

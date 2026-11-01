@@ -1,7 +1,7 @@
 /**
  * Mock 的自选单词（md/54）
  * 形状与校验对齐后端：不传 = 自动、显式 [] = 400、超上限 = 400、
- * 词库外 / 复习中（status=new）= 422 FOCUS_WORDS_NOT_LEARNED（不占额度，在调用模型之前）。
+ * 词库外 / 状态为 new（徽章显示「新词」）= 422 FOCUS_WORDS_NOT_LEARNED（不占额度，在调用模型之前）。
  */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { mockReadings, resetMockDb, setMockLatency } from '../adapter'
