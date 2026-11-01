@@ -83,6 +83,54 @@ describe('SegmentedControl', () => {
 
     expect(wrapper.emitted('update:modelValue')[0]).toEqual([5])
   })
+
+  it('should align the indicator with the measured item when labels differ in width', async () => {
+    const wrapper = mount(SegmentedControl, {
+      props: {
+        modelValue: 'learning',
+        options: [
+          { value: 'new', label: '新词（明天开始复习）' },
+          { value: 'learning', label: '复习中' },
+          { value: 'mastered', label: '已掌握' },
+        ],
+      },
+    })
+
+    // jsdom 不做布局，按真实渲染会得到的位置手工喂给组件
+    wrapper.element.getBoundingClientRect = () => ({ left: 100, width: 420 })
+    const rects = [
+      { left: 104, width: 176 },
+      { left: 280, width: 128 },
+      { left: 408, width: 112 },
+    ]
+    wrapper.findAll('[role="radio"]').forEach((button, index) => {
+      button.element.getBoundingClientRect = () => rects[index]
+    })
+
+    await wrapper.setProps({ modelValue: 'mastered' })
+    await nextTick()
+    await nextTick()
+
+    const style = wrapper.get('.segmented-indicator').attributes('style')
+    // 长文案把第一列撑宽后，指示块要落在第三列的实际位置，而不是等分的 1/3
+    expect(style).toContain('width: 112px')
+    expect(style).toContain('translateX(304px)')
+  })
+
+  it('should keep the equal-width fallback before layout is available', () => {
+    const wrapper = mount(SegmentedControl, {
+      props: {
+        modelValue: 'learning',
+        options: [
+          { value: 'new', label: '新词（明天开始复习）' },
+          { value: 'learning', label: '复习中' },
+          { value: 'mastered', label: '已掌握' },
+        ],
+      },
+    })
+
+    expect(wrapper.get('.segmented-indicator').attributes('style')).toContain('calc')
+  })
 })
 
 describe('PaginationBar', () => {

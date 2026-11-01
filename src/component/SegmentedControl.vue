@@ -17,7 +17,7 @@
  * emits:
  *   update:modelValue
  */
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const props = defineProps({
   modelValue: { type: [String, Number], required: true },
@@ -29,12 +29,27 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 
 const rootRef = ref(null)
+// 实测到的选中项位置；null 时退回「等分」兜底（SSR / 未布局 / jsdom）
+const indicatorRect = ref(null)
+let resizeObserver = null
 
 const activeIndex = computed(() =>
   props.options.findIndex((option) => option.value === props.modelValue),
 )
 
+/**
+ * 指示块必须贴合实际列宽，不能按等分算。
+ *
+ * 之前用 `width: (100% - 8px) / n` + `translateX(index * 100%)`，前提是每列等宽。
+ * 但列是 `1fr`（最小值 auto），长文案如「新词（明天开始复习）」会把第一列撑宽，
+ * 其余列被压窄，等分指示块就会偏到相邻标签下面（见「移块错位」截图）。
+ */
 const indicatorStyle = computed(() => {
+  const rect = indicatorRect.value
+  if (rect) {
+    return { width: `${rect.width}px`, transform: `translateX(${rect.left}px)` }
+  }
+
   const count = props.options.length || 1
   const index = activeIndex.value < 0 ? 0 : activeIndex.value
   return {
@@ -42,6 +57,63 @@ const indicatorStyle = computed(() => {
     transform: `translateX(${index * 100}%)`,
   }
 })
+
+function syncIndicator() {
+  const root = rootRef.value
+  if (!root) return
+
+  const items = root.querySelectorAll('[role="radio"]')
+  const index = activeIndex.value < 0 ? 0 : activeIndex.value
+  const target = items[index]
+  if (!target) return
+
+  const rootRect = root.getBoundingClientRect()
+  const targetRect = target.getBoundingClientRect()
+  // 未布局（jsdom / display:none）时保持等分兜底，避免写出 0px 的指示块
+  if (!targetRect.width || !rootRect.width) {
+    indicatorRect.value = null
+    return
+  }
+
+  indicatorRect.value = {
+    // 指示块 left 是 4px（padding 边），这里换算成相对该基准的偏移
+    left: targetRect.left - rootRect.left - root.clientLeft - 4,
+    width: targetRect.width,
+  }
+}
+
+function observeItems() {
+  if (!resizeObserver) return
+  resizeObserver.disconnect()
+  const root = rootRef.value
+  if (!root) return
+
+  resizeObserver.observe(root)
+  root.querySelectorAll('[role="radio"]').forEach((item) => resizeObserver.observe(item))
+}
+
+onMounted(() => {
+  nextTick(syncIndicator)
+
+  if (typeof ResizeObserver === 'function') {
+    resizeObserver = new ResizeObserver(syncIndicator)
+    nextTick(observeItems)
+  }
+})
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+})
+
+watch(
+  () => [activeIndex.value, props.options],
+  () => {
+    nextTick(syncIndicator)
+    nextTick(observeItems)
+  },
+  { deep: true },
+)
 
 function select(value) {
   if (props.disabled || value === props.modelValue) return
@@ -123,7 +195,10 @@ function handleKeydown(event) {
   border-radius: var(--radius-pill);
   background: var(--color-surface);
   box-shadow: var(--shadow-sm);
-  transition: transform 220ms var(--ease-in-out);
+  /* 各列宽度不等时，宽高也要跟着滑动，否则指示块会先跳宽再位移 */
+  transition:
+    transform 220ms var(--ease-in-out),
+    width 220ms var(--ease-in-out);
 }
 
 .segmented-item {
