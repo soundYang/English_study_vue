@@ -21,7 +21,8 @@ import SegmentedControl from '../../../component/SegmentedControl.vue'
 import { isValidWordStatus, normalizeWord, validateWordInput } from '../../../unit/validators'
 
 const STATUS_OPTIONS = [
-  { value: 'new', label: '未学习' },
+  // `new` = 用户自己加、还没开始学，产品口径叫「复习中」（md/22 第 84 行）
+  { value: 'new', label: '复习中' },
   { value: 'learning', label: '学习中' },
   { value: 'mastered', label: '已掌握' },
 ]

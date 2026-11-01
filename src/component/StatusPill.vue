@@ -2,7 +2,7 @@
 /**
  * 状态胶囊
  *
- * 用途：展示学习状态（未学习 / 学习中 / 已掌握）或阅读难度（简单 / 进阶 / 挑战）
+ * 用途：展示学习状态（复习中 / 学习中 / 已掌握）或阅读难度（简单 / 进阶 / 挑战）
  * 用法：<StatusPill kind="status" value="mastered" />
  *       <StatusPill kind="level" value="easy" />
  *
@@ -14,7 +14,9 @@
 import { computed } from 'vue'
 
 const STATUS_MAP = {
-  new: { label: '未学习', tone: 'danger' },
+  // `new` 是「用户自己加进来、还没开始学」的词，产品口径统一叫「复习中」（md/22 第 84 行）。
+  // 用 info 而不是 danger：它是常态不是异常；也不复用 warning，否则与「学习中」撞色
+  new: { label: '复习中', tone: 'info' },
   learning: { label: '学习中', tone: 'warning' },
   mastered: { label: '已掌握', tone: 'success' },
 }
@@ -78,6 +80,11 @@ const displayLabel = computed(() => props.label || meta.value.label)
 .is-warning {
   background: var(--color-warning-bg);
   color: var(--color-warning);
+}
+
+.is-info {
+  background: var(--color-info-bg);
+  color: var(--color-info);
 }
 
 .is-danger {

@@ -92,12 +92,12 @@ describe('Words page', () => {
     expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(10)
   })
 
-  // 已掌握 / 学习中 / 未学习都要覆盖：三个标签走的是同一条 fetchList，
+  // 已掌握 / 学习中 / 复习中都要覆盖：三个标签走的是同一条 fetchList，
   // 但列表长度不同（11 / 9 / 4），曾经在点标签时整表换成骨架屏而闪一下。
   it.each([
     ['已掌握', 1, 'mastered'],
     ['学习中', 2, 'learning'],
-    ['未学习', 3, 'new'],
+    ['复习中', 3, 'new'],
   ])('should keep the current rows while switching to %s', async (_, tabIndex, status) => {
     const wrapper = await mountPage()
     const store = useWordsStore()
@@ -126,7 +126,7 @@ describe('Words page', () => {
     expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
   })
 
-  // 用户反馈的场景：未学习为空，已掌握也为空，点标签时页面仍会闪一下。
+  // 用户反馈的场景：复习中为空，已掌握也为空，点标签时页面仍会闪一下。
   // 原因是旧列表为空时页面挂上了列表骨架，回来后又变回空态。
   it('should keep the empty state when switching between two empty tabs', async () => {
     seedWithoutStatuses(['mastered', 'new'])

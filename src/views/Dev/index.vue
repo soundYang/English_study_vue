@@ -42,7 +42,7 @@ const filterOptions = [
   { value: 'all', label: '全部', count: 120 },
   { value: 'mastered', label: '已掌握', count: 65 },
   { value: 'learning', label: '学习中', count: 20 },
-  { value: 'new', label: '未学习', count: 35 },
+  { value: 'new', label: '复习中', count: 35 },
 ]
 
 const levelOptions = [

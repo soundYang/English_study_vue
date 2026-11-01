@@ -2,7 +2,7 @@
 /**
  * 学习状态标签行
  *
- * 用途：全部 / 已掌握 / 学习中 / 未学习 单选，带接口返回的计数；计数未知时显示“—”
+ * 用途：全部 / 已掌握 / 学习中 / 复习中 单选，带接口返回的计数；计数未知时显示“—”
  * 用法：<WordStatusTabs v-model="status" :counts="store.counts" />
  *
  * props:
@@ -32,7 +32,8 @@ const options = computed(() => {
     { value: 'all', label: '全部', count: countOf('all') },
     { value: 'mastered', label: '已掌握', count: countOf('mastered') },
     { value: 'learning', label: '学习中', count: countOf('learning') },
-    { value: 'new', label: '未学习', count: countOf('new') },
+    // 产品口径：`new` 统一叫「复习中」（md/22 第 84 行），不要再改回「未学习」
+    { value: 'new', label: '复习中', count: countOf('new') },
   ]
 })
 

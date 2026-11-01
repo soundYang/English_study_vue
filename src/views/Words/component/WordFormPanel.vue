@@ -31,7 +31,7 @@ import { localStore, storageKeys } from '../../../unit/storage'
 import { isValidWordStatus, validateWordInput } from '../../../unit/validators'
 
 const STATUS_OPTIONS = [
-  { value: 'new', label: '未学习' },
+  { value: 'new', label: '复习中' },
   { value: 'learning', label: '学习中' },
   { value: 'mastered', label: '已掌握' },
 ]
