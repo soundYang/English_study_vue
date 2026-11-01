@@ -33,6 +33,14 @@ const DEFAULT_PAGE_SIZE = 10
 // 列表的 study 筛选取值，与后端 WORD_STUDY_FILTERS 一致（md/22 第 96 行）；
 // 传别的值按「不筛选」处理，不报 400——沿用 status 的老规矩
 const STUDY_FILTERS = ['all', 'new', 'reviewing', 'mastered', 'removed']
+// 复习节奏常量，与后端 review-schedule.js 保持一致（md/56）
+const DAILY_NEW_WORDS = 10
+const DAILY_REVIEW_LIMIT = 50
+const MASTER_STAGE = 2
+const REVIEW_INTERVAL_DAYS = 3
+const REVIEW_BATCH_MAX = 200
+const HEATMAP_DAYS = 30
+const DAY_MS = 24 * 60 * 60 * 1000
 // 与后端 level-limits.js 保持一致：难度 → 生词预算 / 篇幅上限。
 // 原来的 requiredKnown（1000 / 1900 / 3778）已在 md/30 §7 删除，
 // 篇幅门槛改由 minKnownFor 按篇幅现算，见下面的 mockMinKnown
@@ -244,6 +252,8 @@ export function resetMockDb() {
   // 账号与会话一并回到演示账号，避免重置后还停在某个已注册账号上
   localStore.remove(storageKeys.mockAuthSession)
   localStore.remove(storageKeys.mockAuthUsers)
+  // 学习流水也回到「没有记录」：否则测试之间的 streak / 热力图会互相污染
+  localStore.remove(storageKeys.mockStudyDays)
   mockCaptchas.clear()
   loginFailures.clear()
   const fresh = createSeedDatabase()
@@ -332,6 +342,202 @@ function toWordDto(item, now = new Date()) {
     lapseCount: item.lapseCount ?? 0,
     lastReviewedAt: item.lastReviewedAt ?? null,
   }
+}
+
+/** 本地零点；与后端 `startOfLocalDay` 同口径（不能用 UTC 日期） */
+function startOfMockDay(value = new Date()) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  date.setHours(0, 0, 0, 0)
+  return date
+}
+
+/** 本地日期键 `YYYY-MM-DD`，用作学习流水的日期主键 */
+function mockDateKey(value = new Date()) {
+  const date = startOfMockDay(value)
+  if (!date) return null
+
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+/** 首次复习：上次复习（没有就用加入时间）的次日；与后端 firstReviewAt 一致 */
+function mockFirstReviewAt(item, now = new Date()) {
+  const base = startOfMockDay(item?.lastReviewedAt ?? item?.createdAt)
+
+  if (!base) return startOfMockDay(now)
+  return new Date(base.getTime() + DAY_MS)
+}
+
+/** 通过第 stage 轮之后的下次复习；到掌握线返回 null */
+function mockNextReviewAtAfterPass(stage, now = new Date()) {
+  if (stage >= MASTER_STAGE) return null
+  return new Date(now.getTime() + REVIEW_INTERVAL_DAYS * DAY_MS)
+}
+
+/** 没记住：明天零点再来 */
+function mockNextReviewAtAfterLapse(now = new Date()) {
+  const today = startOfMockDay(now)
+  return today ? new Date(today.getTime() + DAY_MS) : null
+}
+
+/**
+ * 每日结算（与后端 `settleDailyWords` 同口径）
+ *
+ * 过夜的新词 → 复习中；复习中但没有下次复习时间的词按「加入/上次复习的次日」补排期。
+ * mock 没有定时任务，所以挂在读路径上，每次读词库顺手结算。
+ */
+function settleMockWords(db, now = new Date()) {
+  const today = startOfMockDay(now)
+  if (!today) return db
+
+  let changed = false
+
+  db.words.forEach((item) => {
+    // 墓碑词不是用户的词，不参与复习（md/56 §5）
+    if (item.source === 'basic-removed') return
+
+    const created = startOfMockDay(item.createdAt)
+
+    if (item.status === 'new' && created && created.getTime() < today.getTime()) {
+      item.status = 'learning'
+      item.reviewStage = 0
+      changed = true
+    }
+
+    if (item.status === 'learning' && !item.nextReviewAt) {
+      item.nextReviewAt = mockFirstReviewAt(item, now)?.toISOString() ?? null
+      changed = true
+    }
+  })
+
+  if (changed) writeDb(db)
+  return db
+}
+
+/** 是否今天到期：复习中、排过期、且到期时间 <= 现在 */
+function isMockWordDue(item, now = new Date()) {
+  if (item.status !== 'learning' || !item.nextReviewAt) return false
+
+  const at = new Date(item.nextReviewAt)
+  return !Number.isNaN(at.getTime()) && at.getTime() <= now.getTime()
+}
+
+/** 到期词，按 nextReviewAt 升序（与后端 findDueForReview 一致） */
+function collectMockDueWords(db, now = new Date()) {
+  return db.words
+    .filter((item) => isMockWordDue(item, now))
+    .sort((a, b) => new Date(a.nextReviewAt).getTime() - new Date(b.nextReviewAt).getTime())
+}
+
+/**
+ * 写一次自评结果（单条与批量共用）
+ *
+ * @returns {number} 本次新晋已掌握的数量（记流水用，没记住永远是 0）
+ */
+function applyMockReview(item, result, now = new Date()) {
+  if (result === 'lapse') {
+    item.status = 'learning'
+    item.reviewStage = 0
+    item.nextReviewAt = mockNextReviewAtAfterLapse(now)?.toISOString() ?? null
+    item.lapseCount = (item.lapseCount ?? 0) + 1
+    item.lastResult = 'lapse'
+    item.lastReviewedAt = now.toISOString()
+    return 0
+  }
+
+  const stage = (item.reviewStage ?? 0) + 1
+  const nextReviewAt = mockNextReviewAtAfterPass(stage, now)
+
+  item.status = nextReviewAt === null ? 'mastered' : 'learning'
+  item.reviewStage = stage
+  item.nextReviewAt = nextReviewAt ? nextReviewAt.toISOString() : null
+  item.lastResult = 'pass'
+  item.lastReviewedAt = now.toISOString()
+  if (nextReviewAt === null) item.masteredAt = now.toISOString()
+
+  return nextReviewAt === null ? 1 : 0
+}
+
+/**
+ * 交卷后的复习回写（与后端 `applySubmitReview` 同口径，md/56 §6.2）
+ *
+ * focus / target 推进一轮；pool 只记 lastReviewedAt——一篇长文顺带用到的池内词
+ * 不算「定向复习」，否则点一次交卷就能刷掉半个词库的轮次。
+ * 老文章没有 usedWords 时什么也不做（不凭空补轮次）。
+ */
+function applyMockSubmitReview(db, reading, at = new Date()) {
+  const entries = reading.usedWords || []
+  if (!entries.length) return 0
+
+  let reviewed = 0
+  let mastered = 0
+
+  entries.forEach(({ word, kind }) => {
+    const item = db.words.find((entry) => entry.word === word)
+    if (!item || item.source === 'basic-removed') return
+
+    if (kind === 'pool' || item.status === 'mastered') {
+      item.lastReviewedAt = at.toISOString()
+      reviewed += 1
+      return
+    }
+
+    mastered += applyMockReview(item, 'pass', at)
+    reviewed += 1
+  })
+
+  if (reviewed) bumpMockStudyDay({ reviewed, mastered, at })
+
+  return reviewed
+}
+
+/** 学习流水：读、写一条（date 为主键，按天累加） */
+function readMockStudyDays() {
+  const stored = localStore.get(storageKeys.mockStudyDays, null)
+  if (!Array.isArray(stored)) return []
+
+  return stored.filter(
+    (item) =>
+      item &&
+      typeof item.date === 'string' &&
+      Number.isFinite(Number(item.reviewed)) &&
+      Number.isFinite(Number(item.mastered)),
+  )
+}
+
+function bumpMockStudyDay({ reviewed = 0, mastered = 0, at = new Date() }) {
+  const date = mockDateKey(at)
+  if (!date || (!reviewed && !mastered)) return
+
+  const days = readMockStudyDays()
+  const row = days.find((item) => item.date === date)
+
+  if (row) {
+    row.reviewed += reviewed
+    row.mastered += mastered
+  } else {
+    days.push({ date, reviewed, mastered })
+  }
+
+  localStore.set(storageKeys.mockStudyDays, days)
+}
+
+/** 连续复习天数：今天没复习不算断，从昨天往回数（与后端 computeStreak 一致） */
+function computeMockStreak(activeDates, now = new Date()) {
+  const today = startOfMockDay(now)
+  if (!today) return 0
+
+  const set = new Set(activeDates)
+  let cursor = set.has(mockDateKey(today)) ? today : new Date(today.getTime() - DAY_MS)
+  let streak = 0
+
+  while (set.has(mockDateKey(cursor))) {
+    streak += 1
+    cursor = new Date(cursor.getTime() - DAY_MS)
+  }
+
+  return streak
 }
 
 /** 每次返回新对象：DTO 里的默认值不能被调用方顺手改掉 */
@@ -444,6 +650,8 @@ function toSafeReading(reading) {
     tokenUsage: reading.tokenUsage || emptyTokenUsage(),
     // 老记录没有这个字段：两个数组都回空，字段始终存在（后端 md/54 同约定）
     focusWords: reading.focusWords || { requested: [], missing: [] },
+    // md/56 §6.3：本篇用到了用户的哪些词。P2 之前的老文章回 []，不是 null
+    usedWords: reading.usedWords || [],
     createdAt: reading.createdAt,
     status: reading.status,
     questions: reading.questions.map((question) => ({
@@ -467,6 +675,7 @@ function toFullResult(reading) {
     actualWords: countWords(reading.article),
     newWords: reading.newWords || [],
     tokenUsage: reading.tokenUsage || emptyTokenUsage(),
+    usedWords: reading.usedWords || [],
     createdAt: reading.createdAt,
     submittedAt: reading.submittedAt,
     status: 'submitted',
@@ -1738,8 +1947,9 @@ export const mockWords = {
   } = {}) {
     await wait(latency)
 
-    const db = readDb()
     const now = new Date()
+    // 与后端一致：读词库顺手结算，过夜的新词立刻变成复习中并补上排期
+    const db = settleMockWords(readDb(), now)
     const keyword = String(q).trim().toLowerCase()
     const activeStatus = status || 'all'
     const activeStudy = STUDY_FILTERS.includes(study) ? study : 'all'
@@ -2375,6 +2585,195 @@ export const mockWords = {
 
     // 阅读中的词汇快照是独立数组，删除单词不会影响历史记录
     return { id: removed.id, total: db.words.length }
+  },
+
+  /**
+   * 今日复习任务（md/56 §8.1）
+   *
+   * 先结算再取到期词：与后端一致，打开页面就能看到今天的队列。
+   * `doneToday` 是**词次**口径（按 lastReviewedAt 落在今天统计），不拿它反推 today。
+   */
+  async dailyPlan() {
+    await wait(latency)
+
+    const now = new Date()
+    const db = settleMockWords(readDb(), now)
+    const today = startOfMockDay(now)
+    const tomorrow = today ? new Date(today.getTime() + DAY_MS) : null
+    const due = collectMockDueWords(db, now)
+    const addedToday = today
+      ? db.words.filter((item) => {
+          const created = new Date(item.createdAt)
+          return (
+            item.source !== 'basic-removed' &&
+            !Number.isNaN(created.getTime()) &&
+            created.getTime() >= today.getTime() &&
+            created.getTime() < tomorrow.getTime()
+          )
+        }).length
+      : 0
+    const doneToday = today
+      ? db.words.filter((item) => {
+          const reviewed = new Date(item.lastReviewedAt)
+          return (
+            !Number.isNaN(reviewed.getTime()) &&
+            reviewed.getTime() >= today.getTime() &&
+            reviewed.getTime() < tomorrow.getTime()
+          )
+        }).length
+      : 0
+
+    return {
+      date: mockDateKey(now),
+      newWords: {
+        quota: DAILY_NEW_WORDS,
+        addedToday,
+        remaining: Math.max(0, DAILY_NEW_WORDS - addedToday),
+      },
+      review: {
+        remaining: due.length,
+        today: Math.min(due.length, DAILY_REVIEW_LIMIT),
+        doneToday,
+        words: due.slice(0, DAILY_REVIEW_LIMIT).map((item) => toWordDto(item, now)),
+      },
+    }
+  },
+
+  /** 单条自评（md/56 §7）；基础词墓碑不能被自评复活 */
+  async review(id, result) {
+    await wait(latency)
+
+    if (!['pass', 'lapse'].includes(result)) {
+      throw new MockApiError('INVALID_REQUEST', 'result 只能是 pass 或 lapse', 400, 'result')
+    }
+
+    const now = new Date()
+    const db = settleMockWords(readDb(), now)
+    const item = db.words.find((word) => word.id === id)
+
+    if (!item) {
+      throw new MockApiError('WORD_NOT_FOUND', '这个单词不存在或已被删除', 404)
+    }
+
+    if (item.source === 'basic-removed') {
+      throw new MockApiError(
+        'INVALID_REQUEST',
+        '这个词在基础词表里被标为「不认识」，不能作为复习对象',
+        400,
+        'id',
+      )
+    }
+
+    const mastered = applyMockReview(item, result, now)
+    writeDb(db)
+    bumpMockStudyDay({ reviewed: 1, mastered, at: now })
+
+    return toWordDto(item, now)
+  },
+
+  /**
+   * 批量自评（md/56 §8.1）
+   *
+   * 单项失败进 skipped，不拖垮整批；同一个 id 传两次以最后一次为准。
+   * 返回写回后的 WordDto 数组，前端据此就地更新列表。
+   */
+  async reviewBatch({ items } = {}) {
+    await wait(latency)
+
+    if (!Array.isArray(items) || items.length === 0 || items.length > REVIEW_BATCH_MAX) {
+      throw new MockApiError(
+        'INVALID_REQUEST',
+        `items 必须是 1–${REVIEW_BATCH_MAX} 个 { id, result }`,
+        400,
+        'items',
+      )
+    }
+
+    const requested = new Map()
+    items.forEach((item) => {
+      if (!item || typeof item.id !== 'string' || !item.id) {
+        throw new MockApiError('INVALID_REQUEST', 'id 必须是字符串', 400, 'items')
+      }
+      if (!['pass', 'lapse'].includes(item.result)) {
+        throw new MockApiError('INVALID_REQUEST', 'result 只能是 pass 或 lapse', 400, 'items')
+      }
+      requested.set(item.id, item.result)
+    })
+
+    const now = new Date()
+    const db = settleMockWords(readDb(), now)
+    const skipped = []
+    const words = []
+    let updated = 0
+    let mastered = 0
+
+    for (const [id, result] of requested) {
+      const item = db.words.find((word) => word.id === id)
+
+      if (!item) {
+        skipped.push({ id, reason: 'NOT_FOUND' })
+        continue
+      }
+
+      if (item.source === 'basic-removed') {
+        skipped.push({ id, reason: 'BASIC_REMOVED' })
+        continue
+      }
+
+      mastered += applyMockReview(item, result, now)
+      updated += 1
+      words.push(toWordDto(item, now))
+    }
+
+    writeDb(db)
+    if (updated) bumpMockStudyDay({ reviewed: updated, mastered, at: now })
+
+    return { updated, skipped, words }
+  },
+
+  /** 学习统计（md/56 §10 P3）：连续天数、今日/累计、掌握情况、待复习数与 30 天热力图 */
+  async stats() {
+    await wait(latency)
+
+    const now = new Date()
+    const db = settleMockWords(readDb(), now)
+    const days = readMockStudyDays()
+    const todayKey = mockDateKey(now)
+    const byDate = new Map(days.map((item) => [item.date, item]))
+    const activeDates = days.filter((item) => item.reviewed > 0).map((item) => item.date)
+    const today = byDate.get(todayKey) ?? { reviewed: 0, mastered: 0 }
+    const total = days.reduce(
+      (sum, item) => ({
+        reviewed: sum.reviewed + (item.reviewed ?? 0),
+        mastered: sum.mastered + (item.mastered ?? 0),
+      }),
+      { reviewed: 0, mastered: 0 },
+    )
+
+    const masteredWords = db.words.filter((item) => item.status === 'mastered')
+    const avgStage = masteredWords.length
+      ? Math.round(
+          (masteredWords.reduce((sum, item) => sum + (item.reviewStage ?? 0), 0) /
+            masteredWords.length) *
+            10,
+        ) / 10
+      : 0
+
+    const heatmap = Array.from({ length: HEATMAP_DAYS }, (_, index) => {
+      const date = mockDateKey(new Date(now.getTime() - (HEATMAP_DAYS - 1 - index) * DAY_MS))
+      const row = byDate.get(date)
+      return { date, reviewed: row?.reviewed ?? 0, mastered: row?.mastered ?? 0 }
+    })
+
+    return {
+      date: todayKey,
+      streak: computeMockStreak(activeDates, now),
+      today: { reviewed: today.reviewed ?? 0, mastered: today.mastered ?? 0 },
+      total,
+      mastery: { count: masteredWords.length, avgStage },
+      pendingReview: collectMockDueWords(db, now).length,
+      heatmap,
+    }
   },
 }
 
@@ -3092,14 +3491,17 @@ export const mockReadings = {
     }
 
     const userAnswers = normalizeAnswers(reading, answers)
+    const submittedAt = new Date().toISOString()
     const updated = {
       ...reading,
       status: 'submitted',
       userAnswers,
-      submittedAt: new Date().toISOString(),
+      submittedAt,
     }
 
     db.readings[index] = updated
+    // 交卷也算复习：按 usedWords 的 kind 推进轮次 / 记时间（md/56 §6.2）
+    applyMockSubmitReview(db, updated, new Date(submittedAt))
     writeDb(db)
 
     return toFullResult(updated)

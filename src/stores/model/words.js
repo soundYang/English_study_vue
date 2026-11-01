@@ -11,7 +11,10 @@ import {
   createWord,
   deleteWord as deleteWordRequest,
   extractWordImport,
+  fetchDailyPlan,
   fetchWords,
+  reviewWord as reviewWordRequest,
+  reviewWords as reviewWordsRequest,
   updateWord as updateWordRequest,
 } from '../../api/words'
 import { normalizeApiError } from '../../errors'
@@ -32,6 +35,9 @@ export const useWordsStore = defineStore('words', () => {
   const pageSize = ref(DEFAULT_PAGE_SIZE)
   const loading = ref(false)
   const error = ref('')
+  // 今日复习任务（md/56 §8.1）：null = 没加载或加载失败，入口条据此隐藏
+  const dailyPlan = ref(null)
+  const dailyPlanLoading = ref(false)
   // 是否已经有过一次成功的列表结果；用来区分「首次加载」与「切换筛选」：
   // 前者该出骨架屏，后者列表为空时应继续显示原来的空态，而不是先闪一帧骨架。
   const hasLoaded = ref(false)
@@ -350,9 +356,102 @@ export const useWordsStore = defineStore('words', () => {
     }
   }
 
+  /**
+   * 拉取今日复习任务
+   *
+   * 入口条不是关键路径：失败一律静默（保留上一次结果、不弹错），
+   * 词汇列表与复习页各自按自己的加载态兜底。
+   */
+  async function loadDailyPlan({ quiet = false } = {}) {
+    if (!quiet) dailyPlanLoading.value = true
+
+    try {
+      const plan = await fetchDailyPlan()
+      dailyPlan.value = plan
+      return { ok: true, data: plan }
+    } catch (caught) {
+      return toFailure(caught)
+    } finally {
+      if (!quiet) dailyPlanLoading.value = false
+    }
+  }
+
+  /**
+   * 本地扣减今日进度（仅用于点完按钮的即时反馈，刷新后以后端为准）
+   *
+   * `updated` 是真正复习成功的条数：`remaining` / `today` 各减这么多、
+   * `doneToday` 加上去，再把已处理的 id 从当前清单里摘掉。
+   * skipped 的词只摘清单、不扣数（它们本来就不该占着队列）。
+   */
+  function consumePlanWords(ids, updated = ids.length) {
+    const plan = dailyPlan.value
+    if (!plan?.review) return
+
+    const idSet = new Set(ids)
+    const remaining = Math.max(0, (plan.review.remaining || 0) - updated)
+
+    dailyPlan.value = {
+      ...plan,
+      review: {
+        ...plan.review,
+        remaining,
+        // 今天建议数会随积压一起缩，但不超过原值（积压 > 50 时保持 50）
+        today: Math.max(0, Math.min(plan.review.today || 0, remaining)),
+        doneToday: (plan.review.doneToday || 0) + updated,
+        words: (plan.review.words || []).filter((item) => !idSet.has(item.id)),
+      },
+    }
+  }
+
+  /** 单条自评（md/56 §7）：result 只有 pass / lapse，由调用方保证 */
+  async function reviewWord(id, result) {
+    try {
+      const item = await reviewWordRequest(id, result)
+      consumePlanWords([id])
+      return { ok: true, item }
+    } catch (caught) {
+      return toFailure(caught)
+    }
+  }
+
+  /**
+   * 批量自评（md/56 §8.1）
+   *
+   * 单项失败只进 skipped，不拖垮整批；skipped 的词从本地清单摘掉，
+   * 然后静默重拉一次与后端对账（计数以服务端为准）。
+   */
+  async function reviewBatch(items) {
+    try {
+      const data = await reviewWordsRequest(items)
+      const writtenIds = (data?.words || []).map((item) => item.id)
+      const skippedIds = (data?.skipped || []).map((item) => item.id)
+
+      consumePlanWords(writtenIds, data?.updated ?? writtenIds.length)
+
+      if (skippedIds.length && dailyPlan.value?.review) {
+        const skipped = new Set(skippedIds)
+        const plan = dailyPlan.value
+        dailyPlan.value = {
+          ...plan,
+          review: {
+            ...plan.review,
+            words: (plan.review.words || []).filter((item) => !skipped.has(item.id)),
+          },
+        }
+        // skipped 不扣 remaining，本地数字可能略偏大：交给后端重新给一份
+        await loadDailyPlan({ quiet: true })
+      }
+
+      return { ok: true, ...data }
+    } catch (caught) {
+      return toFailure(caught)
+    }
+  }
+
   function reset() {
     requestSeq += 1
     items.value = []
+    dailyPlan.value = null
     total.value = 0
     studyCounts.value = null
     query.value = ''
@@ -374,10 +473,15 @@ export const useWordsStore = defineStore('words', () => {
     pageSize,
     loading,
     error,
+    dailyPlan,
+    dailyPlanLoading,
     hasLoaded,
     hasItems,
     isFiltered,
     fetchList,
+    loadDailyPlan,
+    reviewWord,
+    reviewBatch,
     setQuery,
     setStudy,
     search,

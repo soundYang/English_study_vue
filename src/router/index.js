@@ -24,6 +24,13 @@ const routes = [
     meta: { title: '我的单词', module: 'words', guestMode: 'browse' },
   },
   {
+    path: '/words/review',
+    name: 'words-review',
+    component: () => import('../views/WordsReview/index.vue'),
+    // 复习队列属于账号数据：不写 guestMode，未登录默认被拦去登录页
+    meta: { title: '今日复习', module: 'words' },
+  },
+  {
     path: '/basic-words',
     name: 'basic-words',
     component: () => import('../views/BasicWords/index.vue'),

@@ -369,6 +369,14 @@ const READINGS = [
       },
     ],
     tokenUsage: { promptTokens: 640, completionTokens: 214, totalTokens: 854 },
+    // md/56 P2：本文用到的词，已按次数倒序、同次数按字母序
+    usedWords: [
+      { word: 'garden', count: 2, kind: 'target' },
+      { word: 'apple', count: 1, kind: 'target' },
+      { word: 'patient', count: 1, kind: 'pool' },
+      { word: 'quiet', count: 1, kind: 'focus' },
+      { word: 'simple', count: 1, kind: 'pool' },
+    ],
     vocabulary: [
       'quiet',
       'morning',
@@ -699,6 +707,15 @@ const READINGS = [
       },
     ],
     tokenUsage: { promptTokens: 1080, completionTokens: 470, totalTokens: 1550 },
+    // md/56 P2：本文用到的词（focus 是自选重点词，pool 是候选池里恰好用上的）
+    usedWords: [
+      { word: 'courage', count: 3, kind: 'focus' },
+      { word: 'language', count: 1, kind: 'target' },
+      { word: 'patient', count: 1, kind: 'pool' },
+      { word: 'practice', count: 1, kind: 'pool' },
+      { word: 'quiet', count: 1, kind: 'target' },
+      { word: 'story', count: 1, kind: 'pool' },
+    ],
     vocabulary: ['courage', 'quiet', 'study', 'language', 'story', 'practice', 'patient', 'fear'],
     article:
       'Everyone talks about courage as if it were a loud thing—a brave jump, a bold speech, a bright victory. But most courage is quiet. It is the student who opens a book after failing a test. It is the friend who says sorry first. It is the woman who begins again after a long, difficult year. Marla learned this in a small classroom at the edge of town. She had always wanted to learn another language, but she was afraid of sounding foolish. For months she waited for the right moment. Then one evening, she opened a simple story and read the first line out loud. Her voice was slow and uncertain. The words did not come easily. But she read the next line, and then the next. Nothing dramatic happened. No one clapped. Yet something in her changed. She understood that courage is not the absence of fear. It is the decision to practice anyway, one patient page at a time.',

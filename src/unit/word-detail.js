@@ -91,11 +91,36 @@ export function basicWordDetail(item) {
   }
 }
 
-/** 我的单词：来源、词频、收录时间；义项直接用快照里的全部 senses */
+/**
+ * 复习排期（md/56 P1）：轮次与下次复习日期
+ *
+ * `reviewStage` 是已通过的轮数；没复习过的词也显示「尚未复习」，
+ * 而不是 0——0 看起来像故障。`mastered` 已退出队列，不能再显示「等待排期」。
+ */
+function reviewFacts(item) {
+  const stage = Number(item.reviewStage) || 0
+  const lapse = Number(item.lapseCount) || 0
+  let round = stage > 0 ? `已通过 ${stage} 轮` : '尚未复习'
+  if (lapse > 0) round += `，忘记 ${lapse} 次`
+
+  return [
+    { label: '复习轮次', value: round },
+    {
+      label: '下次复习',
+      value:
+        item.status === 'mastered'
+          ? '已掌握，已退出复习队列'
+          : formatDate(item.nextReviewAt) || '等待排期',
+    },
+  ]
+}
+
+/** 我的单词：来源、词频、收录时间、复习排期；义项直接用快照里的全部 senses */
 export function myWordDetail(item) {
   const facts = [
     { label: '来源', value: SOURCE_LABELS[item.source] || '—' },
     { label: '收录', value: formatDate(item.createdAt) || '—' },
+    ...reviewFacts(item),
   ]
 
   const coca = cocaFact(item.cocaRank)

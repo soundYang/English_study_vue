@@ -15,6 +15,8 @@
  *   meta     — 描述下方的小字（如“已收录 24 个单词”）
  *   delay    — 入场动画延迟毫秒数，基准 200ms
  *   disabled — 禁用入口（如额度用尽）；按钮不再触发 select，链接也不再跳转
+ *   dot      — 右上角红点（如「有单词待复习」）
+ *   dotLabel — 红点的读屏文案；红点本身只是视觉提示
  * emits:
  *   select — 无 to 时点击触发
  */
@@ -30,6 +32,8 @@ const props = defineProps({
   meta: { type: String, default: '' },
   delay: { type: Number, default: 0 },
   disabled: { type: Boolean, default: false },
+  dot: { type: Boolean, default: false },
+  dotLabel: { type: String, default: '' },
 })
 
 const emit = defineEmits(['select'])
@@ -67,6 +71,8 @@ function handleClick(event) {
     <span class="entry-title">{{ title }}</span>
     <span class="entry-desc">{{ desc }}</span>
     <span v-if="meta" class="entry-meta">{{ meta }}</span>
+    <span v-if="dot" class="entry-dot" aria-hidden="true" />
+    <span v-if="dot && dotLabel" class="sr-only">{{ dotLabel }}</span>
     <ArrowRight class="entry-arrow" :size="18" :stroke-width="1.6" aria-hidden="true" />
   </component>
 </template>
@@ -108,6 +114,18 @@ function handleClick(event) {
   border-color: var(--color-line);
   box-shadow: none;
   transform: none;
+}
+
+/* 右上角提醒点：8px 实心 + 一圈表面色描边，压在卡片上也不糊 */
+.entry-dot {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-surface);
 }
 
 .entry-icon {

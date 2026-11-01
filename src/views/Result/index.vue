@@ -13,6 +13,7 @@ import GuestGate from '../../component/GuestGate.vue'
 import SkeletonBlock from '../../component/SkeletonBlock.vue'
 import ArticleCard from '../Reading/component/ArticleCard.vue'
 import NewWordsPanel from '../Reading/component/NewWordsPanel.vue'
+import UsedWordsPanel from '../Reading/component/UsedWordsPanel.vue'
 import QuestionReview from './component/QuestionReview.vue'
 import ScoreSummary from './component/ScoreSummary.vue'
 import TranslationPanel from './component/TranslationPanel.vue'
@@ -184,6 +185,7 @@ function goHome() {
             title-tag="h2"
           />
           <NewWordsPanel :words="result.newWords" />
+          <UsedWordsPanel :words="result.usedWords" />
         </div>
 
         <TranslationPanel class="translation-area" :translation="result.translation" />

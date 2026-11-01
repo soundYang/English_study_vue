@@ -8,7 +8,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import Home from '../index.vue'
-import { fetchWords } from '../../../api/words'
+import { fetchStudyStats, fetchWords } from '../../../api/words'
 import { fetchCapacity, generateReading } from '../../../api/readings'
 import { fetchQuota } from '../../../api/quota'
 import { fetchApiKey } from '../../../api/profile'
@@ -20,7 +20,7 @@ import { useSettingsStore } from '../../../stores/model/settings'
 import { useToastStore } from '../../../stores/model/toast'
 import { localStore, storageKeys } from '../../../unit/storage'
 
-vi.mock('../../../api/words', () => ({ fetchWords: vi.fn() }))
+vi.mock('../../../api/words', () => ({ fetchWords: vi.fn(), fetchStudyStats: vi.fn() }))
 vi.mock('../../../api/readings', () => ({
   fetchCapacity: vi.fn(),
   generateReading: vi.fn(),
@@ -89,6 +89,8 @@ beforeEach(() => {
   clearGenerationHandoff()
   vi.clearAllMocks()
   fetchWords.mockResolvedValue(WORDS_RESPONSE)
+  // 默认没有到期词：红点只在有积压时出现
+  fetchStudyStats.mockResolvedValue({ pendingReview: 0 })
   // 首页只用预检的 available 覆盖词表口径的数字，其余字段不消费
   fetchCapacity.mockResolvedValue({ available: 20 })
   fetchQuota.mockResolvedValue(QUOTA_ALLOWED)
@@ -104,6 +106,7 @@ describe('home entry branches', () => {
     expect(fetchCapacity).not.toHaveBeenCalled()
     expect(fetchQuota).not.toHaveBeenCalled()
     expect(fetchApiKey).not.toHaveBeenCalled()
+    expect(fetchStudyStats).not.toHaveBeenCalled()
 
     expect(wrapper.text()).toContain('登录后查看你的词库')
     expect(wrapper.text()).toContain('登录后即可生成专属阅读')
@@ -185,5 +188,40 @@ describe('home entry branches', () => {
 
     expect(router.currentRoute.value.path).toBe('/')
     expect(takeGenerationHandoff()).toBeNull()
+  })
+})
+
+describe('home review dot', () => {
+  it('should put a dot on the words entry when something is due', async () => {
+    fetchStudyStats.mockResolvedValue({ pendingReview: 3 })
+
+    const { wrapper } = await mountHome()
+    const wordsEntry = wrapper.findAll('.entry')[0]
+
+    expect(wordsEntry.find('.entry-dot').exists()).toBe(true)
+    // 红点纯装饰，读屏靠这行隐藏文案
+    expect(wordsEntry.text()).toContain('有 3 个单词待复习')
+
+    wrapper.unmount()
+  })
+
+  it('should hide the dot when nothing is due', async () => {
+    const { wrapper } = await mountHome()
+
+    expect(wrapper.find('.entry-dot').exists()).toBe(false)
+    expect(wrapper.text()).toContain('已收录 24 个单词')
+
+    wrapper.unmount()
+  })
+
+  it('should keep the page usable when the stats request fails', async () => {
+    fetchStudyStats.mockRejectedValueOnce(new Error('stats offline'))
+
+    const { wrapper } = await mountHome()
+
+    expect(wrapper.find('.entry-dot').exists()).toBe(false)
+    expect(wrapper.text()).toContain('已收录 24 个单词')
+
+    wrapper.unmount()
   })
 })

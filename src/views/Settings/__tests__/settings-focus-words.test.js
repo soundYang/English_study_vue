@@ -63,6 +63,13 @@ async function pickWords(wrapper, words) {
   await flushPromises()
 
   for (const word of words) {
+    // 结算后「复习中」多了一批词，目标词不一定在第一页：逐个搜索定位，
+    // 不再依赖词库的默认排序（md/56 §5.3）
+    const search = document.body.querySelector('input[aria-label="搜索单词"]')
+    search.value = word
+    search.dispatchEvent(new Event('input'))
+    await settle()
+
     const item = [...document.body.querySelectorAll('.picker-item')].find((row) =>
       row.querySelector('.item-word').textContent.trim().startsWith(word),
     )

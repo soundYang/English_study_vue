@@ -94,6 +94,8 @@ export const storageKeys = {
   mockProfile: 'wr.mock.profile.v1',
   // 自备 API Key 的本地模拟（md/43）：按用户 id 分桶，只存掩码不存明文
   mockApiKey: 'wr.mock.apikey.v1',
+  // Mock 的学习流水（md/56 P3）：每天一条 { date, reviewed, mastered }，供 streak / 热力图使用
+  mockStudyDays: 'wr.mock.studydays.v1',
   // 会话令牌：request.js 请求拦截器直接读这个键（键名沿用历史，勿改）
   accessToken: 'accessToken',
   // 缓存最近一次的用户资料，刷新页面时顶栏先显示昵称，不必等接口

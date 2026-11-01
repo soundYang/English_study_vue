@@ -14,7 +14,7 @@ import BaseModal from '../../component/BaseModal.vue'
 import EntryCard from './component/EntryCard.vue'
 import HeroPanel from './component/HeroPanel.vue'
 import { fetchCapacity } from '../../api/readings'
-import { fetchWords } from '../../api/words'
+import { fetchStudyStats, fetchWords } from '../../api/words'
 import { useAuthGate } from '../../composables/useAuthGate'
 import { hasGenerationHandoff, setGenerationHandoff } from '../../composables/useGenerationHandoff'
 import { useQuota } from '../../composables/useQuota'
@@ -36,6 +36,8 @@ const {
 
 const totalWords = ref(null)
 const availableWords = ref(null)
+// 待复习词数：> 0 时「我的单词」入口显示红点（md/56 P3）。失败就当作 0，不打扰用户
+const pendingReview = ref(0)
 const emptyDialogOpen = ref(false)
 
 const wordMeta = computed(() => {
@@ -53,6 +55,7 @@ async function loadUserSummary() {
   if (!auth.isAuthenticated) {
     totalWords.value = null
     availableWords.value = null
+    pendingReview.value = 0
     return
   }
 
@@ -63,6 +66,14 @@ async function loadUserSummary() {
   } catch {
     totalWords.value = null
     availableWords.value = null
+  }
+
+  // 复习红点只是提示：统计失败时保持 0，不影响首页其余内容
+  try {
+    const stats = await fetchStudyStats()
+    pendingReview.value = Math.max(0, Number(stats?.pendingReview) || 0)
+  } catch {
+    pendingReview.value = 0
   }
 
   // 预检失败不影响首页：拿不到就沿用词库口径的数字，生成时以后端为准
@@ -141,6 +152,8 @@ function tryAnyway() {
         :meta="wordMeta"
         to="/words"
         :delay="0"
+        :dot="pendingReview > 0"
+        :dot-label="`有 ${pendingReview} 个单词待复习`"
       />
       <EntryCard
         title="阅读设置"

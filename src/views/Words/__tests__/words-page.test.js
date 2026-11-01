@@ -6,6 +6,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import WordsView from '../index.vue'
 import { resetMockDb, setMockLatency } from '../../../mock/adapter'
 import { useToastStore } from '../../../stores/model/toast'
@@ -36,10 +37,21 @@ afterAll(() => {
 async function mountPage() {
   const pinia = createPinia()
   setActivePinia(pinia)
+  // 今日复习入口条用 RouterLink 指到 /words/review，页面测试也要有路由
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/words', name: 'words', component: { template: '<div />' } },
+      { path: '/words/review', name: 'words-review', component: { template: '<div />' } },
+    ],
+  })
+  await router.push('/words')
+  await router.isReady()
+
   wrapper = mount(WordsView, {
     attachTo: document.body,
     global: {
-      plugins: [pinia],
+      plugins: [pinia, router],
       stubs: { teleport: true, 'transition-group': false },
     },
   })

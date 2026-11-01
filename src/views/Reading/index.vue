@@ -16,6 +16,7 @@ import WordDetailPopover from '../../component/WordDetailPopover.vue'
 import ArticleCard from './component/ArticleCard.vue'
 import NewWordsPanel from './component/NewWordsPanel.vue'
 import QuestionList from './component/QuestionList.vue'
+import UsedWordsPanel from './component/UsedWordsPanel.vue'
 import ReadingHeader from './component/ReadingHeader.vue'
 import ReadingSkeleton from './component/ReadingSkeleton.vue'
 import SubmitBar from './component/SubmitBar.vue'
@@ -94,6 +95,8 @@ const answeredIds = computed(() =>
 const unansweredTitle = computed(() => `还有 ${unansweredCount.value} 道题未作答`)
 
 const newWords = computed(() => store.reading?.newWords || [])
+// 本文用到的用户词（md/56 P2）：只含 word / count / kind，不查词库状态
+const usedWords = computed(() => store.reading?.usedWords || [])
 // 自选词没被写进正文（分段降级可能漏词）：只提示，不触发修复（后端 md/54）
 const missingFocusWords = computed(() => store.reading?.focusWords?.missing || [])
 const detailData = computed(() =>
@@ -292,6 +295,7 @@ function goHome() {
           >
             <template #meta>
               <NewWordsPanel v-model:open="newWordsOpen" :words="newWords" inline />
+              <UsedWordsPanel :words="usedWords" inline />
               <details v-if="missingFocusWords.length" class="focus-missing">
                 <summary>有 {{ missingFocusWords.length }} 个自选词没写进本文</summary>
                 <p>{{ missingFocusWords.join('、') }}</p>

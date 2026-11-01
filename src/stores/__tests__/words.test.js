@@ -3,16 +3,29 @@
  * 覆盖列表加载、搜索、状态筛选、分页、增删改与字段错误；
  * 直接使用 mock adapter（延迟设为 0），每次用例前恢复 seed 数据。
  */
-import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { resetMockDb, setMockLatency } from '../../mock/adapter'
 import { useWordsStore } from '../model/words'
+import { fetchDailyPlan } from '../../api/words'
+
+// 今日复习接口在真实 mock 之外包一层 spy，用来制造一次性失败（md/56 P1）
+vi.mock('../../api/words', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    fetchDailyPlan: vi.fn(actual.fetchDailyPlan),
+    reviewWord: vi.fn(actual.reviewWord),
+    reviewWords: vi.fn(actual.reviewWords),
+  }
+})
 
 beforeEach(() => {
   localStorage.clear()
   resetMockDb()
   setMockLatency(0)
   setActivePinia(createPinia())
+  vi.mocked(fetchDailyPlan).mockClear()
 })
 
 afterAll(() => {
@@ -269,5 +282,81 @@ describe('words store file import', () => {
     const result = await store.importBatch({ rows: [] })
 
     expect(result).toMatchObject({ ok: false, code: 'INVALID_REQUEST' })
+  })
+})
+
+describe('words store · 今日复习', () => {
+  it('should load the daily plan and keep the counts from the server', async () => {
+    const store = useWordsStore()
+
+    const result = await store.loadDailyPlan()
+
+    expect(result.ok).toBe(true)
+    expect(store.dailyPlan.review.remaining).toBeGreaterThan(0)
+    // 单批最多 50 个，remaining 可以更大（积压顺延）
+    expect(store.dailyPlan.review.words.length).toBeLessThanOrEqual(50)
+    expect(store.dailyPlanLoading).toBe(false)
+  })
+
+  it('should stay silent when the plan request fails', async () => {
+    const store = useWordsStore()
+    vi.mocked(fetchDailyPlan).mockRejectedValueOnce(new Error('network down'))
+
+    const result = await store.loadDailyPlan()
+
+    expect(result.ok).toBe(false)
+    // 入口条据此隐藏，页面其余内容不受影响
+    expect(store.dailyPlan).toBeNull()
+    expect(store.dailyPlanLoading).toBe(false)
+  })
+
+  it('should consume one word locally after a single review', async () => {
+    const store = useWordsStore()
+    await store.loadDailyPlan()
+
+    const target = store.dailyPlan.review.words[0]
+    const before = { ...store.dailyPlan.review }
+
+    const result = await store.reviewWord(target.id, 'pass')
+
+    expect(result.ok).toBe(true)
+    expect(store.dailyPlan.review.remaining).toBe(before.remaining - 1)
+    expect(store.dailyPlan.review.doneToday).toBe(before.doneToday + 1)
+    expect(store.dailyPlan.review.today).toBe(Math.min(before.today, before.remaining - 1))
+    expect(store.dailyPlan.review.words.some((item) => item.id === target.id)).toBe(false)
+  })
+
+  it('should keep the counters when a single review fails', async () => {
+    const store = useWordsStore()
+    await store.loadDailyPlan()
+
+    const before = { ...store.dailyPlan.review }
+
+    const result = await store.reviewWord('word_missing', 'pass')
+
+    expect(result.ok).toBe(false)
+    expect(result.code).toBe('WORD_NOT_FOUND')
+    expect(store.dailyPlan.review.remaining).toBe(before.remaining)
+    expect(store.dailyPlan.review.doneToday).toBe(before.doneToday)
+  })
+
+  it('should drop skipped words and reconcile the plan after a batch review', async () => {
+    const store = useWordsStore()
+    await store.loadDailyPlan()
+
+    const target = store.dailyPlan.review.words[0]
+
+    const result = await store.reviewBatch([
+      { id: target.id, result: 'pass' },
+      { id: 'word_missing', result: 'pass' },
+    ])
+
+    expect(result.ok).toBe(true)
+    expect(result.updated).toBe(1)
+    expect(result.skipped.map((item) => item.id)).toContain('word_missing')
+    // skipped 不扣 remaining，随后静默重拉以后端为准
+    const ids = store.dailyPlan.review.words.map((item) => item.id)
+    expect(ids).not.toContain(target.id)
+    expect(ids).not.toContain('word_missing')
   })
 })

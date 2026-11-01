@@ -46,7 +46,8 @@ describe('mockWords.list', () => {
     expect(result.total).toBe(24)
     expect(result.items).toHaveLength(10)
     expect(result.page).toBe(1)
-    expect(result.counts).toEqual({ all: 24, mastered: 11, learning: 9, new: 4 })
+    // list 会先结算：种子里 4 个隔夜的 new 已经被推进 learning（md/56 §5.3）
+    expect(result.counts).toEqual({ all: 24, mastered: 11, learning: 13, new: 0 })
     // studyCounts 按 studyState 分档：种子里 4 个 status='new' 的词都是 9 月的，
     // 早就过了「今天加的」，所以全部落在复习中，新词一档是 0（md/22 第 96 行）
     expect(result.studyCounts).toEqual({
@@ -110,7 +111,7 @@ describe('mockWords.list', () => {
     const chinese = await mockWords.list({ q: '勇气', pageSize: 50 })
 
     expect(search.items.map((item) => item.word)).toEqual(['happy', 'apple'])
-    expect(learning.total).toBe(9)
+    expect(learning.total).toBe(13)
     expect(chinese.items.map((item) => item.word)).toEqual(['courage'])
   })
 })

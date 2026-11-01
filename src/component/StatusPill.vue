@@ -10,6 +10,7 @@
  *   kind  — status（默认，取 studyState）/ level
  *   value — 对应枚举值；未知值原样显示并使用中性色
  *   label — 可选，覆盖默认文案
+ *   stage — 可选，复习轮次（reviewStage）；> 0 时复习中显示「· 第 N 轮」
  */
 import { computed } from 'vue'
 
@@ -39,6 +40,7 @@ const props = defineProps({
   },
   value: { type: String, required: true },
   label: { type: String, default: '' },
+  stage: { type: Number, default: 0 },
 })
 
 const meta = computed(() => {
@@ -46,7 +48,17 @@ const meta = computed(() => {
   return source[props.value] || { label: props.value || '—', tone: 'muted' }
 })
 
-const displayLabel = computed(() => props.label || meta.value.label)
+const displayLabel = computed(() => {
+  if (props.label) return props.label
+
+  // `reviewStage` 是「已通过几轮」，下一轮就是 N + 1。第 0 轮不写，
+  // 否则整张表都是「第 1 轮」，反而把真正进过度的词埋掉
+  if (props.kind === 'status' && props.value === 'reviewing' && props.stage > 0) {
+    return `${meta.value.label} · 第 ${props.stage + 1} 轮`
+  }
+
+  return meta.value.label
+})
 </script>
 
 <template>

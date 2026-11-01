@@ -2,8 +2,9 @@
 /**
  * 个人中心视图
  *
- * 用途：展示账户资料、学习统计与账户设置；资料与统计分别来自 /profile 与 /profile/stats
- *       （后端 md/33 §6.2、§9.2），一个失败就整页给出重试，避免只显示半张页面。
+ * 用途：展示账户资料、学习统计与账户设置；资料与统计分别来自 /profile、/profile/stats
+ *       与 /words/stats（后端 md/33 §6.2、§9.2；md/56 P3），一个失败就整页给出重试，
+ *       避免只显示半张页面。
  * 用法：路由 /profile
  *
  * 行为：
@@ -24,7 +25,9 @@ import PasswordModal from './component/PasswordModal.vue'
 import ProfileEditModal from './component/ProfileEditModal.vue'
 import ProfileHero from './component/ProfileHero.vue'
 import ProfileStats from './component/ProfileStats.vue'
+import StudyStats from './component/StudyStats.vue'
 import { fetchProfile, fetchProfileStats } from '../../api/profile'
+import { fetchStudyStats } from '../../api/words'
 import { useAuthGate } from '../../composables/useAuthGate'
 import { useToast } from '../../composables/useToast'
 import { normalizeApiError } from '../../errors'
@@ -39,6 +42,8 @@ const isGuest = computed(() => !auth.isAuthenticated)
 
 const user = ref(null)
 const stats = ref(null)
+// 复习统计（md/56 P3）：与阅读统计一起拉，失败同样整页重试
+const studyStats = ref(null)
 const loading = ref(true)
 const error = ref('')
 const errorRequestId = ref('')
@@ -60,6 +65,7 @@ onMounted(() => {
 watch(isGuest, (guest) => {
   user.value = null
   stats.value = null
+  studyStats.value = null
   error.value = ''
   errorRequestId.value = ''
 
@@ -82,7 +88,11 @@ async function load() {
   errorRequestId.value = ''
 
   try {
-    const [profileData, statsData] = await Promise.all([fetchProfile(), fetchProfileStats()])
+    const [profileData, statsData, studyData] = await Promise.all([
+      fetchProfile(),
+      fetchProfileStats(),
+      fetchStudyStats(),
+    ])
 
     if (!profileData?.user) {
       error.value = '没有拿到账户资料，请稍后重试。'
@@ -91,6 +101,7 @@ async function load() {
 
     user.value = profileData.user
     stats.value = statsData || null
+    studyStats.value = studyData || null
   } catch (caught) {
     const normalized = normalizeApiError(caught)
     error.value = normalized?.message || '个人中心加载失败，请稍后重试。'
@@ -156,6 +167,7 @@ async function handleLogout() {
     <template v-else-if="isGuest">
       <ProfileHero masked />
       <ProfileStats masked />
+      <StudyStats masked />
 
       <div class="settings-grid">
         <GuestNotice
@@ -170,6 +182,7 @@ async function handleLogout() {
     <template v-else-if="user">
       <ProfileHero :user="user" @edit="editOpen = true" />
       <ProfileStats :stats="stats" />
+      <StudyStats :stats="studyStats" />
 
       <div class="settings-grid">
         <AccountSettings
@@ -196,6 +209,7 @@ async function handleLogout() {
 
 .profile-page > .profile-hero,
 .profile-page > .profile-stats,
+.profile-page > .study-stats,
 .profile-page > .settings-grid {
   animation: profile-rise var(--dur-page) var(--ease-out) both;
 }
@@ -204,8 +218,12 @@ async function handleLogout() {
   animation-delay: 40ms;
 }
 
-.profile-page > .settings-grid {
+.profile-page > .study-stats {
   animation-delay: 80ms;
+}
+
+.profile-page > .settings-grid {
+  animation-delay: 120ms;
 }
 
 .settings-grid {

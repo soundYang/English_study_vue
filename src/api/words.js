@@ -74,3 +74,42 @@ export function deleteWord(id) {
   if (config.useMock) return mockWords.remove(id)
   return apiDelete(`/words/${pathSegment(id)}`)
 }
+
+/**
+ * 今日复习任务（md/56 §8.1）
+ *
+ * 返回今日到期词（最多 50 个）、积压总量与新词配额进度。
+ * 后端在响应前会先跑每日结算，所以打开页面拿到的就是今天的队列。
+ */
+export function fetchDailyPlan() {
+  if (config.useMock) return mockWords.dailyPlan()
+  return apiGet('/words/daily-plan')
+}
+
+/**
+ * 单词自评（md/56 §7）
+ *
+ * `result` 只有 pass / lapse 两个值，没有默认值：自评会推进复习轮次，
+ * 猜错比明确报错代价大。返回更新后的 WordDto。
+ */
+export function reviewWord(id, result) {
+  if (config.useMock) return mockWords.review(id, result)
+  return apiPost(`/words/${pathSegment(id)}/review`, { result })
+}
+
+/**
+ * 批量自评（md/56 §8.1）
+ *
+ * `items` 为 `[{ id, result }]`，一次 1–200 条。单项失败进 `skipped`，
+ * 不会让整批失败；用 id 而不是词形（词形可以被用户改掉）。
+ */
+export function reviewWords(items) {
+  if (config.useMock) return mockWords.reviewBatch({ items })
+  return apiPost('/words/review/batch', { items })
+}
+
+/** 学习统计（md/56 §10 P3）：连续天数、今日/累计、掌握情况、待复习数与 30 天热力图 */
+export function fetchStudyStats() {
+  if (config.useMock) return mockWords.stats()
+  return apiGet('/words/stats')
+}

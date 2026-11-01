@@ -12,6 +12,7 @@ import { mockProfile, resetMockDb, setMockLatency } from '../../../mock/adapter'
 import { BusinessError } from '../../../errors'
 import { useToastStore } from '../../../stores/model/toast'
 import { fetchProfile } from '../../../api/profile'
+import { fetchStudyStats } from '../../../api/words'
 import { localStore, storageKeys } from '../../../unit/storage'
 
 vi.mock('../../../api/profile', async (importOriginal) => {
@@ -20,6 +21,15 @@ vi.mock('../../../api/profile', async (importOriginal) => {
     ...actual,
     fetchProfile: vi.fn(actual.fetchProfile),
     fetchProfileStats: vi.fn(actual.fetchProfileStats),
+  }
+})
+
+// 复习统计与资料一起 Promise.all；包一层 spy 以便单独制造失败（md/56 P3）
+vi.mock('../../../api/words', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    fetchStudyStats: vi.fn(actual.fetchStudyStats),
   }
 })
 
@@ -47,6 +57,7 @@ beforeEach(() => {
   resetMockDb()
   setMockLatency(0)
   vi.mocked(fetchProfile).mockClear()
+  vi.mocked(fetchStudyStats).mockClear()
 })
 
 afterEach(() => {
@@ -64,9 +75,13 @@ describe('Profile page · guest', () => {
 
     // md/45 §5.6：游客不发 /profile 与 /profile/stats，只看到遮罩后的结构
     expect(fetchProfile).not.toHaveBeenCalled()
+    expect(fetchStudyStats).not.toHaveBeenCalled()
     expect(wrapper.find('.hero-name .guest-mask').exists()).toBe(true)
     expect(wrapper.find('.avatar-question').exists()).toBe(true)
     expect(wrapper.findAll('.profile-stats .guest-mask').length).toBeGreaterThan(0)
+    // 复习统计同样遮罩，热力图不渲染真实格子
+    expect(wrapper.findAll('.study-stats .guest-mask')).toHaveLength(4)
+    expect(wrapper.find('.heatmap').exists()).toBe(false)
     expect(wrapper.text()).toContain('登录后管理账号、密码与 API Key')
     expect(wrapper.find('.settings-card').exists()).toBe(false)
   })
@@ -94,6 +109,13 @@ describe('Profile page', () => {
     expect(wrapper.get('.accuracy-breakdown').text()).toContain(String(stats.questions.correct))
     // 已完成文章数取的是已提交篇数
     expect(wrapper.findAll('.stat-number')[1].text()).toBe(String(stats.reading.completedCount))
+
+    // 复习统计（md/56 P3）：四指标 + 30 格热力图，缺口文案固定出现
+    expect(wrapper.findAll('.study-stats .metric-card')).toHaveLength(4)
+    expect(wrapper.findAll('.study-stats .heatmap-cell')).toHaveLength(30)
+    expect(wrapper.get('.study-title').text()).toBe('学习统计')
+    expect(wrapper.text()).toContain('统计从功能上线之日起记录')
+    expect(wrapper.get('.metric-label').text()).toBe('连续复习')
   })
 
   it('should show the skeleton before the profile arrives', async () => {
@@ -204,5 +226,24 @@ describe('Profile page', () => {
 
     expect(wrapper.find('.state-card').exists()).toBe(false)
     expect(wrapper.get('.hero-name').text()).toBe('Sound')
+  })
+
+  it('should fail the whole page when the study stats request fails', async () => {
+    vi.mocked(fetchStudyStats).mockRejectedValueOnce(
+      new BusinessError('复习统计暂不可用', 'INTERNAL_ERROR'),
+    )
+
+    mountPage()
+    await flushPromises()
+
+    expect(wrapper.get('.state-card').text()).toContain('复习统计暂不可用')
+    expect(wrapper.find('.hero-name').exists()).toBe(false)
+
+    const retry = wrapper.findAll('button').find((button) => button.text() === '重试')
+    await retry.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.state-card').exists()).toBe(false)
+    expect(wrapper.get('.study-stats').exists()).toBe(true)
   })
 })

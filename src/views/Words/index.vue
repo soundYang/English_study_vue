@@ -15,6 +15,7 @@ import GuestNotice from '../../component/GuestNotice.vue'
 import PaginationBar from '../../component/PaginationBar.vue'
 import StatusPill from '../../component/StatusPill.vue'
 import WordDetailPopover from '../../component/WordDetailPopover.vue'
+import ReviewBanner from './component/ReviewBanner.vue'
 import WordBatchImport from './component/WordBatchImport.vue'
 import WordEditModal from './component/WordEditModal.vue'
 import WordFormPanel from './component/WordFormPanel.vue'
@@ -145,6 +146,8 @@ watch(
 onMounted(() => {
   if (isGuest.value) return
   store.fetchList()
+  // 复习入口不是关键路径：失败时 store 里保持 null，入口条自己隐藏
+  store.loadDailyPlan()
 })
 
 // 登录态变化：掉线清掉私人列表、立刻切遮罩；登录成功原地补拉
@@ -155,6 +158,7 @@ watch(isGuest, (guest) => {
     return
   }
   store.fetchList()
+  store.loadDailyPlan()
 })
 
 // useMediaQuery 在挂载后才有值，这里只在用户打开添加面板时读取最新结果
@@ -353,6 +357,14 @@ function reload() {
       </p>
     </header>
 
+    <!-- 游客不请求 daily-plan，入口条保持隐藏 -->
+    <ReviewBanner
+      v-if="!isGuest"
+      :remaining="store.dailyPlan?.review?.remaining ?? null"
+      :today="store.dailyPlan?.review?.today ?? 0"
+      :done="store.dailyPlan?.review?.doneToday ?? 0"
+    />
+
     <div class="words-layout">
       <div class="words-main" :aria-busy="store.loading ? 'true' : 'false'">
         <span v-if="store.loading" class="sr-only" role="status">正在加载生词本</span>
@@ -471,7 +483,12 @@ function reload() {
       @update:open="handleDetailOpen"
     >
       <template #badges>
-        <StatusPill v-if="detailTarget" kind="status" :value="detailTarget.item.studyState" />
+        <StatusPill
+          v-if="detailTarget"
+          kind="status"
+          :value="detailTarget.item.studyState"
+          :stage="detailTarget.item.reviewStage || 0"
+        />
       </template>
     </WordDetailPopover>
   </section>
