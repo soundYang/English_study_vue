@@ -143,3 +143,28 @@ export function newWordDetail(item) {
     facts: [{ label: '来源', value: NEW_WORD_SOURCE_LABELS[item.source] || '—' }],
   }
 }
+
+/**
+ * 结果页「本文用到的词」：个人词库条目 → 浮层数据
+ *
+ * 不直接复用 myWordDetail：复习轮次 / 下次复习会随学习进度变化，
+ * 而这里只回答「这个词是什么词性、什么意思」。
+ */
+export function usedWordDetail(item) {
+  return {
+    word: item.word,
+    phonetic: item.phonetic,
+    senses: senseListOf(item.senses),
+    facts: [{ label: '来源', value: SOURCE_LABELS[item.source] || '你的词库' }],
+  }
+}
+
+/** 词典兜底条目 → 浮层数据（个人词库查不到时使用） */
+export function dictionaryWordDetail(entry) {
+  return {
+    word: entry.headword,
+    phonetic: entry.phonetic,
+    senses: senseListOf(entry.senses),
+    facts: [{ label: '来源', value: '词库' }],
+  }
+}

@@ -175,4 +175,20 @@ describe('TranslationPanel', () => {
     expect(wrapper.find('.translation-toggle').exists()).toBe(false)
     expect(wrapper.get('.translation-text').text()).toBe('很短的一段翻译。')
   })
+
+  it('should render nothing when the translation is empty', () => {
+    const wrapper = mount(TranslationPanel, { props: { translation: '   ' } })
+
+    expect(wrapper.find('.translation-card').exists()).toBe(false)
+  })
+
+  it('should support the embedded variant and a lower heading level', () => {
+    const wrapper = mount(TranslationPanel, {
+      props: { translation: '嵌在文章下方。', variant: 'embedded', titleTag: 'h3' },
+    })
+
+    expect(wrapper.get('.translation-card').classes()).toContain('is-embedded')
+    expect(wrapper.get('h3.translation-title').text()).toBe('中文翻译')
+    expect(wrapper.find('h2').exists()).toBe(false)
+  })
 })

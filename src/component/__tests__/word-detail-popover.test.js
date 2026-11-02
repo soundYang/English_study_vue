@@ -74,13 +74,41 @@ describe('WordDetailPopover · 内容', () => {
     expect(panel.text()).toContain('2026-10-01')
   })
 
-  it('should hide the empty blocks instead of rendering placeholders', async () => {
+  it('should show the empty state instead of a blank block', async () => {
     const component = mountPopover({ phonetic: null, senses: [], facts: [] })
     await flushPromises()
 
-    expect(component.find('.detail-block').exists()).toBe(false)
+    expect(component.get('.detail-status').text()).toBe('暂无释义')
     expect(component.find('.detail-facts').exists()).toBe(false)
     expect(component.find('.detail-phonetic').exists()).toBe(false)
+  })
+
+  it('should show the loading state and mark the dialog busy', async () => {
+    const component = mountPopover({ senses: [], facts: [], loading: true })
+    await flushPromises()
+
+    expect(component.get('.detail-popover').attributes('aria-busy')).toBe('true')
+    expect(component.get('[role="status"]').text()).toBe('正在查询释义…')
+    expect(component.text()).not.toContain('暂无释义')
+  })
+
+  it('should show the error state and hide the empty placeholder', async () => {
+    const component = mountPopover({
+      senses: [],
+      facts: [],
+      error: '释义加载失败，再点一次可以重试。',
+    })
+    await flushPromises()
+
+    expect(component.get('[role="alert"]').text()).toBe('释义加载失败，再点一次可以重试。')
+    expect(component.text()).not.toContain('暂无释义')
+  })
+
+  it('should allow the caller to hide the empty state with an empty emptyText', async () => {
+    const component = mountPopover({ senses: [], facts: [], emptyText: '' })
+    await flushPromises()
+
+    expect(component.find('.detail-block').exists()).toBe(false)
   })
 
   it('should render the badges slot next to the word', async () => {

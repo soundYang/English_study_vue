@@ -92,6 +92,10 @@ describe('Reading page', () => {
     expect(page.text()).not.toContain('人们谈起勇气')
     expect(page.html()).not.toContain('correctAnswer')
     expect(page.html()).not.toContain('explanation')
+    // 翻译只属于已提交的结果页；阅读页不传 ArticleCard 的 translation 插槽
+    expect(page.find('.translation-card').exists()).toBe(false)
+    // 用词 chip 在阅读页保持静态，不开放释义查询
+    expect(page.find('.used-words button.chip').exists()).toBe(false)
   })
 
   it('should show the word count and the new-words entry in the title row', async () => {

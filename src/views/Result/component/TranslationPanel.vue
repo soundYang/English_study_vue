@@ -5,9 +5,12 @@
  * 内容始终完整保留在 DOM 中，通过 max-height 过渡折叠，不影响复制与读屏。
  *
  * 用法：<TranslationPanel :translation="result.translation" />
+ *       <TranslationPanel variant="embedded" title-tag="h3" :translation="result.translation" />
  *
  * props:
  *   translation — 已提交结果中的中文翻译
+ *   variant     — card（独立卡片）/ embedded（嵌在文章卡正文下方）
+ *   titleTag    — 标题标签，默认 h2；结果页已有 h1 / h2 时传 h3
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ChevronDown } from 'lucide-vue-next'
@@ -18,6 +21,16 @@ const COLLAPSED_HEIGHT = 224
 
 const props = defineProps({
   translation: { type: String, default: '' },
+  variant: {
+    type: String,
+    default: 'card',
+    validator: (value) => ['card', 'embedded'].includes(value),
+  },
+  titleTag: {
+    type: String,
+    default: 'h2',
+    validator: (value) => ['h2', 'h3'].includes(value),
+  },
 })
 
 const isMobile = useMediaQuery('(max-width: 767px)')
@@ -68,8 +81,8 @@ watch(isMobile, (mobile) => {
 </script>
 
 <template>
-  <section class="translation-card">
-    <h2 class="translation-title">中文翻译</h2>
+  <section v-if="text" class="translation-card" :class="{ 'is-embedded': variant === 'embedded' }">
+    <component :is="titleTag" class="translation-title">中文翻译</component>
 
     <div
       id="result-translation-body"
@@ -113,6 +126,29 @@ watch(isMobile, (mobile) => {
   font-size: var(--text-section);
   line-height: var(--leading-section);
   letter-spacing: 0.02em;
+}
+
+/* 嵌在文章卡里：不画第二层卡片，只留一条分隔线与正文同宽 */
+.translation-card.is-embedded {
+  max-width: 68ch;
+  margin-top: var(--space-6);
+  padding: var(--space-5) 0 0;
+  border: 0;
+  border-top: 1px solid var(--color-line);
+  border-radius: 0;
+  background: none;
+}
+
+.translation-card.is-embedded .translation-title {
+  color: var(--color-muted);
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+  letter-spacing: 0.04em;
+}
+
+.translation-card.is-embedded .translation-body {
+  margin-top: var(--space-2);
 }
 
 .translation-body {

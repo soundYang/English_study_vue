@@ -3,7 +3,7 @@
  * 覆盖基础词的四类词、三态标记 / 已收录 / 功能词的事实行，以及我的单词的两种来源。
  */
 import { describe, expect, it } from 'vitest'
-import { basicWordDetail, myWordDetail } from '../word-detail'
+import { basicWordDetail, dictionaryWordDetail, myWordDetail, usedWordDetail } from '../word-detail'
 
 function makeBasic(overrides = {}) {
   return {
@@ -150,5 +150,42 @@ describe('myWordDetail', () => {
     expect(facts['来源']).toBe('手填')
     expect(facts['词频']).toBeUndefined()
     expect(facts['收录']).toBe('2026-10-02')
+  })
+})
+
+describe('usedWordDetail', () => {
+  it('should keep every sense and only a source fact', () => {
+    const detail = usedWordDetail({
+      word: 'patient',
+      source: 'manual',
+      phonetic: null,
+      senses: [
+        { pos: 'adj.', meaning: '有耐心的' },
+        { pos: 'n.', meaning: '病人' },
+      ],
+    })
+
+    expect(detail.word).toBe('patient')
+    expect(detail.senses).toEqual([
+      { pos: 'adj.', meaning: '有耐心的' },
+      { pos: 'n.', meaning: '病人' },
+    ])
+    // 不把复习轮次 / 收录时间带进结果页浮层
+    expect(detail.facts).toEqual([{ label: '来源', value: '手填' }])
+  })
+})
+
+describe('dictionaryWordDetail', () => {
+  it('should map a dictionary entry through its headword', () => {
+    const detail = dictionaryWordDetail({
+      headword: 'abandon',
+      phonetic: { uk: '/əˈbæn.dən/', us: '/əˈbæn.dɑːn/' },
+      senses: [{ pos: 'v.', meaning: '放弃；抛弃' }],
+    })
+
+    expect(detail.word).toBe('abandon')
+    expect(detail.phonetic).toEqual({ uk: '/əˈbæn.dən/', us: '/əˈbæn.dɑːn/' })
+    expect(detail.senses).toEqual([{ pos: 'v.', meaning: '放弃；抛弃' }])
+    expect(detail.facts).toEqual([{ label: '来源', value: '词库' }])
   })
 })

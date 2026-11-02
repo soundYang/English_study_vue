@@ -8,10 +8,15 @@ import { mockWords } from '../mock/adapter'
 import { pathSegment } from '../unit/path'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../unit/request'
 
-/** 获取词汇列表（分页、关键词搜索、学习状态筛选） */
-export function fetchWords(params = {}) {
+/**
+ * 获取词汇列表（分页、关键词搜索、学习状态筛选）
+ *
+ * @param {object} params 查询参数
+ * @param {{ signal?: AbortSignal }} [options] 可中断；结果页按词查询释义时用
+ */
+export function fetchWords(params = {}, { signal } = {}) {
   if (config.useMock) return mockWords.list(params)
-  return apiGet('/words', params)
+  return apiGet('/words', params, { signal })
 }
 
 /**

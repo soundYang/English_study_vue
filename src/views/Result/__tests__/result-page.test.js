@@ -130,6 +130,22 @@ describe('Result page', () => {
     expect(wrapper.text()).toContain('本文含 2 个未学单词')
     expect(wrapper.get('.result-time').text()).toContain('本次生成消耗 904 tokens')
 
+    // 翻译嵌在文章卡内部、位于英文正文之后；不再有独立的翻译网格区
+    const articleCard = wrapper.get('.article-card')
+    expect(articleCard.find('.translation-card').exists()).toBe(true)
+    expect(articleCard.get('.translation-card').classes()).toContain('is-embedded')
+    expect(articleCard.get('h3.translation-title').text()).toBe('中文翻译')
+    expect(wrapper.find('.translation-area').exists()).toBe(false)
+    expect(articleCard.html().indexOf('article-body')).toBeLessThan(
+      articleCard.html().indexOf('translation-card'),
+    )
+
+    // 用词 chip 在结果页可点击
+    await wrapper.get('.used-toggle').trigger('click')
+    const usedChip = wrapper.get('.used-words button.chip.is-target')
+    expect(usedChip.text()).toBe('garden')
+    expect(usedChip.attributes('aria-haspopup')).toBe('dialog')
+
     // 生词面板没绑 v-model 也要能展开：点标题后清单出现
     await wrapper.get('.new-words-toggle').trigger('click')
     expect(wrapper.findAll('.new-word')).toHaveLength(2)

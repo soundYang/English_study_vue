@@ -131,6 +131,7 @@ function goHome() {
       <div class="skeleton-grid">
         <div class="skeleton-column">
           <SkeletonBlock height="320px" radius="var(--radius-xl)" />
+          <SkeletonBlock height="120px" radius="var(--radius-md)" />
           <SkeletonBlock height="180px" radius="var(--radius-xl)" />
         </div>
         <div class="skeleton-column">
@@ -183,12 +184,18 @@ function goHome() {
             :article="result.article"
             :word-count="result.actualWords"
             title-tag="h2"
-          />
+          >
+            <template #translation>
+              <TranslationPanel
+                variant="embedded"
+                title-tag="h3"
+                :translation="result.translation"
+              />
+            </template>
+          </ArticleCard>
           <NewWordsPanel :words="result.newWords" />
-          <UsedWordsPanel :words="result.usedWords" />
+          <UsedWordsPanel :words="result.usedWords" clickable />
         </div>
-
-        <TranslationPanel class="translation-area" :translation="result.translation" />
 
         <section class="review-area" aria-labelledby="review-title">
           <div class="review-head">
@@ -259,9 +266,7 @@ function goHome() {
 
 .result-layout {
   display: grid;
-  grid-template-areas:
-    'article review'
-    'translation review';
+  grid-template-areas: 'article review';
   grid-template-columns: minmax(0, 58fr) minmax(0, 42fr);
   align-items: start;
   gap: 28px;
@@ -270,11 +275,6 @@ function goHome() {
 
 .article-area {
   grid-area: article;
-  min-width: 0;
-}
-
-.translation-area {
-  grid-area: translation;
   min-width: 0;
 }
 
@@ -372,8 +372,7 @@ function goHome() {
   .result-layout {
     grid-template-areas:
       'review'
-      'article'
-      'translation';
+      'article';
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-6);
     margin-top: var(--space-6);

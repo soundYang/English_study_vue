@@ -24,10 +24,13 @@
  * props:
  *   open     — 是否打开
  *   anchor   — 定位锚点（通常是触发按钮）；为空时按打开时的视口角落兜底
- *   word     — 单词
- *   phonetic — { uk, us }，两式相同只显示一次
- *   senses   — [{ pos, meaning }]
- *   facts    — [{ label, value }]
+ *   word      — 单词
+ *   phonetic  — { uk, us }，两式相同只显示一次
+ *   senses    — [{ pos, meaning }]
+ *   facts     — [{ label, value }]
+ *   loading   — 释义查询中；释义区显示加载文案
+ *   error     — 查询失败文案；优先级高于 emptyText
+ *   emptyText — 无释义时的提示；传空字符串则不显示空状态
  * emits:
  *   update:open
  * slots:
@@ -43,6 +46,9 @@ const props = defineProps({
   phonetic: { type: Object, default: null },
   senses: { type: Array, default: () => [] },
   facts: { type: Array, default: () => [] },
+  loading: { type: Boolean, default: false },
+  error: { type: String, default: '' },
+  emptyText: { type: String, default: '暂无释义' },
 })
 
 const emit = defineEmits(['update:open'])
@@ -194,6 +200,7 @@ onBeforeUnmount(teardown)
         :style="placement"
         role="dialog"
         aria-modal="false"
+        :aria-busy="loading ? 'true' : 'false'"
         :aria-label="`“${word}” 的详细信息`"
         tabindex="-1"
       >
@@ -210,7 +217,15 @@ onBeforeUnmount(teardown)
           </p>
         </header>
 
-        <section v-if="senses.length" class="detail-block">
+        <section v-if="loading" class="detail-block" role="status">
+          <p class="detail-status">正在查询释义…</p>
+        </section>
+
+        <section v-else-if="error" class="detail-block" role="alert">
+          <p class="detail-status is-error">{{ error }}</p>
+        </section>
+
+        <section v-else-if="senses.length" class="detail-block">
           <h3 class="detail-label">释义</h3>
           <ul class="detail-senses">
             <li
@@ -222,6 +237,10 @@ onBeforeUnmount(teardown)
               <span class="sense-meaning">{{ sense.meaning }}</span>
             </li>
           </ul>
+        </section>
+
+        <section v-else-if="emptyText" class="detail-block">
+          <p class="detail-status">{{ emptyText }}</p>
         </section>
 
         <dl v-if="facts.length" class="detail-facts">
@@ -288,6 +307,17 @@ onBeforeUnmount(teardown)
   font-weight: 400;
   line-height: var(--leading-caption);
   letter-spacing: 0.04em;
+}
+
+.detail-status {
+  margin: var(--space-2) 0 0;
+  color: var(--color-muted);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+}
+
+.detail-status.is-error {
+  color: var(--color-danger, var(--color-ink-2));
 }
 
 .detail-senses {

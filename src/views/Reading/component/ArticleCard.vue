@@ -17,7 +17,8 @@
  * emits:
  *   word-click — 点正文里的未学词，参数 { entry, anchor }
  * slots:
- *   meta — 标题下方的附加信息（阅读页放未学词入口）
+ *   meta        — 标题下方的附加信息（阅读页放未学词入口）
+ *   translation — 正文下方的附加内容（结果页放中文翻译；阅读页不传，因此永不渲染翻译）
  */
 import { computed, useSlots } from 'vue'
 import { formatWordCount } from '../../../unit/format'
@@ -87,6 +88,8 @@ function openWord(token, event) {
         </template>
       </p>
     </div>
+
+    <slot name="translation" />
   </article>
 </template>
 

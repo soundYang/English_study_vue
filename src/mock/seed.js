@@ -441,6 +441,12 @@ const READINGS = [
       },
     ],
     tokenUsage: { promptTokens: 668, completionTokens: 236, totalTokens: 904 },
+    // md/56 P2：结果页「本文用到的词」示例，覆盖 target 与 pool 两组
+    usedWords: [
+      { word: 'garden', count: 2, kind: 'target' },
+      { word: 'quiet', count: 1, kind: 'pool' },
+      { word: 'simple', count: 1, kind: 'pool' },
+    ],
     vocabulary: ['afternoon', 'garden', 'wood', 'park', 'book', 'friend', 'sun', 'quiet', 'simple'],
     article:
       'Every afternoon, Tom walks to the old garden gate. The gate is made of wood and it is always open. Behind it, there is a small park with tall trees and a quiet path. Tom brings his book and sits under the tallest tree. He reads about a boy who travels to far places. Sometimes a friend joins him, and they talk about the story. When the sun goes down, the air becomes cool. Tom closes his book, says goodbye to the trees, and walks home. It is a simple day, but it is a good day.',
