@@ -1,9 +1,9 @@
 /**
  * Mock 数据源占位（生产构建专用）
  *
- * 用途：`VITE_USE_MOCK=false` 的构建里，vite.config.js 的 `wr-strip-mock-adapter`
- *       会把所有对 `mock/adapter` 的引用改成这里，adapter.js（演示账号 + 整份种子数据）
- *       因此不会进 dist（md/40 H-2）。
+ * 用途：`VITE_USE_MOCK=false` 的构建里，vite.config.js 的 `wr-strip-mock`
+ *       会把所有对 `mock/adapter`、`mock/dictionary` 的引用改成这里，
+ *       演示账号、整份种子数据与开发用手写词表因此不会进 dist（md/40 H-2）。
  * 用法：源码里不要 import 本文件，只由构建期插件替换进来。
  *
  * 约定：导出名必须与 adapter.js 一致，否则替换后会在 `import` 阶段直接报错；
@@ -35,3 +35,5 @@ export const mockWords = unavailable('words')
 export const mockReadings = unavailable('readings')
 
 export const mockQuota = unavailable('quota')
+
+export const mockDictionary = unavailable('dictionary')

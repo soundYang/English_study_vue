@@ -66,7 +66,7 @@ async function mountPage(path = '/login') {
   return wrapper
 }
 
-async function fillLogin({ identifier = 'Sound', password = 'sound1234' } = {}) {
+async function fillLogin({ identifier = 'Sound', password = 'demo1234' } = {}) {
   await wrapper.get('input[name="usernameOrPhone"]').setValue(identifier)
   await wrapper.get('input[name="password"]').setValue(password)
 }
@@ -187,7 +187,7 @@ describe('Auth page', () => {
 
     expect(loginAccount).toHaveBeenCalledWith({
       usernameOrPhone: 'Sound',
-      password: 'sound1234',
+      password: 'demo1234',
       rememberMe: false,
     })
     expect(localStore.get(storageKeys.accessToken)).toBe('token-1')

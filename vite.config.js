@@ -7,24 +7,24 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
-const adapterId = fileURLToPath(new URL('./src/mock/adapter.js', import.meta.url))
 const mockStubId = fileURLToPath(new URL('./src/mock/disabled.js', import.meta.url))
 
 /**
- * 把对 mock/adapter 的引用换成占位模块
+ * 把对 mock/adapter、mock/dictionary 的引用换成占位模块
  * 只在 build + VITE_USE_MOCK=false 时挂上：adapter.js 里既有演示账号又有整套种子数据，
- * 真实后端的产物里不该留任何一份。开发与测试仍走真 Mock，行为不变。
+ * dictionary.js 是一份只给开发用的手写词表；真实后端的产物里都不该留。
+ * 开发与测试仍走真 Mock，行为不变。
  */
-function stripMockAdapter() {
+function stripMockModules() {
   return {
-    name: 'wr-strip-mock-adapter',
+    name: 'wr-strip-mock',
     enforce: 'pre',
     async resolveId(source, importer) {
-      // 只看形如 `../mock/adapter` / `../../mock/adapter` 的引用，别误伤别处的同名文件
-      if (!/(^|\/)mock\/adapter(\.js)?$/.test(source)) return null
+      // 只看形如 `../mock/adapter` / `../../mock/dictionary` 的引用，别误伤别处的同名文件
+      if (!/(^|\/)mock\/(adapter|dictionary)(\.js)?$/.test(source)) return null
 
       const resolved = await this.resolve(source, importer, { skipSelf: true })
-      if (!resolved?.id.replace(/\\/g, '/').endsWith('/mock/adapter.js')) return null
+      if (!/\/mock\/(adapter|dictionary)\.js$/.test(resolved?.id.replace(/\\/g, '/') || '')) return null
 
       return mockStubId
     },
@@ -44,7 +44,7 @@ export default defineConfig(({ command, mode }) => {
         '[build] VITE_USE_MOCK 未设为 false：产物仍包含 Mock 数据源与演示账号（md/40 H-2）。',
       )
     } else {
-      plugins.push(stripMockAdapter())
+      plugins.push(stripMockModules())
     }
   }
 

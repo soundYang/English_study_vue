@@ -861,7 +861,7 @@ const DEMO_ACCOUNT = Object.freeze({
   id: 'local-user',
   username: 'Sound',
   usernameLower: 'sound',
-  password: 'sound1234',
+  password: 'demo1234',
   nickname: 'Sound',
   signature: '少年，大胆走，怎么都是路。',
   phone: null,

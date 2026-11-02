@@ -39,7 +39,7 @@ describe('auth store cached user', () => {
     loginAccount.mockResolvedValue({ token: 'tk_1', expiresAt: null, user: FULL_USER })
 
     const store = useAuthStore()
-    await store.login({ usernameOrPhone: 'sound', password: 'sound1234' })
+    await store.login({ usernameOrPhone: 'sound', password: 'demo1234' })
 
     // 顶栏只需要 id / username / nickname，手机号这类资料不该落进 localStorage
     expect(localStore.get(storageKeys.authUser)).toEqual({
