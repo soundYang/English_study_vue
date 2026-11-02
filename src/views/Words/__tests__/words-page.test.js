@@ -146,6 +146,8 @@ describe('Words page', () => {
     await wrapper.findAll('[role="radio"]')[4].trigger('click')
 
     expect(store.study).toBe('removed')
+    // 「不认识」是排除标记：切过去时常驻一行说明，别让用户以为是学习阶段
+    expect(wrapper.get('.status-hint').text()).toContain('排除标记')
     // 空态切空态：不能挂上列表骨架，原来的空态节点保持不动
     expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
     expect(wrapper.find('.word-table-wrap').exists()).toBe(false)
@@ -157,7 +159,7 @@ describe('Words page', () => {
     expect(store.hasItems).toBe(false)
     expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
     expect(wrapper.get('.words-empty').element).toBe(emptyElement)
-    expect(wrapper.text()).toContain('这个状态下还没有单词')
+    expect(wrapper.text()).toContain('还没有标记「不认识」的词')
   })
 
   it('should keep the empty state until rows arrive when switching to a non-empty tab', async () => {

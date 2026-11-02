@@ -252,9 +252,11 @@ describe('ScopePicker', () => {
     const chips = wrapper.findAll('[role="checkbox"]')
 
     expect(chips).toHaveLength(3)
-    expect(chips.map((chip) => chip.text())).toEqual(['今天新学', '今天复习', '全部词汇'])
+    expect(chips.map((chip) => chip.text())).toEqual(['今天新学', '今天复习过', '全部词汇'])
     expect(chips[0].attributes('aria-checked')).toBe('false')
     expect(chips[2].attributes('aria-checked')).toBe('true')
+    // 「今天复习过」按日期筛选，与词汇页的「复习中」不是同一口径
+    expect(wrapper.get('.scope-hint').text()).toContain('不是词汇页的')
   })
 
   it('should pick a concrete scope without the all option', async () => {

@@ -97,6 +97,17 @@ const emptyMeta = computed(() => {
     }
   }
 
+  // 「不认识」不是学习状态，空态也要说清楚它是排除标记，而不是「没学过」
+  if (store.study === 'removed') {
+    return {
+      action: 'status',
+      title: '还没有标记「不认识」的词',
+      description: '在基础词表里标「不认识」的词会出现在这里，生成文章时不再使用。',
+      actionText: '查看全部',
+      image: '',
+    }
+  }
+
   if (store.study !== 'all') {
     return {
       action: 'status',
@@ -379,6 +390,11 @@ function reload() {
 
         <WordStatusTabs v-model="statusModel" :counts="store.studyCounts" :disabled="isGuest" />
 
+        <!-- 「不认识」不是学习阶段，而是排除标记：解释清楚它影响的是生成用词 -->
+        <p v-if="store.study === 'removed'" class="status-hint">
+          「不认识」是排除标记：标了不认识的基础词不会用于生成文章，恢复后重新可用。
+        </p>
+
         <GuestNotice
           v-if="isGuest"
           class="guest-notice"
@@ -530,6 +546,13 @@ function reload() {
 /* 游客提示条与工具栏 / 列表之间的呼吸间距 */
 .guest-notice {
   margin-top: var(--space-5);
+}
+
+.status-hint {
+  margin: var(--space-3) 0 0;
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 
 .list-head {

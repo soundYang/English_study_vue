@@ -2,7 +2,9 @@
 /**
  * 词源多选
  *
- * 用途：“词源”行标签 + 今天新学 / 今天复习 / 全部词汇三个可多选的标签。
+ * 用途：“词源”行标签 + 今天新学 / 今天复习过 / 全部词汇三个可多选的标签。
+ *       「今天复习过」按日期筛选，与词汇页的「复习中」不是同一口径，
+ *       所以行下方常驻一行说明，避免用户以为选的是「复习中」那批词。
  *       「全部词汇」与另外两项互斥（与后端 normalizeScope 同义）：
  *       点 all 清掉其余，点具体项清掉 all，全去掉时回到 all——后端不接受空数组。
  * 用法：<ScopePicker v-model="draft.vocabScope" :disabled="isGenerating" />
@@ -52,31 +54,48 @@ function toggle(value) {
 </script>
 
 <template>
-  <div class="scope-row">
-    <span id="vocab-scope-label" class="row-label">词源</span>
-    <div class="scope-group" role="group" aria-labelledby="vocab-scope-label">
-      <button
-        v-for="option in OPTIONS"
-        :key="option.value"
-        type="button"
-        role="checkbox"
-        class="scope-chip"
-        :class="{ 'is-active': isChecked(option.value) }"
-        :aria-checked="isChecked(option.value)"
-        :disabled="disabled"
-        @click="toggle(option.value)"
-      >
-        {{ option.label }}
-      </button>
+  <div class="scope-field">
+    <div class="scope-row">
+      <span id="vocab-scope-label" class="row-label">词源</span>
+      <div class="scope-group" role="group" aria-labelledby="vocab-scope-label">
+        <button
+          v-for="option in OPTIONS"
+          :key="option.value"
+          type="button"
+          role="checkbox"
+          class="scope-chip"
+          :class="{ 'is-active': isChecked(option.value) }"
+          :aria-checked="isChecked(option.value)"
+          :disabled="disabled"
+          @click="toggle(option.value)"
+        >
+          {{ option.label }}
+        </button>
+      </div>
     </div>
+    <!-- 两个「复习」不是同一口径：这里是日期，词汇页是学习状态 -->
+    <p class="scope-hint">“今天复习过”只统计今天提交练习后回写的词，不是词汇页的“复习中”。</p>
   </div>
 </template>
 
 <style scoped>
+.scope-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 .scope-row {
   display: flex;
   align-items: center;
   gap: var(--space-4);
+}
+
+.scope-hint {
+  margin: 0 0 0 100px;
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
 }
 
 .row-label {
@@ -133,6 +152,10 @@ function toggle(value) {
 @media (max-width: 767px) {
   .row-label {
     flex-basis: 88px;
+  }
+
+  .scope-hint {
+    margin-left: 88px;
   }
 
   /* 触控目标不小于 44px */

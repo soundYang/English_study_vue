@@ -12,7 +12,7 @@ export const QUESTION_COUNTS = [3, 5, 8]
 export const VOCAB_SCOPES = ['today_new', 'today_reviewed', 'all']
 export const VOCAB_SCOPE_LABELS = Object.freeze({
   today_new: '今天新学',
-  today_reviewed: '今天复习',
+  today_reviewed: '今天复习过',
   all: '全部词汇',
 })
 // 与后端 reading.schema.js 的 targetWordsRules 对齐：100–1000，10 的倍数。
