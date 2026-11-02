@@ -206,6 +206,20 @@ describe('capacityNoteOf', () => {
     expect(note.text).toContain('今天还没有新学的词')
   })
 
+  it('should explain an empty reviewing pool and point at all vocabulary', () => {
+    // 今天加的词明天才进「复习中」，加词 / 缩短当天都救不了
+    const note = capacityNoteOf(
+      { ...GATE, available: 0, sufficient: false, shortage: 29 },
+      { targetWords: 100, scope: ['reviewing'] },
+    )
+
+    expect(note.tone).toBe('warn')
+    expect(note.text).toContain('词库里还没有复习中的词')
+    expect(note.text).toContain('明天')
+    expect(note.text).toContain('全部词汇')
+    expect(note.text).not.toContain('缩短')
+  })
+
   it('should keep the generic shortage note for the all-vocabulary scope', () => {
     const note = capacityNoteOf(
       { ...GATE, available: 0, sufficient: false, shortage: 10 },

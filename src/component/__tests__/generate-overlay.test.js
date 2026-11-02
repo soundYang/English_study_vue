@@ -200,6 +200,34 @@ describe('GenerateOverlay', () => {
     expect(router.currentRoute.value.path).toBe('/words/review')
   })
 
+  it('should only offer going back when the reviewing pool is empty', async () => {
+    const { router } = await mountOverlay(
+      {
+        code: 'VOCABULARY_TOO_SMALL',
+        message: '词库里还没有复习中的词',
+        details: {
+          kind: 'target_words',
+          required: 29,
+          available: 0,
+          targetWords: 100,
+          scope: ['reviewing'],
+        },
+      },
+      (store) => {
+        store.summary = { level: 'easy', targetWords: 100, questionCount: 3, availableWords: 0 }
+      },
+    )
+
+    // 加词、缩短、降难度都不会让「复习中」当天变多，不给无效出口
+    const buttons = wrapper.findAll('.generate-actions button')
+    expect(buttons.map((button) => button.text())).toEqual(['返回修改'])
+
+    await buttons[0].trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('settings')
+  })
+
   it('should keep the retry button for other failures', async () => {
     await mountOverlay({ code: 'AI_PROVIDER_ERROR', message: '暂时没有可用的生成模板' })
 

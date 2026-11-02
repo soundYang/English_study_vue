@@ -247,16 +247,22 @@ describe('LengthPicker', () => {
 })
 
 describe('ScopePicker', () => {
-  it('should render the three scopes with all selected by default', () => {
+  it('should render the four scopes with all selected by default', () => {
     const wrapper = mount(ScopePicker, { props: { modelValue: ['all'] } })
     const chips = wrapper.findAll('[role="checkbox"]')
 
-    expect(chips).toHaveLength(3)
-    expect(chips.map((chip) => chip.text())).toEqual(['今天新学', '今天复习过', '全部词汇'])
+    expect(chips).toHaveLength(4)
+    expect(chips.map((chip) => chip.text())).toEqual([
+      '今天新学',
+      '今天复习过',
+      '复习中',
+      '全部词汇',
+    ])
     expect(chips[0].attributes('aria-checked')).toBe('false')
-    expect(chips[2].attributes('aria-checked')).toBe('true')
-    // 「今天复习过」按日期筛选，与词汇页的「复习中」不是同一口径
-    expect(wrapper.get('.scope-hint').text()).toContain('不是词汇页的')
+    expect(chips[3].attributes('aria-checked')).toBe('true')
+    // 「复习中」与词汇页同口径，「今天复习过」是日期口径，说明一行要讲清两者
+    expect(wrapper.get('.scope-hint').text()).toContain('词汇页')
+    expect(wrapper.get('.scope-hint').text()).toContain('今天提交练习后回写')
   })
 
   it('should pick a concrete scope without the all option', async () => {
@@ -273,6 +279,15 @@ describe('ScopePicker', () => {
     await wrapper.findAll('[role="checkbox"]')[1].trigger('click')
 
     expect(wrapper.emitted('update:modelValue')[0]).toEqual([['today_new', 'today_reviewed']])
+  })
+
+  it('should pick the reviewing scope on its own', async () => {
+    const wrapper = mount(ScopePicker, { props: { modelValue: ['all'] } })
+
+    await wrapper.findAll('[role="checkbox"]')[2].trigger('click')
+
+    // md/22 #109：reviewing 与词汇页「复习中」同口径，不是 today_reviewed 的别名
+    expect(wrapper.emitted('update:modelValue')[0]).toEqual([['reviewing']])
   })
 
   it('should fall back to all when the last concrete scope is removed', async () => {

@@ -560,6 +560,7 @@ function isSameLocalDay(value, now) {
 /**
  * 按词源过滤：多来源取并集，'all' 直接全量（同后端 vocabulary-pool.js filterByScope）。
  * 「今天复习」依赖 lastReviewedAt，而它只在提交练习时回写，所以刚加的词只能被「今天新学」选中。
+ * 「复习中」与词汇页同一口径：learning、非墓碑、且不是今天新建的（后端 md/22 #109）。
  */
 function filterByScope(words, scopes, now = new Date()) {
   if (scopes.includes('all')) return words
@@ -567,7 +568,11 @@ function filterByScope(words, scopes, now = new Date()) {
   return words.filter(
     (item) =>
       (scopes.includes('today_new') && isSameLocalDay(item.createdAt, now)) ||
-      (scopes.includes('today_reviewed') && isSameLocalDay(item.lastReviewedAt, now)),
+      (scopes.includes('today_reviewed') && isSameLocalDay(item.lastReviewedAt, now)) ||
+      (scopes.includes('reviewing') &&
+        item.status === 'learning' &&
+        item.source !== 'basic-removed' &&
+        !isSameLocalDay(item.createdAt, now)),
   )
 }
 

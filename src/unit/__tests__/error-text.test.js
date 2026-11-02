@@ -104,6 +104,19 @@ describe('describeVocabShortage', () => {
     expect(result.hint).toContain('今天还没有新学的词')
   })
 
+  it('should give no dead-end action when the reviewing pool is empty', () => {
+    // 今天加词不会让「复习中」当天变多，缩短篇幅也不会：只能回去换词源
+    const result = describeVocabShortage({
+      code: 'VOCABULARY_TOO_SMALL',
+      details: { kind: 'target_words', required: 29, available: 0, scope: ['reviewing'] },
+    })
+
+    expect(result.title).toBe('词库里还没有复习中的词')
+    expect(result.hint).toContain('全部词汇')
+    expect(result.actions).toEqual([])
+    expect(result.primaryAction).toBe('')
+  })
+
   it('should keep the generic hint when the scope includes all vocabulary', () => {
     const result = describeVocabShortage({
       code: 'VOCABULARY_TOO_SMALL',

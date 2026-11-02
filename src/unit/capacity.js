@@ -103,7 +103,7 @@ export function vocabMeterOf(gate, finalMode = null) {
 /**
  * 词源池为空时的说明。
  *
- * 只对「今天新学 / 今天复习过」这类具体词源成立：'all' 不会为空。
+ * 只对「今天新学 / 今天复习过 / 复习中」这类具体词源成立：'all' 不会为空。
  * 此时常规的「加词 / 缩短」建议都不成立——加词只会进「今天新学」，
  * 缩短已经到 100 词仍为空，降难度也不会让池子变大。必须直接说明原因。
  */
@@ -113,6 +113,7 @@ function emptyScopeText(scope) {
 
   const hasReviewed = list.includes('today_reviewed')
   const hasNew = list.includes('today_new')
+  const hasReviewing = list.includes('reviewing')
 
   if (hasReviewed && hasNew) {
     return '今天还没有新学或复习的词，「今天新学」和「今天复习过」这两个词源暂时没有可用词；先学或复习几篇，或把词源改成「全部词汇」。'
@@ -124,6 +125,11 @@ function emptyScopeText(scope) {
 
   if (hasNew) {
     return '今天还没有新学的词，「今天新学」这个词源暂时没有可用词；先添加单词，或把词源改成「全部词汇」。'
+  }
+
+  // 只有「复习中」为空：今天新加的词明天才进入复习中，加词 / 缩短当天都救不了
+  if (hasReviewing) {
+    return '词库里还没有复习中的词，「复习中」这个词源暂时没有可用词；今天新加的词明天才会算进来，可以先把词源改成「全部词汇」。'
   }
 
   return ''

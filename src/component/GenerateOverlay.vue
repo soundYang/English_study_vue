@@ -454,6 +454,14 @@ onBeforeUnmount(() => {
             <p v-if="error?.requestId" class="generate-id">错误编号：{{ error.requestId }}</p>
 
             <div v-if="vocabShortage" class="generate-actions">
+              <!-- 「复习中」池子为空时没有任何有效出口，只留回到设置页换词源 -->
+              <BaseButton
+                v-if="!vocabShortage.actions.length"
+                variant="secondary"
+                @click="backToSettings"
+              >
+                返回修改
+              </BaseButton>
               <!-- 词源是「今天复习」且池子为空：缩短 / 降难度都没用，去复习才走得通 -->
               <BaseButton
                 v-if="vocabShortage.actions.includes('review')"

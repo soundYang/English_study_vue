@@ -119,7 +119,7 @@ const capacityNote = computed(() =>
     levelLabel: levelLabel.value,
     targetWords: draft.targetWords,
     wordRangeLabel: capacity.value?.wordRange?.label || '',
-    // 词源为「今天新学 / 今天复习」且池子为空时，说明缺的是哪类词
+    // 词源为「今天新学 / 今天复习过 / 复习中」且池子为空时，说明缺的是哪类词
     scope: draft.vocabScope,
   }),
 )

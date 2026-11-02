@@ -505,6 +505,16 @@ describe('mockReadings vocabScope', () => {
     expect(today.levels.easy.knownWords).toBe(all.levels.easy.knownWords)
   })
 
+  it('should keep only reviewing words for the reviewing scope', async () => {
+    // 种子词的创建日期都是旧的：reviewing = learning（9 个），不含 mastered / new
+    const reviewing = await mockReadings.capacity({
+      targetWords: 100,
+      vocabScope: ['reviewing'],
+    })
+
+    expect(reviewing.available).toBe(9)
+  })
+
   it('should treat all as the default and normalize dirty scopes', async () => {
     const full = await mockReadings.capacity({ targetWords: 100 })
     const dirty = await mockReadings.capacity({

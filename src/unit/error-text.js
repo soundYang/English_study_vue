@@ -223,9 +223,9 @@ export function describeVocabShortage({ code = '', details = {} } = {}) {
     }
   }
 
-  // 具体词源（今天新学 / 今天复习过）池子为空时，「加词 / 缩短」都不解决问题：
+  // 具体词源（今天新学 / 今天复习过 / 复习中）池子为空时，「加词 / 缩短」都不解决问题：
   // 加词只进「今天新学」，缩短到 100 词仍然为空。直接说明缺的是哪类词，
-  // 并给一个真能走下去的入口（去复习 / 去加词）
+  // 并给一个真能走下去的入口（去复习 / 去加词）；「复习中」两者都不是，只留返回修改
   const scope = Array.isArray(details.scope) ? details.scope : []
   const emptyScopedPool =
     available === 0 && !details.selectedCount && scope.length > 0 && !scope.includes('all')
@@ -233,6 +233,19 @@ export function describeVocabShortage({ code = '', details = {} } = {}) {
   if (emptyScopedPool) {
     const hasReviewed = scope.includes('today_reviewed')
     const hasNew = scope.includes('today_new')
+    const hasReviewing = scope.includes('reviewing')
+
+    // 「复习中」为空时今天加词也不会变多（明天才进入复习中），不给无效出口
+    if (hasReviewing && !hasReviewed && !hasNew) {
+      return {
+        kind,
+        title: '词库里还没有复习中的词',
+        hint: '「复习中」取词汇页「复习中」那批词，今天新加的词明天才会算进来。现在这批是空的，可以先把词源改成「全部词汇」。',
+        actions: [],
+        primaryAction: '',
+      }
+    }
+
     const actions = [...(hasReviewed ? ['review'] : []), ...(hasNew ? ['add'] : [])]
 
     return {
