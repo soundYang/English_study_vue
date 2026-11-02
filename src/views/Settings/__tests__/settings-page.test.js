@@ -134,12 +134,13 @@ describe('settings page capacity note', () => {
     expect(wrapper.get('.capacity-note').text()).toContain('当前难度可写 300 词以内')
 
     // 种子词的 createdAt 都是过去的日子，「今天新学」的池子是空的：
-    // 已知词只剩 618 的地板，写 100 词要 633 个
+    // 这时不能再说「还差 15 个可用词」（加词 / 缩短都解决不了），要直说原因
     await wrapper.findAll('[role="checkbox"]')[0].trigger('click')
     await settle()
 
     expect(wrapper.get('.scope-chip.is-active').text()).toBe('今天新学')
-    expect(wrapper.get('.capacity-note').text()).toContain('还差 15 个')
+    expect(wrapper.get('.capacity-note').text()).toContain('今天还没有新学的词')
+    expect(wrapper.get('.capacity-note').text()).not.toContain('还差 15 个')
   })
 
   it('should save the chosen scope with the other settings', async () => {

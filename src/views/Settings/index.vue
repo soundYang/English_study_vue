@@ -119,6 +119,8 @@ const capacityNote = computed(() =>
     levelLabel: levelLabel.value,
     targetWords: draft.targetWords,
     wordRangeLabel: capacity.value?.wordRange?.label || '',
+    // 词源为「今天新学 / 今天复习」且池子为空时，说明缺的是哪类词
+    scope: draft.vocabScope,
   }),
 )
 // 词汇量进度条（md/22 §7）：普通篇幅看 knownWords / minKnown，

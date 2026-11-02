@@ -295,6 +295,11 @@ function goAddWords() {
   router.push('/words')
 }
 
+function goReview() {
+  dismiss()
+  router.push('/words/review')
+}
+
 function lowerDifficulty() {
   const index = LEVEL_ORDER.indexOf(summary.value.level)
   const nextLevel = LEVEL_ORDER[Math.max(0, index - 1)] || 'easy'
@@ -449,6 +454,14 @@ onBeforeUnmount(() => {
             <p v-if="error?.requestId" class="generate-id">错误编号：{{ error.requestId }}</p>
 
             <div v-if="vocabShortage" class="generate-actions">
+              <!-- 词源是「今天复习」且池子为空：缩短 / 降难度都没用，去复习才走得通 -->
+              <BaseButton
+                v-if="vocabShortage.actions.includes('review')"
+                :variant="vocabPrimaryAction === 'review' ? 'primary' : 'secondary'"
+                @click="goReview"
+              >
+                去复习
+              </BaseButton>
               <BaseButton
                 v-if="vocabShortage.actions.includes('shorten') && canShorten"
                 :variant="vocabPrimaryAction === 'shorten' ? 'primary' : 'secondary'"

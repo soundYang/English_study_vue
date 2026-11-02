@@ -75,6 +75,45 @@ describe('describeVocabShortage', () => {
     expect(result.hint).toContain('10')
   })
 
+  it('should explain an empty reviewed pool and offer the review entry', () => {
+    // Yang 账号实测形状：今天没复习记录，available=0，required=29
+    const result = describeVocabShortage({
+      code: 'VOCABULARY_TOO_SMALL',
+      details: {
+        kind: 'target_words',
+        required: 29,
+        available: 0,
+        targetWords: 100,
+        scope: ['today_reviewed'],
+      },
+    })
+
+    expect(result.title).toBe('今天的词源还没有可用词')
+    expect(result.hint).toContain('今天还没有复习记录')
+    expect(result.actions).toEqual(['review'])
+    expect(result.primaryAction).toBe('review')
+  })
+
+  it('should offer adding words when the new-words pool is empty', () => {
+    const result = describeVocabShortage({
+      code: 'VOCABULARY_TOO_SMALL',
+      details: { kind: 'target_words', required: 29, available: 0, scope: ['today_new'] },
+    })
+
+    expect(result.actions).toEqual(['add'])
+    expect(result.hint).toContain('今天还没有新学的词')
+  })
+
+  it('should keep the generic hint when the scope includes all vocabulary', () => {
+    const result = describeVocabShortage({
+      code: 'VOCABULARY_TOO_SMALL',
+      details: { kind: 'target_words', required: 29, available: 0, scope: ['all'] },
+    })
+
+    expect(result.title).toBe('这次的文章篇幅凑不齐目标词')
+    expect(result.hint).toContain('29')
+  })
+
   it('should only offer shortening when the level caps the length', () => {
     // 400 INVALID_REQUEST + target_words_cap：不是词不够，是难度上限
     const result = describeVocabShortage({

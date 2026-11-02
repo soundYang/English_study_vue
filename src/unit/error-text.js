@@ -223,6 +223,32 @@ export function describeVocabShortage({ code = '', details = {} } = {}) {
     }
   }
 
+  // 具体词源（今天新学 / 今天复习）池子为空时，「加词 / 缩短」都不解决问题：
+  // 加词只进「今天新学」，缩短到 100 词仍然为空。直接说明缺的是哪类词，
+  // 并给一个真能走下去的入口（去复习 / 去加词）
+  const scope = Array.isArray(details.scope) ? details.scope : []
+  const emptyScopedPool =
+    available === 0 && !details.selectedCount && scope.length > 0 && !scope.includes('all')
+
+  if (emptyScopedPool) {
+    const hasReviewed = scope.includes('today_reviewed')
+    const hasNew = scope.includes('today_new')
+    const actions = [...(hasReviewed ? ['review'] : []), ...(hasNew ? ['add'] : [])]
+
+    return {
+      kind,
+      title: '今天的词源还没有可用词',
+      hint:
+        hasReviewed && hasNew
+          ? '今天还没有新学或复习的词，这两个词源暂时没有可用词。先学或复习几篇，或把词源改成「全部词汇」。'
+          : hasReviewed
+            ? '今天还没有复习记录，「今天复习」这个词源暂时没有可用词。先完成今天的复习，或把词源改成「全部词汇」。'
+            : '今天还没有新学的词，「今天新学」这个词源暂时没有可用词。先添加单词，或把词源改成「全部词汇」。',
+      actions: actions.length ? actions : ['add'],
+      primaryAction: actions[0] || 'add',
+    }
+  }
+
   return {
     kind,
     title: '这次的文章篇幅凑不齐目标词',

@@ -22,6 +22,8 @@ function createTestRouter() {
       { path: '/settings', name: 'settings', component: EmptyStub },
       { path: '/generating', name: 'generating', component: EmptyStub },
       { path: '/profile', name: 'profile', component: EmptyStub },
+      { path: '/words', name: 'words', component: EmptyStub },
+      { path: '/words/review', name: 'words-review', component: EmptyStub },
     ],
   })
 }
@@ -168,6 +170,34 @@ describe('GenerateOverlay', () => {
     expect(buttons[0].classes()).toContain('is-primary')
     expect(buttons[1].classes()).toContain('is-secondary')
     expect(buttons[2].classes()).toContain('is-secondary')
+  })
+
+  it('should send an empty reviewed pool to the review page', async () => {
+    const { router } = await mountOverlay(
+      {
+        code: 'VOCABULARY_TOO_SMALL',
+        message: '今天还没有复习记录',
+        details: {
+          kind: 'target_words',
+          required: 29,
+          available: 0,
+          targetWords: 100,
+          scope: ['today_reviewed'],
+        },
+      },
+      (store) => {
+        store.summary = { level: 'easy', targetWords: 100, questionCount: 3, availableWords: 0 }
+      },
+    )
+
+    const buttons = wrapper.findAll('.generate-actions button')
+    expect(buttons.map((button) => button.text())).toEqual(['去复习'])
+    expect(buttons[0].classes()).toContain('is-primary')
+
+    await buttons[0].trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/words/review')
   })
 
   it('should keep the retry button for other failures', async () => {

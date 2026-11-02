@@ -183,6 +183,37 @@ describe('capacityNoteOf', () => {
 
     expect(note.text).toContain('还差 10 个可用词')
   })
+
+  it('should explain an empty reviewed pool instead of suggesting shortening', () => {
+    // 今天没复习记录时池子为 0：加词只会进「今天新学」，缩短也已到最短
+    const note = capacityNoteOf(
+      { ...GATE, available: 0, sufficient: false, shortage: 29 },
+      { targetWords: 100, scope: ['today_reviewed'] },
+    )
+
+    expect(note.tone).toBe('warn')
+    expect(note.text).toContain('今天还没有复习记录')
+    expect(note.text).toContain('全部词汇')
+    expect(note.text).not.toContain('缩短')
+  })
+
+  it('should explain an empty new-words pool on its own', () => {
+    const note = capacityNoteOf(
+      { ...GATE, available: 0, sufficient: false, shortage: 29 },
+      { targetWords: 100, scope: ['today_new'] },
+    )
+
+    expect(note.text).toContain('今天还没有新学的词')
+  })
+
+  it('should keep the generic shortage note for the all-vocabulary scope', () => {
+    const note = capacityNoteOf(
+      { ...GATE, available: 0, sufficient: false, shortage: 10 },
+      { targetWords: 200, scope: ['all'] },
+    )
+
+    expect(note.text).toContain('还差 10 个可用词')
+  })
 })
 
 describe('difficultyNoteOf', () => {

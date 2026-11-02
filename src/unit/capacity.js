@@ -101,12 +101,41 @@ export function vocabMeterOf(gate, finalMode = null) {
 }
 
 /**
+ * 词源池为空时的说明。
+ *
+ * 只对「今天新学 / 今天复习」这类具体词源成立：'all' 不会为空。
+ * 此时常规的「加词 / 缩短」建议都不成立——加词只会进「今天新学」，
+ * 缩短已经到 100 词仍为空，降难度也不会让池子变大。必须直接说明原因。
+ */
+function emptyScopeText(scope) {
+  const list = Array.isArray(scope) ? scope : []
+  if (list.includes('all') || list.length === 0) return ''
+
+  const hasReviewed = list.includes('today_reviewed')
+  const hasNew = list.includes('today_new')
+
+  if (hasReviewed && hasNew) {
+    return '今天还没有新学或复习的词，「今天新学」和「今天复习」这两个词源暂时没有可用词；先学或复习几篇，或把词源改成「全部词汇」。'
+  }
+
+  if (hasReviewed) {
+    return '今天还没有复习记录，「今天复习」这个词源暂时没有可用词；先完成今天的复习，或把词源改成「全部词汇」。'
+  }
+
+  if (hasNew) {
+    return '今天还没有新学的词，「今天新学」这个词源暂时没有可用词；先添加单词，或把词源改成「全部词汇」。'
+  }
+
+  return ''
+}
+
+/**
  * 设置页「当前参数能不能写」的一句话
  * @returns {{ tone: 'ok'|'warn', text: string } | null}
  */
 export function capacityNoteOf(
   gate,
-  { levelLabel = '当前难度', targetWords = 0, wordRangeLabel = '' } = {},
+  { levelLabel = '当前难度', targetWords = 0, wordRangeLabel = '', scope = [] } = {},
 ) {
   const block = blockReasonOf(gate)
 
@@ -136,6 +165,11 @@ export function capacityNoteOf(
       text: `${levelLabel}写 ${targetWords} 词需要认识约 ${block.minKnown} 个单词，当前 ${block.knownWords} 个，还差 ${block.shortage} 个。`,
     }
   }
+
+  // A 门先区分「池子为空」与「池子不够」：空池时告诉用户缺的是哪类词，
+  // 而不是让他去缩短一篇已经最短的文章
+  const emptyText = toNumber(gate?.available) === 0 ? emptyScopeText(scope) : ''
+  if (emptyText) return { tone: 'warn', text: emptyText }
 
   return { tone: 'warn', text: `这个篇幅还差 ${block.shortage} 个可用词，建议缩短文章。` }
 }
