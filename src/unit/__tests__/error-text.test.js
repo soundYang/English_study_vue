@@ -41,7 +41,28 @@ describe('describeVocabShortage', () => {
     })
 
     expect(result.actions).toEqual(['lower', 'add'])
+    expect(result.primaryAction).toBe('add')
     expect(result.hint).toContain('142')
+  })
+
+  // 3N 门槛（md/57 §8.2）：600 词要 1800 个认识词，785 个时缺口 1015，
+  // 让用户为这一篇去背一千个词不现实，缩短篇幅才是当下走得通的路
+  it('should put shortening first when the known-words gap is too large to close', () => {
+    const result = describeVocabShortage({
+      code: 'VOCABULARY_TOO_SMALL',
+      details: {
+        kind: 'known_words',
+        level: 'hard',
+        required: 1800,
+        available: 785,
+        shortage: 1015,
+      },
+    })
+
+    expect(result.actions).toEqual(['shorten', 'lower', 'add'])
+    expect(result.primaryAction).toBe('shorten')
+    expect(result.hint).toContain('1015')
+    expect(result.hint).toContain('缩短篇幅')
   })
 
   it('should explain a target-words shortage with three ways out', () => {

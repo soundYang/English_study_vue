@@ -143,6 +143,33 @@ describe('GenerateOverlay', () => {
     expect(wrapper.text()).not.toContain('重试')
   })
 
+  // 3N 门槛（md/57 §8.2）：缺口上千时主按钮要落在「缩短文章」，
+  // 别把用户往「去添加单词」带——补 1015 个词不是这一篇能解决的事
+  it('should make shortening the primary action when the vocabulary gap is huge', async () => {
+    await mountOverlay(
+      {
+        code: 'VOCABULARY_TOO_SMALL',
+        message: '这个篇幅需要认识约 1800 个单词，当前 785 个',
+        details: {
+          kind: 'known_words',
+          level: 'hard',
+          required: 1800,
+          available: 785,
+          shortage: 1015,
+        },
+      },
+      (store) => {
+        store.summary = { level: 'hard', targetWords: 600, questionCount: 3, availableWords: 785 }
+      },
+    )
+
+    const buttons = wrapper.findAll('.generate-actions button')
+    expect(buttons.map((button) => button.text())).toEqual(['缩短文章', '降低难度', '去添加单词'])
+    expect(buttons[0].classes()).toContain('is-primary')
+    expect(buttons[1].classes()).toContain('is-secondary')
+    expect(buttons[2].classes()).toContain('is-secondary')
+  })
+
   it('should keep the retry button for other failures', async () => {
     await mountOverlay({ code: 'AI_PROVIDER_ERROR', message: '暂时没有可用的生成模板' })
 

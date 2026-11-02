@@ -133,6 +133,13 @@ export function describeUserApiKeyProblem({ code = '' } = {}) {
 }
 
 /**
+ * 缺口大到「补词」不现实时的分界（md/57 §8.2）。
+ * 篇幅门槛改成 3 倍已知词后，600 词要 1800 个认识词，缺口动辄上千；
+ * 让用户为这一篇去背 1000 个词没有可操作性，超过这条线就先把「缩短篇幅」放主位。
+ */
+const SHORTEN_FIRST_SHORTAGE = 500
+
+/**
  * 五种「生成被挡下」的语义不同，用户能做的补救也不同：
  *   too_few_words    —— 422 个人词库不足 20 词的总闸：加词 / 先写 100–200 词
  *   target_words     —— 422 这次参数凑不齐目标词：缩篇幅 / 换词源
@@ -143,7 +150,8 @@ export function describeUserApiKeyProblem({ code = '' } = {}) {
  * 各处的 details 形状见 src/shared/errors.js 的
  * vocabularyTooSmall / knownWordsBelowLength / targetWordsTooLong / finalModeLocked。
  *
- * @returns {{ kind: string, title: string, hint: string, actions: string[] }}
+ * @returns {{ kind: string, title: string, hint: string, actions: string[], primaryAction: string }}
+ *   primaryAction —— 覆盖层用来决定哪个按钮是主按钮；必须出现在 actions 里
  */
 export function describeVocabShortage({ code = '', details = {} } = {}) {
   // 20 词总闸（md/39）：这条错误没有 details，不能按 known_words 解释。
@@ -155,6 +163,7 @@ export function describeVocabShortage({ code = '', details = {} } = {}) {
       title: '词汇太少，暂时写不了这篇文章',
       hint: '可以先添加一些单词；个人词库不足 20 个时，也可以先写 100 / 200 词的短篇。',
       actions: ['shorten', 'add'],
+      primaryAction: 'add',
     }
   }
 
@@ -162,6 +171,8 @@ export function describeVocabShortage({ code = '', details = {} } = {}) {
   const required = toNumber(details.required)
   const available = toNumber(details.available)
   const shortage = toNumber(details.shortage) ?? Math.max(0, (required ?? 0) - (available ?? 0))
+  // 3N 门槛下缺口可能远超用户能补的量，这时缩短篇幅才是当下走得通的路
+  const shortenFirst = shortage > SHORTEN_FIRST_SHORTAGE
 
   if (kind === 'final_mode_locked') {
     const unlockAt = toNumber(details.unlockAt) ?? 3000
@@ -176,6 +187,7 @@ export function describeVocabShortage({ code = '', details = {} } = {}) {
           : `601–1000 词属「最终模式」，需要个人词库 ${unlockAt} 个单词。`,
       // 加词是解锁的唯一路径；缩短篇幅是当下就能生成的办法
       actions: ['shorten', 'add'],
+      primaryAction: missing > SHORTEN_FIRST_SHORTAGE ? 'shorten' : 'add',
     }
   }
 
@@ -191,6 +203,7 @@ export function describeVocabShortage({ code = '', details = {} } = {}) {
           : `这个难度最多 ${maxTargetWords} 词，可以缩短篇幅或提高难度。`,
       // 只有缩篇幅有效：加词、降难度都改变不了这个上限
       actions: ['shorten'],
+      primaryAction: 'shorten',
     }
   }
 
@@ -200,9 +213,13 @@ export function describeVocabShortage({ code = '', details = {} } = {}) {
       title: '这个难度的词汇量还不够',
       hint:
         shortage > 0
-          ? `还需要认识 ${shortage} 个单词（个人词库 + 基础词表）。`
+          ? shortenFirst
+            ? `这个篇幅要认识约 ${required ?? '当前门槛'} 个单词，还差 ${shortage} 个；先缩短篇幅最快。`
+            : `还需要认识 ${shortage} 个单词（个人词库 + 基础词表）。`
           : '可以先添加一些单词，或降低难度再试。',
-      actions: ['lower', 'add'],
+      // 缺口大时「补词」没有可操作性，先把缩短篇幅摆到前面
+      actions: shortenFirst ? ['shorten', 'lower', 'add'] : ['lower', 'add'],
+      primaryAction: shortenFirst ? 'shorten' : 'add',
     }
   }
 
@@ -211,9 +228,12 @@ export function describeVocabShortage({ code = '', details = {} } = {}) {
     title: '这次的文章篇幅凑不齐目标词',
     hint:
       shortage > 0
-        ? `按当前词库，这个篇幅还差 ${shortage} 个可用词。`
+        ? shortenFirst
+          ? `按当前词库，这个篇幅还差 ${shortage} 个可用词；先缩短篇幅最快。`
+          : `按当前词库，这个篇幅还差 ${shortage} 个可用词。`
         : '可以缩短篇幅、换一个词源，或先添加一些单词。',
     actions: ['shorten', 'lower', 'add'],
+    primaryAction: shortenFirst ? 'shorten' : 'add',
   }
 }
 

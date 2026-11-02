@@ -97,6 +97,21 @@ const vocabShortage = computed(() =>
     : null,
 )
 
+// 主按钮取文案层给的 primaryAction；对应按钮不存在时（已到最短篇幅 / 已是最低难度）顺延，
+// 避免主色落在一个不渲染的出口上，整排按钮都变成次要样式
+const vocabPrimaryAction = computed(() => {
+  const card = vocabShortage.value
+  if (!card) return ''
+
+  const visible = card.actions.filter((action) => {
+    if (action === 'shorten') return canShorten.value
+    if (action === 'lower') return canLower.value
+    return true
+  })
+
+  return visible.includes(card.primaryAction) ? card.primaryAction : visible[0] || ''
+})
+
 // 失效词只能改选：这几个词不变，重试多少次都是同一个 422
 const focusWordsProblem = computed(() =>
   isFocusWordsProblem.value ? describeFocusWords({ details: error.value?.details }) : null,
@@ -436,19 +451,23 @@ onBeforeUnmount(() => {
             <div v-if="vocabShortage" class="generate-actions">
               <BaseButton
                 v-if="vocabShortage.actions.includes('shorten') && canShorten"
-                variant="secondary"
+                :variant="vocabPrimaryAction === 'shorten' ? 'primary' : 'secondary'"
                 @click="shortenArticle"
               >
                 缩短文章
               </BaseButton>
               <BaseButton
                 v-if="vocabShortage.actions.includes('lower') && canLower"
-                variant="secondary"
+                :variant="vocabPrimaryAction === 'lower' ? 'primary' : 'secondary'"
                 @click="lowerDifficulty"
               >
                 降低难度
               </BaseButton>
-              <BaseButton v-if="vocabShortage.actions.includes('add')" @click="goAddWords">
+              <BaseButton
+                v-if="vocabShortage.actions.includes('add')"
+                :variant="vocabPrimaryAction === 'add' ? 'primary' : 'secondary'"
+                @click="goAddWords"
+              >
                 去添加单词
               </BaseButton>
             </div>
