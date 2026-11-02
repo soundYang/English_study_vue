@@ -10,6 +10,7 @@ import {
   difficultyNoteOf,
   finalModeNoteOf,
   knownShortageOf,
+  vocabMeterOf,
 } from '../capacity'
 
 // 与后端 levels[level] 同形：已知词 638、写 100 词的下限 633、上限 300
@@ -80,6 +81,72 @@ describe('blockReasonOf', () => {
     }
 
     expect(blockReasonOf(gate)).toBeNull()
+  })
+})
+
+describe('vocabMeterOf', () => {
+  it('should measure known words against minKnown for ordinary lengths', () => {
+    // 600 词要 1800 个已知词，当前 785 个：44% 是界面要画的那一格
+    expect(vocabMeterOf({ ...GATE, knownWords: 785, minKnown: 1800 })).toEqual({
+      label: '已知词',
+      current: 785,
+      target: 1800,
+      percent: 44,
+      met: false,
+    })
+  })
+
+  it('should stop the bar at 100% once the target is met', () => {
+    expect(vocabMeterOf({ ...GATE, knownWords: 1900, minKnown: 1800 })).toMatchObject({
+      percent: 100,
+      met: true,
+    })
+  })
+
+  it('should switch to personal words while a long length waits for final mode', () => {
+    // 601+ 未解锁时卡住的是个人词库，此时 minKnown 是折算出来的大数字，不能拿来当分母
+    const gate = {
+      ...GATE,
+      knownWords: 785,
+      minKnown: 3618,
+      personalWords: 2500,
+      maxTargetWords: 600,
+      targetWordsAllowed: false,
+      finalMode: { supported: true, unlocked: false, unlockAt: 3000, shortage: 500, active: false },
+    }
+
+    expect(vocabMeterOf(gate, { unlocked: false, unlockAt: 3000 })).toEqual({
+      label: '个人词库',
+      current: 2500,
+      target: 3000,
+      percent: 83,
+      met: false,
+    })
+  })
+
+  it('should use the unlock target once final mode is active', () => {
+    const gate = {
+      ...GATE,
+      minKnown: 0,
+      personalWords: 3100,
+      maxTargetWords: 1000,
+      finalMode: { supported: true, unlocked: true, unlockAt: 3000, shortage: 0, active: true },
+    }
+
+    expect(vocabMeterOf(gate, { unlocked: true, unlockAt: 3000 })).toMatchObject({
+      label: '个人词库',
+      current: 3100,
+      target: 3000,
+      percent: 100,
+      met: true,
+    })
+  })
+
+  it('should draw nothing without a usable denominator', () => {
+    // 门槛为 0（最终模式 / 冷启动）或字段缺失时宁可不画，也不编一个分母
+    expect(vocabMeterOf({ ...GATE, minKnown: 0 })).toBeNull()
+    expect(vocabMeterOf({})).toBeNull()
+    expect(vocabMeterOf(null)).toBeNull()
   })
 })
 

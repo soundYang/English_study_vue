@@ -94,12 +94,25 @@ describe('settings page capacity note', () => {
     expect(wrapper.find('.capacity-warn').exists()).toBe(false)
   })
 
+  it('should draw the vocabulary meter from the precheck values', async () => {
+    const wrapper = await mountSettings()
+    const meter = wrapper.get('.vocab-meter')
+
+    // md/22 §7：分子分母都取接口值——已知词 638，写 100 词的下限 633
+    expect(meter.text()).toContain('已知词')
+    expect(meter.text()).toContain('638 / 633')
+    expect(meter.get('[role="progressbar"]').attributes('aria-valuetext')).toBe('638 / 633')
+    expect(meter.get('.vocab-meter-fill').classes()).toContain('is-met')
+  })
+
   it('should report the known-words gap for a length the vocabulary cannot support', async () => {
     seedSettings(HARD_600)
     const wrapper = await mountSettings()
 
     // md/30 §7 之后门禁随篇幅走：600 词要 708 个已知词，当前 638 个
     expect(wrapper.get('.capacity-note').text()).toContain('还差 70 个')
+    expect(wrapper.get('.vocab-meter').text()).toContain('638 / 708')
+    expect(wrapper.get('.vocab-meter-fill').classes()).not.toContain('is-met')
   })
 
   it('should say why each level is not writable without disabling it', async () => {

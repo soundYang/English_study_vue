@@ -62,6 +62,45 @@ export function blockReasonOf(gate) {
 }
 
 /**
+ * 词汇量进度条（md/22 §7）：分子分母全部取 `/capacity` 的值，前端不自己算 618 / 3000 / minKnown。
+ *
+ * 三种口径：
+ *   - 最终模式生效（hard 且篇幅 > 600 且已解锁）：personalWords / finalMode.unlockAt；
+ *   - 请求了 601+ 但还没解锁：同样看 personalWords / unlockAt——这时卡住的是解锁，
+ *     不是 `minKnown`（后者是 3618 的折算值，显示出来只会让人去背无关的已知词）；
+ *   - 其余篇幅：knownWords / minKnown。
+ *
+ * 门槛为 0（最终模式生效 / 冷启动）或字段缺失时返回 null：宁可不画，也不编一个分母。
+ *
+ * @returns {{ label: string, current: number, target: number, percent: number, met: boolean } | null}
+ */
+export function vocabMeterOf(gate, finalMode = null) {
+  if (!gate) return null
+
+  // 601–1000 的两种状态都按个人词库口径；其余按已知词口径
+  const byPersonalWords =
+    Boolean(gate.finalMode?.active) ||
+    Boolean(
+      gate.finalMode?.supported &&
+      gate.finalMode?.unlocked === false &&
+      gate.targetWordsAllowed === false,
+    )
+
+  const current = byPersonalWords ? toNumber(gate.personalWords) : toNumber(gate.knownWords)
+  const target = byPersonalWords ? toNumber(finalMode?.unlockAt) : toNumber(gate.minKnown)
+
+  if (current === null || target === null || target <= 0) return null
+
+  return {
+    label: byPersonalWords ? '个人词库' : '已知词',
+    current,
+    target,
+    percent: Math.min(100, Math.round((current / target) * 100)),
+    met: current >= target,
+  }
+}
+
+/**
  * 设置页「当前参数能不能写」的一句话
  * @returns {{ tone: 'ok'|'warn', text: string } | null}
  */

@@ -23,7 +23,7 @@ import { useQuota } from '../../composables/useQuota'
 import { useToast } from '../../composables/useToast'
 import { useAuthStore } from '../../stores/model/auth'
 import { useSettingsStore } from '../../stores/model/settings'
-import { capacityNoteOf } from '../../unit/capacity'
+import { capacityNoteOf, vocabMeterOf } from '../../unit/capacity'
 import { focusWordLimit, focusWordsPayload, normalizeFocusWords } from '../../unit/focus-words'
 import { firstError, LEVEL_MAX_TARGET_WORDS, TARGET_WORDS_MAX } from '../../unit/validators'
 
@@ -121,6 +121,9 @@ const capacityNote = computed(() =>
     wordRangeLabel: capacity.value?.wordRange?.label || '',
   }),
 )
+// 词汇量进度条（md/22 §7）：普通篇幅看 knownWords / minKnown，
+// 601–1000 看 personalWords / unlockAt，分子分母都用接口值
+const vocabMeter = computed(() => vocabMeterOf(gate.value, capacity.value?.finalMode || null))
 // 最终模式（hard + 篇幅 > 600 + 个人词库 ≥ 3000）下不传开关就是开启（后端 md/42）。
 // 只信预检回来的 active，不自己用 targetWords / 词库数字推
 const isFinalMode = computed(() => Boolean(gateOf(draft.level)?.finalMode?.active))
@@ -323,6 +326,29 @@ function runGenerate() {
                 {{ capacityNote.text }}
               </p>
             </template>
+
+            <!-- 词汇量进度条：数字全部来自预检，进度条只负责把差距画出来 -->
+            <div v-if="!isGuest && gate && vocabMeter" class="vocab-meter">
+              <div class="vocab-meter-head">
+                <span>{{ vocabMeter.label }}</span>
+                <span>{{ vocabMeter.current }} / {{ vocabMeter.target }}</span>
+              </div>
+              <div
+                class="vocab-meter-track"
+                role="progressbar"
+                :aria-label="`${vocabMeter.label}进度`"
+                aria-valuemin="0"
+                :aria-valuemax="vocabMeter.target"
+                :aria-valuenow="Math.min(vocabMeter.current, vocabMeter.target)"
+                :aria-valuetext="`${vocabMeter.current} / ${vocabMeter.target}`"
+              >
+                <span
+                  class="vocab-meter-fill"
+                  :class="{ 'is-met': vocabMeter.met }"
+                  :style="{ width: `${vocabMeter.percent}%` }"
+                />
+              </div>
+            </div>
           </div>
         </section>
 
@@ -440,6 +466,40 @@ function runGenerate() {
 
 .capacity-warn {
   color: var(--color-warning);
+}
+
+.vocab-meter {
+  max-width: 420px;
+  margin-top: var(--space-3);
+}
+
+.vocab-meter-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+}
+
+.vocab-meter-track {
+  height: 6px;
+  margin-top: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-deep);
+  overflow: hidden;
+}
+
+.vocab-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-warning);
+  transition: width var(--dur-progress) var(--ease-out);
+}
+
+.vocab-meter-fill.is-met {
+  background: var(--color-success);
 }
 
 .quota-note {
