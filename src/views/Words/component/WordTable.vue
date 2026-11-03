@@ -14,12 +14,16 @@
  *   highlightId  — 新增/编辑后需要高亮的行 id
  *   expandedWord — 详情浮层当前显示的单词，用来同步 aria-expanded
  *   masked       — 游客态：用固定占位行替代真实数据，不绑定编辑 / 删除 / 详情
+ *   selectable   — 是否显示行复选框（批量改状态）
+ *   selectedIds  — 已选中的词 id 数组；表头只勾选当前页
  * emits:
  *   edit — 点击编辑，参数为词汇对象
  *   remove — 点击删除，参数为词汇对象
  *   retry — 错误卡中的重试
  *   detail — 点击单词查看详情，参数 { item, anchor }
  *   login — 游客点击遮罩行，去登录
+ *   select — 勾选单行，参数 { id, selected }
+ *   select-all — 表头全选当前页，参数为布尔值
  */
 import { computed } from 'vue'
 import { Pencil, Trash2 } from 'lucide-vue-next'
@@ -51,14 +55,25 @@ const props = defineProps({
   highlightId: { type: String, default: '' },
   expandedWord: { type: String, default: '' },
   masked: { type: Boolean, default: false },
+  selectable: { type: Boolean, default: false },
+  selectedIds: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['edit', 'remove', 'retry', 'detail', 'login'])
+const emit = defineEmits(['edit', 'remove', 'retry', 'detail', 'login', 'select', 'select-all'])
 
 // 只有「没有行可展示」时才出骨架。
 // 切换状态 / 翻页 / 搜索时列表里还有旧数据，继续展示它们等新结果；
 // 旧列表本来就是空的，页面会继续挂空态，不会走到这里，因此不会再闪灰条。
 const showSkeleton = computed(() => props.items.length === 0)
+
+const selectedSet = computed(() => new Set(props.selectedIds))
+const allSelected = computed(
+  () => props.items.length > 0 && props.items.every((item) => selectedSet.value.has(item.id)),
+)
+const someSelected = computed(() => props.items.some((item) => selectedSet.value.has(item.id)))
+const allIndeterminate = computed(
+  () => props.selectable && someSelected.value && !allSelected.value,
+)
 
 function detail(item, event) {
   emit('detail', { item, anchor: event.currentTarget })
@@ -74,6 +89,14 @@ function remove(item) {
 
 function retry() {
   emit('retry')
+}
+
+function toggleOne(item, event) {
+  emit('select', { id: item.id, selected: event.target.checked })
+}
+
+function toggleAll(event) {
+  emit('select-all', event.target.checked)
 }
 </script>
 
@@ -91,6 +114,7 @@ function retry() {
           单词列表
         </caption>
         <colgroup>
+          <col v-if="selectable" class="col-select" />
           <col class="col-word" />
           <col class="col-phonetic" />
           <col class="col-meaning" />
@@ -100,6 +124,16 @@ function retry() {
         </colgroup>
         <thead>
           <tr>
+            <th v-if="selectable" scope="col" class="select-head">
+              <input
+                type="checkbox"
+                class="row-check"
+                :checked="allSelected"
+                :indeterminate.prop="allIndeterminate"
+                aria-label="全选当前页"
+                @change="toggleAll"
+              />
+            </th>
             <th scope="col">英文</th>
             <th scope="col">音标</th>
             <th scope="col">词性 · 释义</th>
@@ -117,6 +151,7 @@ function retry() {
             class="word-row is-masked"
             @click="emit('login')"
           >
+            <td v-if="selectable"><GuestMask width="16px" /></td>
             <td><GuestMask /></td>
             <td><GuestMask width="72px" /></td>
             <td><GuestMask width="160px" /></td>
@@ -128,6 +163,7 @@ function retry() {
 
         <tbody v-else-if="showSkeleton" key="skeleton">
           <tr v-for="row in 8" :key="`skeleton-${row}`" class="skeleton-row">
+            <td v-if="selectable"><SkeletonBlock width="16px" height="16px" /></td>
             <td><SkeletonBlock width="58%" height="14px" /></td>
             <td><SkeletonBlock width="76%" height="12px" /></td>
             <td><SkeletonBlock width="74%" height="14px" /></td>
@@ -142,8 +178,20 @@ function retry() {
             v-for="item in items"
             :key="item.id"
             class="word-row"
-            :class="{ 'is-highlight': item.id === highlightId }"
+            :class="{
+              'is-highlight': item.id === highlightId,
+              'is-selected': selectedSet.has(item.id),
+            }"
           >
+            <td v-if="selectable" class="cell-select">
+              <input
+                type="checkbox"
+                class="row-check"
+                :checked="selectedSet.has(item.id)"
+                :aria-label="`选择 ${item.word}`"
+                @change="toggleOne(item, $event)"
+              />
+            </td>
             <td class="cell-word">
               <button
                 type="button"
@@ -226,6 +274,7 @@ function retry() {
         class="word-card is-masked"
         @click="emit('login')"
       >
+        <span v-if="selectable" class="card-select is-placeholder" aria-hidden="true">••</span>
         <div class="card-text">
           <span class="card-line"><GuestMask /></span>
           <span class="card-phonetic"><GuestMask width="96px" /></span>
@@ -238,6 +287,7 @@ function retry() {
 
     <ul v-else-if="showSkeleton" key="card-skeleton" class="word-cards" aria-hidden="true">
       <li v-for="row in 4" :key="`card-skeleton-${row}`" class="word-card">
+        <SkeletonBlock v-if="selectable" width="16px" height="16px" />
         <div class="card-text">
           <SkeletonBlock width="42%" height="15px" />
           <SkeletonBlock width="66%" height="13px" />
@@ -251,8 +301,19 @@ function retry() {
         v-for="item in items"
         :key="item.id"
         class="word-card"
-        :class="{ 'is-highlight': item.id === highlightId }"
+        :class="{
+          'is-highlight': item.id === highlightId,
+          'is-selected': selectedSet.has(item.id),
+        }"
       >
+        <label v-if="selectable" class="card-select" :aria-label="`选择 ${item.word}`">
+          <input
+            type="checkbox"
+            class="row-check"
+            :checked="selectedSet.has(item.id)"
+            @change="toggleOne(item, $event)"
+          />
+        </label>
         <div class="card-text">
           <span class="card-line">
             <button
@@ -385,6 +446,47 @@ function retry() {
 
 .col-actions {
   width: 112px;
+}
+
+.col-select {
+  width: 44px;
+}
+
+.select-head,
+.cell-select {
+  width: 44px;
+  padding: 0;
+  text-align: center;
+}
+
+.cell-select .row-check {
+  vertical-align: middle;
+}
+
+.row-check {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.word-row.is-selected,
+.word-card.is-selected {
+  background: var(--color-bg-deep);
+}
+
+.card-select {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-select.is-placeholder {
+  width: 16px;
+  color: var(--color-muted);
+  letter-spacing: 0.12em;
+  user-select: none;
 }
 
 .word-table th {

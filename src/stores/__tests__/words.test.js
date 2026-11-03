@@ -360,3 +360,69 @@ describe('words store · 今日复习', () => {
     expect(ids).not.toContain('word_missing')
   })
 })
+
+describe('words store · batch status (md/22 #115)', () => {
+  it('should replace the row, update counts and refresh the daily plan', async () => {
+    const store = useWordsStore()
+    await store.fetchList()
+    const target = store.items.find((item) => item.studyState === 'reviewing')
+    const before = store.studyCounts.mastered
+    vi.mocked(fetchDailyPlan).mockClear()
+
+    const result = await store.batchUpdateStatus([target.id], 'mastered')
+
+    expect(result.ok).toBe(true)
+    expect(store.items.find((item) => item.id === target.id).studyState).toBe('mastered')
+    expect(store.studyCounts.mastered).toBe(before + 1)
+    // 状态变化会影响今日复习队列
+    expect(fetchDailyPlan).toHaveBeenCalledTimes(1)
+  })
+
+  it('should keep today’s new word under the new tab after setting learning', async () => {
+    const store = useWordsStore()
+    const created = await store.addWord({
+      word: 'batchtoday',
+      meaning: '今天新增的词',
+      status: 'learning',
+    })
+    await store.filterByStudy('new')
+    expect(store.items.map((item) => item.id)).toContain(created.item.id)
+
+    const result = await store.batchUpdateStatus([created.item.id], 'learning')
+
+    expect(result.ok).toBe(true)
+    expect(store.study).toBe('new')
+    // 今天创建 → 明天才转复习中，所以这一行仍属于「新词」
+    expect(store.items.find((item) => item.id === created.item.id).studyState).toBe('new')
+  })
+
+  it('should reload the current tab after removing and restoring a word', async () => {
+    const store = useWordsStore()
+    await store.fetchList()
+    const target = store.items.find((item) => item.studyState === 'reviewing')
+    const removedBefore = store.studyCounts.removed
+
+    const removed = await store.batchUpdateStatus([target.id], 'removed')
+
+    expect(removed.ok).toBe(true)
+    expect(store.items.some((item) => item.id === target.id)).toBe(false)
+    expect(store.studyCounts.removed).toBe(removedBefore + 1)
+
+    await store.filterByStudy('removed')
+    expect(store.items.map((item) => item.id)).toContain(target.id)
+
+    const restored = await store.batchUpdateStatus([target.id], 'restore')
+
+    expect(restored.ok).toBe(true)
+    // 恢复后已不属于「不认识」标签，页面静默重拉成空列表
+    expect(store.items).toHaveLength(0)
+    expect(store.studyCounts.removed).toBe(removedBefore)
+  })
+
+  it('should reject an empty selection before hitting the API', async () => {
+    const store = useWordsStore()
+    const result = await store.batchUpdateStatus([], 'learning')
+
+    expect(result).toMatchObject({ ok: false, code: 'INVALID_REQUEST' })
+  })
+})

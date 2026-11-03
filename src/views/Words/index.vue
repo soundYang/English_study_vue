@@ -16,6 +16,7 @@ import PaginationBar from '../../component/PaginationBar.vue'
 import StatusPill from '../../component/StatusPill.vue'
 import WordDetailPopover from '../../component/WordDetailPopover.vue'
 import ReviewBanner from './component/ReviewBanner.vue'
+import WordBatchBar from './component/WordBatchBar.vue'
 import WordBatchImport from './component/WordBatchImport.vue'
 import WordEditModal from './component/WordEditModal.vue'
 import WordFormPanel from './component/WordFormPanel.vue'
@@ -28,6 +29,7 @@ import { useMediaQuery } from '../../composables/useMediaQuery'
 import { useToast } from '../../composables/useToast'
 import { useAuthStore } from '../../stores/model/auth'
 import { useWordsStore } from '../../stores/model/words'
+import { batchResultMessage, batchResultType, batchTargetLabel } from '../../unit/word-batch'
 import { myWordDetail } from '../../unit/word-detail'
 
 const TOAST_HIGHLIGHT_DURATION = 800
@@ -55,9 +57,31 @@ const modalPanel = ref(null)
 // 详情浮层：{ item, anchor }，为空即关闭；数据来自列表快照，不额外请求
 const detailTarget = ref(null)
 
+// 批量选择只属于当前页面：不进 store，切标签 / 搜索 / 翻页立即清空（md/22 #115）
+const selectedIds = ref(new Set())
+const batchTarget = ref('')
+const batching = ref(false)
+const batchConfirmOpen = ref(false)
+const batchConfirmTarget = ref('')
+
+const selectedIdList = computed(() => [...selectedIds.value])
 const detailData = computed(() =>
   detailTarget.value ? myWordDetail(detailTarget.value.item) : null,
 )
+
+const batchConfirmTitle = computed(() => {
+  const count = selectedIds.value.size
+  if (batchConfirmTarget.value === 'removed') return `把选中的 ${count} 个词标为「不认识」？`
+  return `把选中的 ${count} 个词标为「已掌握」？`
+})
+
+const batchConfirmDescription = computed(() =>
+  batchConfirmTarget.value === 'removed'
+    ? '标为不认识后，这些词不会用于生成文章；可在「不认识」标签里恢复。'
+    : '已掌握的词会退出复习队列，不再出现在今日复习里。',
+)
+
+const batchConfirmText = computed(() => `标为${batchTargetLabel(batchConfirmTarget.value)}`)
 
 let highlightTimer = null
 
@@ -146,11 +170,13 @@ const deleteTitle = computed(() =>
   deleteTarget.value ? `删除 “${deleteTarget.value.word}”？` : '删除这个单词？',
 )
 
-// 换筛选 / 翻页后原来的锚点可能已经不在列表里，浮层跟着关掉
+// 换筛选 / 翻页后原来的锚点可能已经不在列表里，浮层跟着关掉；选择也只在当前页内有效
 watch(
   () => [store.query, store.study, store.page],
   () => {
     detailTarget.value = null
+    clearSelection()
+    batchTarget.value = ''
   },
 )
 
@@ -164,6 +190,7 @@ onMounted(() => {
 // 登录态变化：掉线清掉私人列表、立刻切遮罩；登录成功原地补拉
 watch(isGuest, (guest) => {
   detailTarget.value = null
+  clearSelection()
   if (guest) {
     store.reset()
     return
@@ -211,6 +238,66 @@ function handleDetail({ item, anchor }) {
 
 function handleDetailOpen(value) {
   if (!value) detailTarget.value = null
+}
+
+function clearSelection() {
+  selectedIds.value = new Set()
+}
+
+function handleSelect({ id, selected }) {
+  const next = new Set(selectedIds.value)
+  if (selected) next.add(id)
+  else next.delete(id)
+  selectedIds.value = next
+}
+
+/** 表头全选只作用于当前页；其他页已选中的 id 原样保留 */
+function handleSelectAll(selected) {
+  const next = new Set(selectedIds.value)
+  store.items.forEach((item) => {
+    if (selected) next.add(item.id)
+    else next.delete(item.id)
+  })
+  selectedIds.value = next
+}
+
+/** 会退出复习队列 / 影响生成用词的目标先二次确认，普通改状态直接提交 */
+function requestBatch(target) {
+  if (batching.value || selectedIds.value.size === 0 || !target) return
+
+  if (target === 'removed' || target === 'mastered') {
+    batchConfirmTarget.value = target
+    batchConfirmOpen.value = true
+    return
+  }
+
+  submitBatch(target)
+}
+
+async function submitBatch(target) {
+  if (batching.value) return
+
+  const ids = [...selectedIds.value]
+  if (ids.length === 0) return
+
+  batching.value = true
+  const result = await store.batchUpdateStatus(ids, target)
+  batching.value = false
+
+  if (!result.ok) {
+    toast.error(result.message)
+    return
+  }
+
+  toast[batchResultType(result)](batchResultMessage(result))
+  detailTarget.value = null
+  clearSelection()
+}
+
+function confirmBatch() {
+  const target = batchConfirmTarget.value
+  batchConfirmOpen.value = false
+  if (target) submitBatch(target)
 }
 
 async function openAddPanel() {
@@ -390,6 +477,16 @@ function reload() {
 
         <WordStatusTabs v-model="statusModel" :counts="store.studyCounts" :disabled="isGuest" />
 
+        <WordBatchBar
+          v-if="!isGuest"
+          v-model:target="batchTarget"
+          :selected-count="selectedIds.size"
+          :study="store.study"
+          :loading="batching"
+          @apply="requestBatch"
+          @clear="clearSelection"
+        />
+
         <!-- 「不认识」不是学习阶段，而是排除标记：解释清楚它影响的是生成用词 -->
         <p v-if="store.study === 'removed'" class="status-hint">
           「不认识」是排除标记：标了不认识的基础词不会用于生成文章，恢复后重新可用。
@@ -419,11 +516,15 @@ function reload() {
           :highlight-id="highlightId"
           :expanded-word="detailTarget?.item.word || ''"
           :masked="isGuest"
+          :selectable="!isGuest && store.items.length > 0 && !store.error"
+          :selected-ids="selectedIdList"
           @edit="openEdit"
           @remove="askDelete"
           @retry="reload"
           @detail="handleDetail"
           @login="goLogin('/words')"
+          @select="handleSelect"
+          @select-all="handleSelectAll"
         />
 
         <EmptyState
@@ -487,6 +588,16 @@ function reload() {
       confirm-text="删除"
       :loading="deleting"
       @confirm="confirmDelete"
+    />
+
+    <ConfirmDialog
+      v-model:open="batchConfirmOpen"
+      :title="batchConfirmTitle"
+      :description="batchConfirmDescription"
+      :danger="batchConfirmTarget === 'removed'"
+      :confirm-text="batchConfirmText"
+      :loading="batching"
+      @confirm="confirmBatch"
     />
 
     <WordDetailPopover

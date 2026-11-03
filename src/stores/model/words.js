@@ -7,6 +7,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import {
+  batchUpdateWordStatus as batchUpdateWordStatusRequest,
   batchWords,
   createWord,
   deleteWord as deleteWordRequest,
@@ -448,6 +449,41 @@ export const useWordsStore = defineStore('words', () => {
     }
   }
 
+  /**
+   * 批量修改学习状态（md/22 #115）
+   *
+   * 返回词的 `studyState` 仍匹配当前标签时就地替换；不匹配时静默重拉当前页。
+   * 「全部」不含墓碑词，所以标成不认识后必须重拉，不能只换行。
+   * 状态变化会影响今日复习队列，成功后顺手刷新一次 dailyPlan。
+   */
+  async function batchUpdateStatus(ids, target) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return { ok: false, errors: {}, message: '请先选择单词。', code: 'INVALID_REQUEST' }
+    }
+
+    try {
+      const data = await batchUpdateWordStatusRequest({ ids, target, dryRun: false })
+      const words = data?.words || []
+      const byId = new Map(words.map((item) => [item.id, item]))
+
+      if (byId.size) {
+        items.value = items.value.map((item) => byId.get(item.id) || item)
+      }
+      if (data?.studyCounts) studyCounts.value = data.studyCounts
+
+      const leavesFilter = words.some((item) =>
+        study.value === 'all' ? item.studyState === 'removed' : item.studyState !== study.value,
+      )
+      if (leavesFilter) await fetchList({ quiet: true })
+
+      await loadDailyPlan({ quiet: true })
+
+      return { ok: true, ...data }
+    } catch (caught) {
+      return toFailure(caught)
+    }
+  }
+
   function reset() {
     requestSeq += 1
     items.value = []
@@ -482,6 +518,7 @@ export const useWordsStore = defineStore('words', () => {
     loadDailyPlan,
     reviewWord,
     reviewBatch,
+    batchUpdateStatus,
     setQuery,
     setStudy,
     search,

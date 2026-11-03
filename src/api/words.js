@@ -81,6 +81,18 @@ export function deleteWord(id) {
 }
 
 /**
+ * 批量修改学习状态（md/22 #115）
+ *
+ * `ids` 1–200 个，重复 id 由后端去重；`target` 五选一：
+ * new / learning / mastered / removed / restore。
+ * `dryRun: true` 只返回 `plan[]`，不写库。
+ */
+export function batchUpdateWordStatus({ ids, target, dryRun = false } = {}) {
+  if (config.useMock) return mockWords.batchUpdateStatus({ ids, target, dryRun })
+  return apiPost('/words/status/batch', { ids, target, dryRun })
+}
+
+/**
  * 今日复习任务（md/56 §8.1）
  *
  * 返回今日到期词（最多 50 个）、积压总量与新词配额进度。

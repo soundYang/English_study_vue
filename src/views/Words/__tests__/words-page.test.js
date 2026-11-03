@@ -361,4 +361,90 @@ describe('Words page', () => {
     expect(store.total).toBe(23)
     expect(toasts.items.map((item) => item.message)).toContain(`已删除 ${firstWord}`)
   })
+
+  it('should select rows, show the batch bar and clear selection on tab change', async () => {
+    const wrapper = await mountPage()
+    const checks = wrapper.findAll('tbody tr.word-row input[type="checkbox"]')
+    expect(checks).toHaveLength(10)
+
+    await checks[0].setValue(true)
+
+    expect(wrapper.get('.batch-bar').text()).toContain('已选 1 个')
+    expect(
+      wrapper
+        .get('select.batch-target')
+        .findAll('option')
+        .map((option) => option.text()),
+    ).toEqual(['复习中', '已掌握', '不认识'])
+
+    // 表头只全选当前页：10 行，不再是全部 24 条
+    await wrapper.get('thead input[type="checkbox"]').setValue(true)
+    expect(wrapper.get('.batch-bar').text()).toContain('已选 10 个')
+
+    await wrapper.findAll('[role="radio"]')[2].trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.batch-bar').exists()).toBe(false)
+  })
+
+  it('should confirm before marking words mastered and report unchanged rows', async () => {
+    const wrapper = await mountPage()
+    const toasts = useToastStore()
+    const store = useWordsStore()
+    // 第一页里的 w21 / w20 已经是 mastered，批量再标一次只会是「未变化」
+    const masteredRows = wrapper
+      .findAll('tbody tr.word-row')
+      .filter((row) => row.text().includes('已掌握'))
+      .slice(0, 2)
+    expect(store.items.filter((item) => item.studyState === 'mastered').length).toBeGreaterThan(1)
+
+    for (const row of masteredRows) {
+      await row.get('input[type="checkbox"]').setValue(true)
+    }
+
+    await wrapper.get('select.batch-target').setValue('mastered')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '应用')
+      .trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('把选中的 2 个词标为「已掌握」？')
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '标为已掌握')
+      .trigger('click')
+    await flushPromises()
+
+    expect(toasts.items.map((item) => item.message)).toContain('2 个未变化')
+    expect(wrapper.find('.batch-bar').exists()).toBe(false)
+  })
+
+  it('should confirm removal and drop the rows from the all tab', async () => {
+    const wrapper = await mountPage()
+    const store = useWordsStore()
+    const toasts = useToastStore()
+    const firstRow = wrapper.findAll('tbody tr.word-row')[0]
+    const word = firstRow.find('.word-text').text()
+
+    await firstRow.get('input[type="checkbox"]').setValue(true)
+    await wrapper.get('select.batch-target').setValue('removed')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '应用')
+      .trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('把选中的 1 个词标为「不认识」？')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '标为不认识')
+      .trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain(word)
+    expect(store.studyCounts.removed).toBe(1)
+    expect(toasts.items.map((item) => item.message)).toContain('已更新 1 个词')
+  })
 })

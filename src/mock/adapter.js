@@ -40,6 +40,9 @@ const DAILY_REVIEW_LIMIT = 50
 const MASTER_STAGE = 2
 const REVIEW_INTERVAL_DAYS = 3
 const REVIEW_BATCH_MAX = 200
+// 批量改状态（md/22 #115）：与后端 word-status.schema.js 同口径
+const STATUS_BATCH_MAX = 200
+const WORD_STATUS_TARGETS = ['new', 'learning', 'mastered', 'removed', 'restore']
 const HEATMAP_DAYS = 30
 const DAY_MS = 24 * 60 * 60 * 1000
 // 与后端 level-limits.js 保持一致：难度 → 生词预算 / 篇幅上限。
@@ -1974,6 +1977,124 @@ function applyMockAiImport(response) {
   }
 }
 
+/**
+ * 墓碑恢复后的来源（与后端 `restoreSource` 同口径，md/61 §5.3）
+ *
+ * 墓碑只覆盖了 source，原始来源已丢；用户手写过无词性释义就回 manual，
+ * 否则回到 dictionary。mock 没有词典 loader，用 dictionaryId 近似判断。
+ */
+function restoreMockSource(item) {
+  const userAuthored = (item.senses ?? []).some((sense) => !sense.pos)
+  if (userAuthored) return 'manual'
+  return item.dictionaryId ? 'dictionary' : 'manual'
+}
+
+/**
+ * 批量改状态的单条迁移（与后端 `planStatusTransition` 同口径）
+ *
+ * 纯函数：只返回动作和要合并的字段，不写 item。`updated` / `unchanged` /
+ * `skipped` 的判定都在这里，接口层只负责遍历与记账。
+ *
+ * @returns {{action:'changed', update:object}
+ *          |{action:'unchanged'}
+ *          |{action:'skipped', reason:string}}
+ */
+function planMockStatusTransition(item, target, now = new Date()) {
+  const today = startOfMockDay(now)
+  const tombstone = item.source === 'basic-removed'
+
+  if (target === 'restore') {
+    if (!tombstone) return { action: 'unchanged' }
+
+    return {
+      action: 'changed',
+      update: {
+        source: restoreMockSource(item),
+        status: 'learning',
+        reviewStage: 0,
+        nextReviewAt: today ? today.toISOString() : null,
+        masteredAt: null,
+      },
+    }
+  }
+
+  if (tombstone) {
+    // 已经是「不认识」：幂等空操作，不报跳过
+    if (target === 'removed') return { action: 'unchanged' }
+    // 墓碑不能被 new / learning / mastered 隐式复活，必须显式 restore
+    return { action: 'skipped', reason: 'BASIC_REMOVED' }
+  }
+
+  if (target === 'removed') {
+    // 与基础词页 assertRemovable 同口径，只拦移除，不拦其他目标
+    if (item.isFunctionWord === true) {
+      return { action: 'skipped', reason: 'FUNCTION_WORD_IMMUTABLE' }
+    }
+    if (item.readonly === true) {
+      return { action: 'skipped', reason: 'BASIC_WORD_READONLY' }
+    }
+
+    return {
+      action: 'changed',
+      update: {
+        source: 'basic-removed',
+        status: 'new',
+        nextReviewAt: null,
+        masteredAt: null,
+      },
+    }
+  }
+
+  // target ∈ new / learning / mastered
+  if (target === 'new') {
+    const created = startOfMockDay(item.createdAt)
+    // studyState 的 new 是「今天创建」派生出来的；老词改 status 也回不去
+    if (!created || !today || created.getTime() < today.getTime()) {
+      return { action: 'skipped', reason: 'NEW_STATE_ONLY_TODAY' }
+    }
+
+    if (item.status === 'new' && !item.nextReviewAt && !item.masteredAt) {
+      return { action: 'unchanged' }
+    }
+
+    return { action: 'changed', update: { status: 'new', nextReviewAt: null, masteredAt: null } }
+  }
+
+  if (target === 'learning') {
+    if (
+      item.status === 'learning' &&
+      isSameLocalDay(item.nextReviewAt, today) &&
+      !item.masteredAt
+    ) {
+      return { action: 'unchanged' }
+    }
+
+    return {
+      action: 'changed',
+      update: {
+        status: 'learning',
+        reviewStage: item.reviewStage ?? 0,
+        nextReviewAt: today ? today.toISOString() : null,
+        masteredAt: null,
+      },
+    }
+  }
+
+  // target === 'mastered'
+  if (item.status === 'mastered' && !item.nextReviewAt) {
+    return { action: 'unchanged' }
+  }
+
+  return {
+    action: 'changed',
+    update: {
+      status: 'mastered',
+      nextReviewAt: null,
+      masteredAt: item.masteredAt ?? now.toISOString(),
+    },
+  }
+}
+
 export const mockWords = {
   /**
    * 词汇列表
@@ -2774,6 +2895,108 @@ export const mockWords = {
     if (updated) bumpMockStudyDay({ reviewed: updated, mastered, at: now })
 
     return { updated, skipped, words }
+  },
+
+  /**
+   * 批量修改学习状态（md/22 #115，后端契约 md/61）
+   *
+   * 逐条迁移，单条跳过不拖垮整批；重复 id 只处理第一次。
+   * `dryRun` 只在内存里试算并返回 `plan[]`，不写库。
+   */
+  async batchUpdateStatus({ ids, target, dryRun = false } = {}) {
+    await wait(latency)
+
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > STATUS_BATCH_MAX) {
+      throw new MockApiError(
+        'INVALID_REQUEST',
+        `ids 必须是 1–${STATUS_BATCH_MAX} 个字符串`,
+        400,
+        'ids',
+      )
+    }
+
+    if (!WORD_STATUS_TARGETS.includes(target)) {
+      throw new MockApiError(
+        'INVALID_REQUEST',
+        'target 只能是 new / learning / mastered / removed / restore',
+        400,
+        'target',
+      )
+    }
+
+    // 去重但保留首次出现顺序：`words[]` 与请求顺序一致，前端才能顺序替换
+    const requestedIds = []
+    const seen = new Set()
+    ids.forEach((id) => {
+      if (typeof id !== 'string' || !id) {
+        throw new MockApiError('INVALID_REQUEST', 'id 必须是字符串', 400, 'ids')
+      }
+      if (seen.has(id)) return
+      seen.add(id)
+      requestedIds.push(id)
+    })
+
+    const now = new Date()
+    const db = settleMockWords(readDb(), now)
+    const skipped = []
+    const words = []
+    const plan = []
+    let updated = 0
+    let unchanged = 0
+
+    for (const id of requestedIds) {
+      const item = db.words.find((word) => word.id === id)
+
+      if (!item) {
+        skipped.push({ id, word: '', reason: 'NOT_FOUND' })
+        continue
+      }
+
+      const decision = planMockStatusTransition(item, target, now)
+
+      if (decision.action === 'skipped') {
+        skipped.push({ id, word: item.word, reason: decision.reason })
+        continue
+      }
+
+      if (decision.action === 'unchanged') {
+        unchanged += 1
+        plan.push({ id, word: item.word, toStudyState: deriveStudyState(item, now) })
+        continue
+      }
+
+      Object.assign(item, decision.update)
+      updated += 1
+      words.push(toWordDto(item, now))
+      plan.push({ id, word: item.word, toStudyState: deriveStudyState(item, now) })
+    }
+
+    if (dryRun) {
+      // 试算结果只走 plan；不写库，也不回报 updated/unchanged 以免被误读成已落库
+      return {
+        target,
+        dryRun: true,
+        requested: requestedIds.length,
+        updated: 0,
+        unchanged: 0,
+        skipped,
+        words: [],
+        plan,
+      }
+    }
+
+    if (updated) writeDb(db)
+
+    return {
+      target,
+      dryRun: false,
+      requested: requestedIds.length,
+      updated,
+      unchanged,
+      skipped,
+      words,
+      studyCounts: countWordsByStudyState(db.words, now),
+    }
   },
 
   /** 学习统计（md/56 §10 P3）：连续天数、今日/累计、掌握情况、待复习数与 30 天热力图 */

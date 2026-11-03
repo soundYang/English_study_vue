@@ -879,3 +879,145 @@ describe('mockWords.extractImport', () => {
     ).rejects.toMatchObject({ error: { code: 'OCR_FAILED', field: 'file' } })
   })
 })
+
+describe('mockWords.batchUpdateStatus', () => {
+  const startOfToday = () => {
+    const date = new Date()
+    date.setHours(0, 0, 0, 0)
+    return date.getTime()
+  }
+
+  async function firstWordIn(study) {
+    const { items } = await mockWords.list({ study, pageSize: 50 })
+    return items[0]
+  }
+
+  it('should move a mastered word back to learning and schedule it today', async () => {
+    const target = await firstWordIn('mastered')
+
+    const result = await mockWords.batchUpdateStatus({ ids: [target.id], target: 'learning' })
+
+    expect(result).toMatchObject({
+      target: 'learning',
+      dryRun: false,
+      requested: 1,
+      updated: 1,
+      unchanged: 0,
+      skipped: [],
+    })
+    expect(result.words).toHaveLength(1)
+    expect(result.words[0].studyState).toBe('reviewing')
+    expect(new Date(result.words[0].nextReviewAt).getTime()).toBe(startOfToday())
+  })
+
+  it('should mark a word mastered and return the latest counts', async () => {
+    const target = await firstWordIn('reviewing')
+
+    const result = await mockWords.batchUpdateStatus({ ids: [target.id], target: 'mastered' })
+
+    expect(result.updated).toBe(1)
+    expect(result.words[0].studyState).toBe('mastered')
+    expect(result.words[0].nextReviewAt).toBeNull()
+    expect(result.studyCounts.mastered).toBeGreaterThan(0)
+  })
+
+  it('should soft-remove a word as a tombstone', async () => {
+    const before = await mockWords.list({ pageSize: 50 })
+    const target = await firstWordIn('reviewing')
+
+    const result = await mockWords.batchUpdateStatus({ ids: [target.id], target: 'removed' })
+
+    expect(result.updated).toBe(1)
+    expect(result.words[0].studyState).toBe('removed')
+    expect(result.studyCounts.removed).toBe(before.studyCounts.removed + 1)
+    // 全部不含墓碑词
+    expect(result.studyCounts.all).toBe(before.studyCounts.all - 1)
+  })
+
+  it('should restore a tombstone back to the review queue', async () => {
+    const target = await firstWordIn('reviewing')
+    await mockWords.batchUpdateStatus({ ids: [target.id], target: 'removed' })
+    const [tombstone] = (await mockWords.list({ study: 'removed', pageSize: 50 })).items
+
+    const result = await mockWords.batchUpdateStatus({ ids: [tombstone.id], target: 'restore' })
+
+    expect(result.updated).toBe(1)
+    expect(result.words[0].studyState).toBe('reviewing')
+    expect(result.words[0].source).not.toBe('basic-removed')
+    expect(result.words[0].reviewStage).toBe(0)
+  })
+
+  it('should treat removing an existing tombstone as unchanged', async () => {
+    const target = await firstWordIn('reviewing')
+    await mockWords.batchUpdateStatus({ ids: [target.id], target: 'removed' })
+
+    const result = await mockWords.batchUpdateStatus({ ids: [target.id], target: 'removed' })
+
+    expect(result.updated).toBe(0)
+    expect(result.unchanged).toBe(1)
+    expect(result.skipped).toEqual([])
+  })
+
+  it('should only allow the new state for words created today', async () => {
+    const created = await mockWords.create({
+      word: 'batchnew',
+      meaning: '今天新增的词',
+      status: 'learning',
+    })
+    const today = await mockWords.batchUpdateStatus({ ids: [created.id], target: 'new' })
+    const old = await firstWordIn('reviewing')
+    const oldResult = await mockWords.batchUpdateStatus({ ids: [old.id], target: 'new' })
+
+    expect(today.updated).toBe(1)
+    expect(today.words[0].studyState).toBe('new')
+    expect(oldResult.updated).toBe(0)
+    expect(oldResult.skipped).toEqual([
+      { id: old.id, word: old.word, reason: 'NEW_STATE_ONLY_TODAY' },
+    ])
+  })
+
+  it('should report missing and tombstone ids as skipped', async () => {
+    const target = await firstWordIn('reviewing')
+    await mockWords.batchUpdateStatus({ ids: [target.id], target: 'removed' })
+
+    const missing = await mockWords.batchUpdateStatus({ ids: ['missing'], target: 'learning' })
+    const tombstone = await mockWords.batchUpdateStatus({ ids: [target.id], target: 'learning' })
+
+    expect(missing.skipped).toEqual([{ id: 'missing', word: '', reason: 'NOT_FOUND' }])
+    expect(tombstone.skipped).toEqual([
+      { id: target.id, word: target.word, reason: 'BASIC_REMOVED' },
+    ])
+  })
+
+  it('should preview with dryRun without writing', async () => {
+    const target = await firstWordIn('reviewing')
+
+    const preview = await mockWords.batchUpdateStatus({
+      ids: [target.id],
+      target: 'mastered',
+      dryRun: true,
+    })
+
+    expect(preview).toMatchObject({ dryRun: true, updated: 0, unchanged: 0, words: [] })
+    expect(preview.plan).toEqual([{ id: target.id, word: target.word, toStudyState: 'mastered' }])
+    const after = await mockWords.list({ q: target.word, pageSize: 10 })
+    expect(after.items[0].studyState).toBe('reviewing')
+  })
+
+  it('should dedupe ids and reject empty or invalid payloads', async () => {
+    const target = await firstWordIn('reviewing')
+
+    const result = await mockWords.batchUpdateStatus({
+      ids: [target.id, target.id],
+      target: 'learning',
+    })
+
+    expect(result.requested).toBe(1)
+    await expect(
+      mockWords.batchUpdateStatus({ ids: [], target: 'learning' }),
+    ).rejects.toMatchObject({ error: { code: 'INVALID_REQUEST', field: 'ids' } })
+    await expect(
+      mockWords.batchUpdateStatus({ ids: [target.id], target: 'archived' }),
+    ).rejects.toMatchObject({ error: { code: 'INVALID_REQUEST', field: 'target' } })
+  })
+})
