@@ -17,3 +17,8 @@ scripts/vendor/
 !.vscode/extensions.json
 .idea
 *.log
+
+# 内部设计与协作文档只在本地保留，不随公开仓库发布
+md/
+*.md
+!README.md
