@@ -238,7 +238,7 @@ function toggleAll(event) {
               </template>
               <template v-else>—</template>
             </td>
-            <td>
+            <td class="cell-status">
               <StatusPill kind="status" :value="item.studyState" :stage="item.reviewStage || 0" />
             </td>
             <td class="cell-created">{{ formatDate(item.createdAt) }}</td>
@@ -424,43 +424,60 @@ function toggleAll(event) {
   border-collapse: collapse;
 }
 
-.col-word {
-  width: 18%;
+/* 七列百分比合计 100%，不再混用固定 px：混用时总宽会超过表格，
+   状态胶囊容易顶进「收录」列。状态列给足「复习中 · 第 N 轮」的宽度。 */
+.col-select {
+  width: 4%;
 }
 
-.col-phonetic {
+.col-word {
   width: 16%;
 }
 
-.col-meaning {
-  width: 30%;
-}
-
-.col-status {
+.col-phonetic {
   width: 13%;
 }
 
+.col-meaning {
+  width: 22%;
+}
+
+.col-status {
+  width: 19%;
+}
+
 .col-created {
-  width: 10%;
+  width: 13%;
 }
 
 .col-actions {
-  width: 112px;
-}
-
-.col-select {
-  width: 44px;
+  width: 13%;
 }
 
 .select-head,
 .cell-select {
-  width: 44px;
   padding: 0;
   text-align: center;
 }
 
 .cell-select .row-check {
   vertical-align: middle;
+}
+
+/* 胶囊自带 nowrap，列宽不够时会横向溢出、盖住「收录」列的日期。
+   这里允许它在格内折行，宁可占两行也不叠字。 */
+.cell-status :deep(.status-pill) {
+  max-width: 100%;
+  height: auto;
+  min-height: 24px;
+  padding: 2px 8px;
+  line-height: var(--leading-caption);
+  white-space: normal;
+  word-break: keep-all;
+}
+
+.cell-status :deep(.pill-dot) {
+  flex: 0 0 auto;
 }
 
 .row-check {
