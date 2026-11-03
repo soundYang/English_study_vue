@@ -63,6 +63,17 @@ VITE_API_BASE_URL=/api
 
 生产构建时若 `VITE_USE_MOCK=false`，Mock 数据源与演示账号会被替换为空占位，不进入 `dist`。
 
+## 配套后端
+
+本仓库只包含前端，真实数据由配套的 Word Reading 后端提供：
+
+- **后端仓库**：[soundYang/English_study_Node](https://github.com/soundYang/English_study_Node)
+- **本地默认地址**：`http://localhost:3000`，接口前缀为 `/api`；健康检查：`http://localhost:3000/api/health`
+- **技术栈**：Node.js（≥ 22）+ Express 5 + MongoDB + DeepSeek
+- **启动方式**：先启动 MongoDB，再按后端仓库的 README 配置 `.env`，运行 `npm run dev`
+
+前端通过 `VITE_API_BASE_URL=/api` 访问接口：开发环境由 Vite 代理到 `http://localhost:3000`，生产环境由反向代理转发同源 `/api`。后端未启动时，可以保持 `VITE_USE_MOCK=true` 使用本地 Mock 数据。
+
 ## 常用脚本
 
 | 命令              | 说明                                 |
