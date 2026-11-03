@@ -129,17 +129,21 @@ describe('settings page capacity note', () => {
     expect(wrapper.findAll('[role="radio"]:disabled')).toHaveLength(0)
   })
 
-  it('should narrow the precheck when the scope is limited', async () => {
+  it('should explain the fallback when the scope is too narrow', async () => {
     const wrapper = await mountSettings()
     expect(wrapper.get('.capacity-note').text()).toContain('当前难度可写 300 词以内')
 
     // 种子词的 createdAt 都是过去的日子，「今天新学」的池子是空的：
-    // 这时不能再说「还差 15 个可用词」（加词 / 缩短都解决不了），要直说原因
+    // 后端会从全部词汇补（md/60），预检不能再显示「今天还没有新学的词」——
+    // 那句话和「点下去能生成」矛盾
     await wrapper.findAll('[role="checkbox"]')[0].trigger('click')
     await settle()
 
     expect(wrapper.get('.scope-chip.is-active').text()).toBe('今天新学')
-    expect(wrapper.get('.capacity-note').text()).toContain('今天还没有新学的词')
+    // 补词后 A 门能过：先说「可写」，再单独解释这次会出现兜底
+    expect(wrapper.get('.capacity-ok').text()).toContain('当前难度可写 300 词以内')
+    expect(wrapper.get('.capacity-fallback').text()).toContain('已从「全部词汇」补充')
+    expect(wrapper.get('.capacity-note').text()).not.toContain('今天还没有新学的词')
     expect(wrapper.get('.capacity-note').text()).not.toContain('还差 15 个')
   })
 

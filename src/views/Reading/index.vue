@@ -27,6 +27,7 @@ import { useScrollSpy } from '../../composables/useScrollSpy'
 import { useToast } from '../../composables/useToast'
 import { useAuthStore } from '../../stores/model/auth'
 import { useReadingStore } from '../../stores/model/reading'
+import { vocabFallbackOf } from '../../unit/vocab-fallback'
 import { newWordDetail } from '../../unit/word-detail'
 
 const PANEL_OPTIONS = [
@@ -99,6 +100,8 @@ const newWords = computed(() => store.reading?.newWords || [])
 const usedWords = computed(() => store.reading?.usedWords || [])
 // 自选词没被写进正文（分段降级可能漏词）：只提示，不触发修复（后端 md/54）
 const missingFocusWords = computed(() => store.reading?.focusWords?.missing || [])
+// 词源兜底（md/60）：生成时补过词，详情仍带同一句；刷新 / 历史直达也能看到
+const vocabFallback = computed(() => vocabFallbackOf(store.reading))
 const detailData = computed(() =>
   detailTarget.value ? newWordDetail(detailTarget.value.entry) : null,
 )
@@ -286,6 +289,11 @@ function goHome() {
 
       <div class="reading-layout" :class="`show-${activePanel}`">
         <div class="article-column">
+          <!-- 词源兜底：原样展示后端 message，不自拼「今天新学 / 全部词汇」 -->
+          <p v-if="vocabFallback" class="vocab-fallback-note" role="status">
+            {{ vocabFallback.message }}
+          </p>
+
           <ArticleCard
             :title="reading.title"
             :article="reading.article"
@@ -380,6 +388,17 @@ function goHome() {
 
 .article-column {
   min-width: 0;
+}
+
+/* 词源兜底说明：信息色，不抢正文；与「自选词没写进本文」的小提示区分开 */
+.vocab-fallback-note {
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-info-bg);
+  color: var(--color-info);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
 }
 
 /* 自选词没写进本文：与「未学词」并排的一枚小提示，默认收起，不抢正文注意力 */

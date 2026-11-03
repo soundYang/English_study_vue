@@ -5,6 +5,7 @@
  * 生成接口按同样的顺序拦截，这里按同样的顺序给出缘由，
  * 让设置页说「写不了」和点下去得到的 422 指的是同一件事。
  */
+import { vocabFallbackOf } from './vocab-fallback'
 
 function toNumber(value) {
   const number = Number(value)
@@ -171,6 +172,11 @@ export function capacityNoteOf(
       text: `${levelLabel}写 ${targetWords} 词需要认识约 ${block.minKnown} 个单词，当前 ${block.knownWords} 个，还差 ${block.shortage} 个。`,
     }
   }
+
+  // 后端已经尝试从「全部词汇」兜底（md/60）：直接用它给的话。
+  // 这时再说「今天还没有新学的词」是错的——池子确实为空，但生成会补
+  const fallback = vocabFallbackOf(gate)
+  if (fallback) return { tone: 'warn', text: fallback.message }
 
   // A 门先区分「池子为空」与「池子不够」：空池时告诉用户缺的是哪类词，
   // 而不是让他去缩短一篇已经最短的文章

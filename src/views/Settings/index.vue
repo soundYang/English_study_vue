@@ -25,6 +25,7 @@ import { useAuthStore } from '../../stores/model/auth'
 import { useSettingsStore } from '../../stores/model/settings'
 import { capacityNoteOf, vocabMeterOf } from '../../unit/capacity'
 import { focusWordLimit, focusWordsPayload, normalizeFocusWords } from '../../unit/focus-words'
+import { vocabFallbackOf } from '../../unit/vocab-fallback'
 import { firstError, LEVEL_MAX_TARGET_WORDS, TARGET_WORDS_MAX } from '../../unit/validators'
 
 const LEVEL_LABELS = { easy: '简单', medium: '进阶', hard: '挑战' }
@@ -122,6 +123,13 @@ const capacityNote = computed(() =>
     // 词源为「今天新学 / 今天复习过 / 复习中」且池子为空时，说明缺的是哪类词
     scope: draft.vocabScope,
   }),
+)
+// 词源兜底提示（md/60）：预检每档可能带 fallback，文案直接透传后端 message。
+// A 门不足时 capacityNoteOf 已经引用了同一句，这里不再重复渲染
+const capacityFallback = computed(() => vocabFallbackOf(gate.value))
+const showCapacityFallback = computed(
+  () =>
+    Boolean(capacityFallback.value) && capacityNote.value?.text !== capacityFallback.value.message,
 )
 // 词汇量进度条（md/22 §7）：普通篇幅看 knownWords / minKnown，
 // 601–1000 看 personalWords / unlockAt，分子分母都用接口值
@@ -329,6 +337,11 @@ function runGenerate() {
               </p>
             </template>
 
+            <!-- 词源兜底（md/60）：原样展示后端 message，不自拼中文 -->
+            <p v-if="!isGuest && showCapacityFallback" class="capacity-fallback">
+              {{ capacityFallback.message }}
+            </p>
+
             <!-- 词汇量进度条：数字全部来自预检，进度条只负责把差距画出来 -->
             <div v-if="!isGuest && gate && vocabMeter" class="vocab-meter">
               <div class="vocab-meter-head">
@@ -468,6 +481,15 @@ function runGenerate() {
 
 .capacity-warn {
   color: var(--color-warning);
+}
+
+/* 词源兜底是「已经替你补好了」的说明，不是错误，用信息色而不是警告色 */
+.capacity-fallback {
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-info-bg);
+  color: var(--color-info);
 }
 
 .vocab-meter {

@@ -24,6 +24,7 @@ import { useToast } from '../../composables/useToast'
 import { useUserApiKey } from '../../composables/useUserApiKey'
 import { useAuthStore } from '../../stores/model/auth'
 import { useReadingStore } from '../../stores/model/reading'
+import { vocabFallbackOf } from '../../unit/vocab-fallback'
 
 // 成功文案要在纸页上停一下，让占位线退场、标题换成「准备好了」，再替换到阅读页
 const FINISH_DELAY = 560
@@ -75,6 +76,8 @@ watch(
 )
 
 const selectedWords = computed(() => task.value?.selectedWords || [])
+// 词源兜底（md/60）：任务 planning 阶段就可能带，文案原样透传后端 message
+const fallbackMessage = computed(() => vocabFallbackOf(task.value)?.message || '')
 
 function goBack() {
   // 先清掉错误，否则覆盖层在目标页上还会再弹一次
@@ -175,6 +178,7 @@ onBeforeUnmount(() => {
       :cancelling="cancelling"
       :skip-entrance="skipEntrance"
       :using-own-key="usingOwnKey"
+      :fallback-message="fallbackMessage"
       @cancel="handleCancel"
       @back="goBack"
     />

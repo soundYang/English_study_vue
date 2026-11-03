@@ -7,6 +7,7 @@
  * 用法：<PaperStage :stage="stage" :summary="summary" :progress="progress"
  *                   :selected-words="words" :cancelling="cancelling"
  *                   :skip-entrance="resumed" :using-own-key="usingOwnKey"
+ *                   :fallback-message="fallbackMessage"
  *                   @cancel="..." @back="..." />
  *
  * props:
@@ -19,6 +20,7 @@
  *   cancelling    (Boolean)                — 取消请求在飞行中
  *   skipEntrance  (Boolean)                — 刷新恢复时直接以运行态出现，不重播入场
  *   usingOwnKey   (Boolean)                — 本篇使用用户自备的 API Key（md/43 §12）
+ *   fallbackMessage (String)               — 词源兜底说明，后端 message 原样展示（md/60）
  * emits:
  *   cancel — 等待中点了「取消生成」
  *   back   — 失败 / 取消后点了「返回设置」
@@ -122,6 +124,7 @@ const props = defineProps({
   cancelling: { type: Boolean, default: false },
   skipEntrance: { type: Boolean, default: false },
   usingOwnKey: { type: Boolean, default: false },
+  fallbackMessage: { type: String, default: '' },
 })
 
 const emit = defineEmits(['cancel', 'back'])
@@ -542,6 +545,10 @@ onBeforeUnmount(() => {
         <KeyRound :size="12" :stroke-width="1.8" aria-hidden="true" />
         本篇使用我的 API Key
       </p>
+      <!-- 词源兜底：后端原句直出，不在前端拼「今天新学 / 全部词汇」（md/60） -->
+      <p v-if="fallbackMessage" class="paper-fallback-note" role="status">
+        {{ fallbackMessage }}
+      </p>
     </header>
 
     <!-- 双栏对齐答题页：左边正文按段落墨，右边按题目数画题干与选项 -->
@@ -739,6 +746,18 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-pill);
   background: var(--color-success-bg);
   color: var(--color-success);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+}
+
+/* 词源兜底是常驻说明，不是一次性 toast：等待几十秒时也要随时看得到 */
+.paper-fallback-note {
+  max-width: 46em;
+  margin-top: var(--space-2);
+  padding: 2px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-info-bg);
+  color: var(--color-info);
   font-size: var(--text-caption);
   line-height: var(--leading-caption);
 }

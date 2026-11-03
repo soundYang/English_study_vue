@@ -21,6 +21,7 @@ import {
   validateSettings,
   validateWordInput,
   VOCABULARY_THRESHOLD,
+  VOCAB_SCOPE_LABELS,
   WORD_BATCH_MAX,
 } from '../unit/validators'
 
@@ -574,6 +575,45 @@ function filterByScope(words, scopes, now = new Date()) {
         item.source !== 'basic-removed' &&
         !isSameLocalDay(item.createdAt, now)),
   )
+}
+
+/**
+ * 词源兜底（后端 md/60）：具体词源凑不够 A 门时，从「全部词汇」补。
+ * mock 只负责形状与文案，数字按同一公式近似；`available` 仍回该词源的候选数，
+ * 不改成全库数（与后端 `/capacity` 口径一致）。
+ */
+function buildVocabFallback(scope, available, allAvailable, needed) {
+  if (scope.includes('all') || available >= needed) return null
+
+  const supplemented = Math.min(
+    Math.max(0, needed - available),
+    Math.max(0, allAvailable - available),
+  )
+  const stillShort = Math.max(0, needed - available - supplemented)
+  const labels = scope.map((value) => VOCAB_SCOPE_LABELS[value] || value).join('、')
+  const base =
+    available > 0
+      ? `「${labels}」只有 ${available} 个可用词，不够本次篇幅（至少需要 ${needed} 个）`
+      : `「${labels}」没有可用词，不够本次篇幅（至少需要 ${needed} 个）`
+
+  let message
+  if (supplemented <= 0) {
+    message = `${base}；「全部词汇」也没有更多可用词，仍差 ${stillShort} 个。`
+  } else if (stillShort > 0) {
+    message = `${base}，已从「全部词汇」补充 ${supplemented} 个候选词，仍差 ${stillShort} 个。`
+  } else {
+    message = `${base}，已从「全部词汇」补充 ${supplemented} 个候选词。`
+  }
+
+  return {
+    used: true,
+    requestedScope: [...scope],
+    scopeAvailable: available,
+    allAvailable,
+    needed,
+    supplemented,
+    message,
+  }
 }
 
 function countWordsByStatus(words) {
@@ -3227,9 +3267,10 @@ export const mockReadings = {
     const db = readDb()
     // 预检也要过词源：范围收窄后池子会变小，否则界面说「够」、点下去 422
     const scope = normalizeVocabScope(payload.vocabScope)
-    const available = filterByScope(usableWords(db.words), scope).length
+    const usable = usableWords(db.words)
+    const available = filterByScope(usable, scope).length
     // personalWords / knownWords 与词源无关（后端读整份个人词库），mock 同口径
-    const personalWords = usableWords(db.words).length
+    const personalWords = usable.length
     const knownWords = personalWords + KNOWN_FLOOR
     const finalModeUnlocked = personalWords >= FINAL_MODE_PERSONAL_WORDS
     const unlockShortage = Math.max(0, FINAL_MODE_PERSONAL_WORDS - personalWords)
@@ -3243,15 +3284,20 @@ export const mockReadings = {
         level === 'hard' && finalModeUnlocked ? FINAL_MODE_MAX_WORDS : limit.maxTargetWords
       // 本次请求算不算最终模式：hard + 超过 600 + 已解锁
       const active = level === 'hard' && targetWords > limit.maxTargetWords && finalModeUnlocked
+      // 词源兜底（md/60）：先按所选词源算，不够再从全部词汇补；判定口径同后端
+      const fallback = active ? null : buildVocabFallback(scope, available, usable.length, required)
+      const effectiveAvailable = available + (fallback?.supplemented || 0)
 
       levels[level] = {
         // A 门：最终模式不挑目标词，报 0 / true，免得前端显示「还差 N 个」
         required: active ? 0 : required,
-        sufficient: active || available >= required,
-        shortage: active ? 0 : Math.max(0, required - available),
+        sufficient: active || effectiveAvailable >= required,
+        shortage: active ? 0 : Math.max(0, required - effectiveAvailable),
         // 每档各自的候选池（后端 md/22 §3）：mock 不按难度选池，三档同值，
         // 只保证字段形状一致，前端一律读 levels[level].available
         available,
+        // 兜底记录只在该档真的补过词时出现；`available` 仍回所选词源的候选数
+        fallback,
         knownWords,
         personalWords,
         minKnown: active ? 0 : mockMinKnown(targetWords, level),

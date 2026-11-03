@@ -98,6 +98,33 @@ describe('Reading page', () => {
     expect(page.find('.used-words button.chip').exists()).toBe(false)
   })
 
+  it('should show the fallback message carried by the reading detail', async () => {
+    const page = await mountPage()
+    const store = useReadingStore()
+
+    // 常规阅读没有兜底记录：不占正文上方的位置
+    expect(page.find('.vocab-fallback-note').exists()).toBe(false)
+
+    // 刷新 / 历史直达时详情仍带同一句（md/60 §5.6），原样展示
+    store.reading = {
+      ...store.reading,
+      vocabFallback: {
+        used: true,
+        requestedScope: ['today_new'],
+        scopeAvailable: 0,
+        allAvailable: 20,
+        needed: 15,
+        supplemented: 15,
+        message: '「今天新学」没有可用词，已从「全部词汇」补充 15 个候选词。',
+      },
+    }
+    await flushPromises()
+
+    expect(page.get('.vocab-fallback-note').text()).toBe(
+      '「今天新学」没有可用词，已从「全部词汇」补充 15 个候选词。',
+    )
+  })
+
   it('should show the word count and the new-words entry in the title row', async () => {
     const page = await mountPage()
     const store = useReadingStore()

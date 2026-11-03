@@ -220,6 +220,32 @@ describe('capacityNoteOf', () => {
     expect(note.text).not.toContain('缩短')
   })
 
+  it('should prefer the backend fallback message when supplementation was not enough', () => {
+    // 后端补过词但仍不够（md/60）：它已经把「补了多少、还差多少」说清楚，
+    // 前端不要再拼一句「还差 N 个可用词」盖过去
+    const note = capacityNoteOf(
+      {
+        ...GATE,
+        available: 0,
+        sufficient: false,
+        shortage: 5,
+        fallback: {
+          used: true,
+          requestedScope: ['today_new'],
+          scopeAvailable: 0,
+          allAvailable: 10,
+          needed: 15,
+          supplemented: 10,
+          message: '「今天新学」没有可用词，已从「全部词汇」补充 10 个候选词，仍差 5 个。',
+        },
+      },
+      { targetWords: 100, scope: ['today_new'] },
+    )
+
+    expect(note.tone).toBe('warn')
+    expect(note.text).toBe('「今天新学」没有可用词，已从「全部词汇」补充 10 个候选词，仍差 5 个。')
+  })
+
   it('should keep the generic shortage note for the all-vocabulary scope', () => {
     const note = capacityNoteOf(
       { ...GATE, available: 0, sufficient: false, shortage: 10 },

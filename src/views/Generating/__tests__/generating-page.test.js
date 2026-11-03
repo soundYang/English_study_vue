@@ -197,6 +197,44 @@ describe('GeneratingPage', () => {
     expect(wrapper.findComponent(PaperStage).props('progress')).toEqual({ done: 3, total: 4 })
   })
 
+  it('should show the backend fallback message on the paper', async () => {
+    setGenerationHandoff({ level: 'easy', targetWords: 100, questionCount: 3 }, { from: '/' })
+
+    const { store } = await mountPage((reading) => {
+      reading.generate = vi.fn().mockResolvedValue(null)
+    })
+    await flushPromises()
+
+    store.task = {
+      stage: 'planning',
+      progress: { done: 0, total: 0 },
+      selectedWords: [],
+      vocabFallback: {
+        used: true,
+        requestedScope: ['today_new'],
+        scopeAvailable: 0,
+        allAvailable: 20,
+        needed: 15,
+        supplemented: 15,
+        message: '「今天新学」没有可用词，已从「全部词汇」补充 15 个候选词。',
+      },
+    }
+    await nextTick()
+
+    // 文案是后端给的，纸页原样展示；生成中途补词这件事不能静默
+    expect(wrapper.findComponent(PaperStage).props('fallbackMessage')).toContain(
+      '已从「全部词汇」补充',
+    )
+    expect(wrapper.get('.paper-fallback-note').text()).toBe(
+      '「今天新学」没有可用词，已从「全部词汇」补充 15 个候选词。',
+    )
+
+    store.task = { ...store.task, vocabFallback: { used: false, message: '不该显示' } }
+    await nextTick()
+
+    expect(wrapper.find('.paper-fallback-note').exists()).toBe(false)
+  })
+
   it('should let the paper announce success before entering the reading page', async () => {
     vi.useFakeTimers()
     setGenerationHandoff({ level: 'easy', targetWords: 100, questionCount: 3 }, { from: '/' })
