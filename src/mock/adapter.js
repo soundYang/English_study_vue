@@ -710,6 +710,32 @@ function toSafeReading(reading) {
   }
 }
 
+/**
+ * 逐段中文翻译，与后端 toResultDto 同口径：
+ * 优先用落库的 translations；老数据按空行拆 translation，段数一致才用，否则回 []。
+ */
+function mockTranslations(reading) {
+  const paragraphs = String(reading.article ?? '')
+    .split(/\n\s*\n/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+  if (!paragraphs.length) return []
+
+  const stored = (Array.isArray(reading.translations) ? reading.translations : [])
+    .map((item) => String(item ?? '').trim())
+    .filter(Boolean)
+
+  if (stored.length === paragraphs.length) return stored
+
+  const parts = String(reading.translation ?? '')
+    .split(/\n\s*\n/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+  return parts.length === paragraphs.length ? parts : []
+}
+
 function toFullResult(reading) {
   const { results, correctCount, totalQuestions, score } = scoreReading(reading)
 
@@ -732,6 +758,7 @@ function toFullResult(reading) {
     totalQuestions,
     accuracy: score,
     translation: reading.translation,
+    translations: mockTranslations(reading),
     results,
     vocabulary: [...reading.vocabulary],
     questions: reading.questions.map((question) => ({
@@ -3158,6 +3185,7 @@ function createReadingRecord(db, payload, available) {
     title: template.title,
     article: template.article,
     translation: template.translation,
+    translations: template.translations || [],
     level: payload.level,
     targetWords: payload.targetWords,
     questionCount: payload.questionCount,

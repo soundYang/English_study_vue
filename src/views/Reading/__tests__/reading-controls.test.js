@@ -102,6 +102,43 @@ describe('ArticleCard', () => {
     expect(payload.anchor).toBe(trigger.element)
   })
 
+  it('should render each Chinese translation directly under its own paragraph', () => {
+    const wrapper = mount(ArticleCard, {
+      props: {
+        title: 'Story',
+        article: ARTICLE,
+        translations: ['平静的开始。', '没有戏剧性的事情发生。'],
+      },
+    })
+
+    const blocks = wrapper.findAll('.article-block')
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0].get('.article-paragraph').text()).toContain('A quiet start.')
+    expect(blocks[0].get('.article-translation').text()).toBe('平静的开始。')
+    expect(blocks[1].get('.article-paragraph').text()).toContain('Nothing dramatic happened.')
+    expect(blocks[1].get('.article-translation').text()).toBe('没有戏剧性的事情发生。')
+  })
+
+  it('should skip only the missing Chinese paragraph without shifting the rest', () => {
+    const wrapper = mount(ArticleCard, {
+      props: {
+        title: 'Story',
+        article: ARTICLE,
+        translations: ['', '没有戏剧性的事情发生。'],
+      },
+    })
+
+    const blocks = wrapper.findAll('.article-block')
+    expect(blocks[0].find('.article-translation').exists()).toBe(false)
+    expect(blocks[1].get('.article-translation').text()).toBe('没有戏剧性的事情发生。')
+  })
+
+  it('should never render Chinese when translations are not passed', () => {
+    const wrapper = mount(ArticleCard, { props: { title: 'Story', article: ARTICLE } })
+
+    expect(wrapper.find('.article-translation').exists()).toBe(false)
+  })
+
   it('should keep the meta slot in the title row and hide the row without content', () => {
     const withSlot = mount(ArticleCard, {
       props: { title: 'Story', article: ARTICLE, wordCount: 40 },

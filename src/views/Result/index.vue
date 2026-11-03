@@ -55,6 +55,13 @@ const errorDescription = computed(() =>
     : loadError.value?.message || '网络出了点问题，请稍后重试。',
 )
 
+// 逐段中文翻译：与 article 段落一一对应。为空时退回旧的整段翻译面板，
+// 保证 2026-11 之前生成、没有 translations 的老文章仍能看到中文。
+const inlineTranslations = computed(() => {
+  const list = result.value?.translations
+  return Array.isArray(list) && list.length ? list : []
+})
+
 const reviewItems = computed(() => {
   const data = result.value
   if (!data) return []
@@ -183,10 +190,12 @@ function goHome() {
             :title="result.title"
             :article="result.article"
             :word-count="result.actualWords"
+            :translations="inlineTranslations"
             title-tag="h2"
           >
             <template #translation>
               <TranslationPanel
+                v-if="!inlineTranslations.length"
                 variant="embedded"
                 title-tag="h3"
                 :translation="result.translation"

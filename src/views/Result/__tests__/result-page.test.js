@@ -3,13 +3,14 @@
  * 覆盖已提交结果的完整渲染、答错题解析、未提交重定向、404 与再练一次。
  */
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent } from 'vue'
+import { defineComponent, nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { flushPromises, mount } from '@vue/test-utils'
 import ResultPage from '../index.vue'
 import { registerGuards } from '../../../router/guards'
 import { resetMockDb, setMockLatency } from '../../../mock/adapter'
+import { useReadingStore } from '../../../stores/model/reading'
 import { localStore, storageKeys } from '../../../unit/storage'
 
 const { startMock } = vi.hoisted(() => ({ startMock: vi.fn() }))
@@ -35,6 +36,10 @@ const HomeStub = defineComponent({
   name: 'HomeStub',
   template: '<div class="home-stub">home</div>',
 })
+
+// mock 种子 r2 的整篇中文；文章只有一段，逐段翻译就是这一条
+const seedTranslation =
+  '每天下午，汤姆都会走到那座旧花园的门前。门是木头做的，总是敞开着。门后有一座小公园，长着高大的树，还有一条安静的小路。汤姆带着他的书，坐在最高的那棵树下。他读到一个小男孩远行的故事。有时一个朋友会来找他，他们一起聊这个故事。太阳落山时，空气变凉了。汤姆合上书，向树木道别，然后走回家。这是简单的一天，却是美好的一天。'
 
 const originalMatchMedia = window.matchMedia
 
@@ -130,14 +135,19 @@ describe('Result page', () => {
     expect(wrapper.text()).toContain('本文含 2 个未学单词')
     expect(wrapper.get('.result-time').text()).toContain('本次生成消耗 904 tokens')
 
-    // 翻译嵌在文章卡内部、位于英文正文之后；不再有独立的翻译网格区
+    // 翻译逐段跟随英文：每段英文后面紧贴这一段的中文，不再额外渲染整段翻译面板
     const articleCard = wrapper.get('.article-card')
-    expect(articleCard.find('.translation-card').exists()).toBe(true)
-    expect(articleCard.get('.translation-card').classes()).toContain('is-embedded')
-    expect(articleCard.get('h3.translation-title').text()).toBe('中文翻译')
+    const blocks = articleCard.findAll('.article-block')
+    expect(blocks.length).toBeGreaterThan(0)
+    expect(articleCard.find('.translation-card').exists()).toBe(false)
     expect(wrapper.find('.translation-area').exists()).toBe(false)
-    expect(articleCard.html().indexOf('article-body')).toBeLessThan(
-      articleCard.html().indexOf('translation-card'),
+
+    const englishParagraphs = articleCard.findAll('.article-paragraph')
+    const chineseParagraphs = articleCard.findAll('.article-translation')
+    expect(chineseParagraphs).toHaveLength(englishParagraphs.length)
+    expect(chineseParagraphs[0].text()).toBe(seedTranslation)
+    expect(blocks[0].html().indexOf('article-paragraph')).toBeLessThan(
+      blocks[0].html().indexOf('article-translation'),
     )
 
     // 用词 chip 在结果页可点击
@@ -160,6 +170,21 @@ describe('Result page', () => {
     expect(wrongCard.text()).toContain('D. A neighbor')
     expect(wrongCard.text()).toContain('B. A friend')
     expect(wrongCard.text()).toContain('Sometimes a friend joins him')
+  })
+
+  it('should fall back to the whole translation panel for old results without translations', async () => {
+    const { wrapper } = await mountResult('/readings/r2/result')
+    const store = useReadingStore()
+
+    // 2026-11 之前落库的结果没有 translations，只能退回整段中文
+    store.result = { ...store.result, translations: [] }
+    await nextTick()
+
+    const articleCard = wrapper.get('.article-card')
+    expect(articleCard.find('.article-translation').exists()).toBe(false)
+    expect(articleCard.get('.translation-card').classes()).toContain('is-embedded')
+    expect(articleCard.get('h3.translation-title').text()).toBe('中文翻译')
+    expect(articleCard.text()).toContain(seedTranslation)
   })
 
   it('should redirect an unsubmitted result to the answering page', async () => {
