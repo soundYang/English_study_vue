@@ -20,6 +20,7 @@ import UsedWordsPanel from './component/UsedWordsPanel.vue'
 import ReadingHeader from './component/ReadingHeader.vue'
 import ReadingSkeleton from './component/ReadingSkeleton.vue'
 import SubmitBar from './component/SubmitBar.vue'
+import WordCheckPanel from './component/WordCheckPanel.vue'
 import { useAuthGate } from '../../composables/useAuthGate'
 import { useMediaQuery } from '../../composables/useMediaQuery'
 import { useReadingTimer } from '../../composables/useReadingTimer'
@@ -48,6 +49,8 @@ const isGuest = computed(() => !auth.isAuthenticated)
 const activePanel = ref('article')
 const unansweredOpen = ref(false)
 const exitOpen = ref(false)
+// 交卷前的单词确认面板（md/63 §3）：查询 / 改状态都在面板里完成，最后才提交
+const wordCheckOpen = ref(false)
 const questionColumn = ref(null)
 // 未学词清单默认收起，标题行只留一个胶囊入口
 const newWordsOpen = ref(false)
@@ -98,6 +101,34 @@ const unansweredTitle = computed(() => `还有 ${unansweredCount.value} 道题�
 const newWords = computed(() => store.reading?.newWords || [])
 // 本文用到的用户词（md/56 P2）：只含 word / count / kind，不查词库状态
 const usedWords = computed(() => store.reading?.usedWords || [])
+// 交卷前确认的范围：用到的词 + 未学词，按词形去重；释义只用于面板展示
+const checkWords = computed(() => {
+  const map = new Map()
+
+  usedWords.value.forEach((entry) => {
+    const word = String(entry?.word ?? '')
+      .trim()
+      .toLowerCase()
+    if (word && !map.has(word)) map.set(word, { word, meaning: '' })
+  })
+
+  newWords.value.forEach((entry) => {
+    const word = String(entry?.word ?? '')
+      .trim()
+      .toLowerCase()
+    if (!word) return
+
+    const meaning = (entry.senses || [])
+      .map((sense) => sense.meaning)
+      .filter(Boolean)
+      .join('；')
+
+    if (!map.has(word)) map.set(word, { word, meaning })
+    else if (meaning && !map.get(word).meaning) map.set(word, { word, meaning })
+  })
+
+  return [...map.values()]
+})
 // 自选词没被写进正文（分段降级可能漏词）：只提示，不触发修复（后端 md/54）
 const missingFocusWords = computed(() => store.reading?.focusWords?.missing || [])
 // 词源兜底（md/60）：生成时补过词，详情仍带同一句；刷新 / 历史直达也能看到
@@ -119,6 +150,7 @@ function activateReading() {
 function resetWordOverlays() {
   newWordsOpen.value = false
   detailTarget.value = null
+  wordCheckOpen.value = false
 }
 
 function handleWordClick({ entry, anchor }) {
@@ -202,10 +234,32 @@ function beginSubmit() {
     return
   }
 
-  submitNow()
+  openWordCheck()
 }
 
-async function submitNow() {
+function continueSubmit() {
+  unansweredOpen.value = false
+  openWordCheck()
+}
+
+// 本文没有词可确认时直接交卷，避免弹一个空面板
+function openWordCheck() {
+  if (isLocked.value) return
+
+  if (!checkWords.value.length) {
+    submitNow()
+    return
+  }
+
+  wordCheckOpen.value = true
+}
+
+function handleWordCheckSubmit({ changed = false } = {}) {
+  wordCheckOpen.value = false
+  submitNow({ applied: changed })
+}
+
+async function submitNow({ applied = false } = {}) {
   unansweredOpen.value = false
   if (store.submitting) return
 
@@ -217,7 +271,8 @@ async function submitNow() {
     return
   }
 
-  toast.error('提交失败，请重试')
+  // 状态已写入但交卷失败：必须说清楚哪些操作成功了，避免用户以为白改
+  toast.error(applied ? '单词状态已保存，提交失败，请重试' : '提交失败，请重试')
 }
 
 function askExit() {
@@ -359,9 +414,16 @@ function goHome() {
     >
       <template #footer>
         <BaseButton variant="secondary" @click="unansweredOpen = false">继续作答</BaseButton>
-        <BaseButton @click="submitNow">仍然提交</BaseButton>
+        <BaseButton @click="continueSubmit">仍然提交</BaseButton>
       </template>
     </BaseModal>
+
+    <WordCheckPanel
+      v-model:open="wordCheckOpen"
+      :words="checkWords"
+      :submitting="store.submitting"
+      @submit="handleWordCheckSubmit"
+    />
 
     <ConfirmDialog
       v-model:open="exitOpen"

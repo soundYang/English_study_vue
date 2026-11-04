@@ -15,15 +15,7 @@
  */
 import { computed, ref } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import {
-  BookOpen,
-  ChevronDown,
-  Clock,
-  Home,
-  Library,
-  NotebookPen,
-  UserRound,
-} from 'lucide-vue-next'
+import { BookOpen, ChevronDown, Clock, Home, NotebookPen, UserRound } from 'lucide-vue-next'
 import GenerateOverlay from '../component/GenerateOverlay.vue'
 import ToastHost from '../component/ToastHost.vue'
 import { usePageLayoutMode } from '../composables/usePageLayoutMode'
@@ -32,7 +24,6 @@ import { useAuthStore } from '../stores/model/auth'
 const navItems = [
   { key: 'home', label: '首页', to: '/', icon: Home },
   { key: 'words', label: '我的单词', to: '/words', icon: BookOpen },
-  { key: 'basic-words', label: '基础词汇', to: '/basic-words', icon: Library },
   { key: 'reading', label: '阅读训练', to: '/settings', icon: NotebookPen },
   { key: 'history', label: '历史记录', to: '/history', icon: Clock },
   { key: 'profile', label: '个人中心', to: '/profile', icon: UserRound },

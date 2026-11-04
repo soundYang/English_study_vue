@@ -198,6 +198,11 @@ describe('Reading page', () => {
     await findButton(page, '仍然提交').trigger('click')
     await flushPromises()
 
+    // 交卷前先确认单词（md/63 §3）：默认状态不改就直接确认
+    expect(page.text()).toContain('提交前确认单词')
+    await findButton(page, '确认并提交').trigger('click')
+    await flushPromises()
+
     expect(store.phase).toBe('submitted')
     expect(store.result.correctCount).toBe(0)
     expect(routerMocks.replace).toHaveBeenCalledWith({

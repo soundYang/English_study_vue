@@ -39,7 +39,7 @@ describe('words store', () => {
     const result = await store.fetchList()
 
     expect(result.ok).toBe(true)
-    expect(store.items).toHaveLength(10)
+    expect(store.items).toHaveLength(12)
     expect(store.total).toBe(24)
     expect(store.page).toBe(1)
     expect(store.studyCounts.all).toBe(24)
@@ -90,10 +90,10 @@ describe('words store', () => {
     const store = useWordsStore()
     await store.fetchList()
 
-    await store.goToPage(3)
+    await store.goToPage(2)
 
-    expect(store.page).toBe(3)
-    expect(store.items).toHaveLength(4)
+    expect(store.page).toBe(2)
+    expect(store.items).toHaveLength(12)
   })
 
   it('should add a normalized word at the top and refresh counts', async () => {
@@ -194,16 +194,16 @@ describe('words store', () => {
   it('should fall back to the previous page after the last row is deleted', async () => {
     const store = useWordsStore()
     await store.fetchList()
-    await store.goToPage(3)
+    await store.goToPage(2)
 
     const lastPageIds = store.items.map((item) => item.id)
     for (const id of lastPageIds) {
       await store.removeWord(id)
     }
 
-    expect(store.total).toBe(20)
-    expect(store.page).toBe(2)
-    expect(store.items).toHaveLength(10)
+    expect(store.total).toBe(12)
+    expect(store.page).toBe(1)
+    expect(store.items).toHaveLength(12)
   })
 })
 

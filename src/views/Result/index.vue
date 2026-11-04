@@ -5,7 +5,7 @@
  * 守卫负责预载与未提交重定向；本页在直接挂载时补充加载，并处理 404 / 网络错误。
  * 安全约束：翻译、正确答案与解析只在本页出现，全部使用文本插值。
  */
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from 'lucide-vue-next'
 import BaseButton from '../../component/BaseButton.vue'
@@ -18,7 +18,7 @@ import QuestionReview from './component/QuestionReview.vue'
 import ScoreSummary from './component/ScoreSummary.vue'
 import TranslationPanel from './component/TranslationPanel.vue'
 import { useAuthGate } from '../../composables/useAuthGate'
-import { useGenerateReading } from '../../composables/useGenerateReading'
+import { hasGenerationHandoff, setGenerationHandoff } from '../../composables/useGenerationHandoff'
 import { useAuthStore } from '../../stores/model/auth'
 import { useReadingStore } from '../../stores/model/reading'
 import { formatDateTime } from '../../unit/format'
@@ -28,7 +28,8 @@ const router = useRouter()
 const store = useReadingStore()
 const auth = useAuthStore()
 const { goLogin } = useAuthGate()
-const { isGenerating, start } = useGenerateReading()
+// 「再练一次」不发请求：只把同一组参数交给生成页，动画与请求都在 /generating 完成（md/55 §5.1）
+const retrying = ref(false)
 // 结果含答案与翻译，只属于账号数据：游客不请求，整页换成登录引导（md/45 §5.7）
 const isGuest = computed(() => !auth.isAuthenticated)
 
@@ -105,17 +106,23 @@ async function retryLoad() {
   }
 }
 
-async function retryPractice() {
+function retryPractice() {
   const current = result.value
-  if (!current || isGenerating.value) return
+  if (!current || retrying.value) return
 
-  const generated = await start({
-    level: current.level,
-    targetWords: current.targetWords,
-    questionCount: current.questionCount,
-  })
-
-  if (generated) router.push(`/readings/${generated.id}`)
+  // 交接单还没被取走说明上一次跳转仍在路上，不覆盖，避免连点发两次生成
+  if (!hasGenerationHandoff()) {
+    setGenerationHandoff(
+      {
+        level: current.level,
+        targetWords: current.targetWords,
+        questionCount: current.questionCount,
+      },
+      { from: route.fullPath },
+    )
+  }
+  retrying.value = true
+  router.push('/generating')
 }
 
 function goHistory() {
@@ -178,7 +185,7 @@ function goHome() {
         :score="result.score"
         :correct-count="result.correctCount"
         :total-questions="result.totalQuestions"
-        :retrying="isGenerating"
+        :retrying="retrying"
         @retry="retryPractice"
         @home="goHome"
         @history="goHistory"

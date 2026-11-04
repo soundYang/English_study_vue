@@ -62,8 +62,8 @@ describe('Words page · guest', () => {
 
     const store = useWordsStore()
 
-    expect(wrapper.findAll('tbody tr.word-row.is-masked')).toHaveLength(6)
-    expect(wrapper.findAll('tbody tr.word-row:not(.is-masked)')).toHaveLength(0)
+    expect(wrapper.findAll('.word-entry.is-masked')).toHaveLength(12)
+    expect(wrapper.findAll('.word-entry:not(.is-masked)')).toHaveLength(0)
     expect(wrapper.text()).toContain('登录后查看你的单词')
     // 游客不发 GET /words，store 保持未加载
     expect(store.hasLoaded).toBe(false)
@@ -80,7 +80,7 @@ describe('Words page · guest', () => {
   it('should send every write entry to the login page with the current path', async () => {
     const { router } = await mountPage()
 
-    const addButton = wrapper.findAll('button').find((button) => button.text() === '添加单词')
+    const addButton = wrapper.findAll('button').find((button) => button.text() === '写入新词')
     await addButton.trigger('click')
     await flushPromises()
 

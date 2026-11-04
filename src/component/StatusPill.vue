@@ -2,7 +2,7 @@
 /**
  * 状态胶囊
  *
- * 用途：展示学习状态（新词 / 复习中 / 已掌握 / 不认识）或阅读难度（简单 / 进阶 / 挑战）
+ * 用途：展示学习状态（新词 / 复习中 / 已掌握 / 已排除）或阅读难度（简单 / 进阶 / 挑战）
  * 用法：<StatusPill kind="status" value="reviewing" />
  *       <StatusPill kind="level" value="easy" />
  *
@@ -22,8 +22,8 @@ const STATUS_MAP = {
   new: { label: '新词', tone: 'info' },
   reviewing: { label: '复习中', tone: 'info' },
   mastered: { label: '已掌握', tone: 'success' },
-  // 基础词表里标「不认识」产生的墓碑词，单独一档；红色沿用改名前的语气
-  removed: { label: '不认识', tone: 'danger' },
+  // 「已排除」是过滤器语义，不是学习阶段；红色沿用排除警告的语气（md/55 §1）
+  removed: { label: '已排除', tone: 'danger' },
 }
 
 const LEVEL_MAP = {

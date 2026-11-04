@@ -36,4 +36,6 @@ export const mockReadings = unavailable('readings')
 
 export const mockQuota = unavailable('quota')
 
+export const mockWordBanks = unavailable('wordBanks')
+
 export const mockDictionary = unavailable('dictionary')

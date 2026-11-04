@@ -6,6 +6,12 @@
  */
 import { createSeedDatabase, READING_TEMPLATES } from './seed'
 import { findEntry } from './dictionary'
+import {
+  getMockWordBankCatalog,
+  isMockBankWord,
+  MOCK_BASIC_WORDS,
+  MOCK_WORD_BANK_BANDS,
+} from './word-banks'
 import { localStore, storageKeys } from '../unit/storage'
 import { countWords } from '../unit/format'
 import {
@@ -15,6 +21,7 @@ import {
   isValidWordStatus,
   LEVELS,
   normalizeVocabScope,
+  normalizeWord,
   TARGET_WORDS_MAX,
   TARGET_WORDS_MIN,
   TARGET_WORDS_STEP,
@@ -25,9 +32,10 @@ import {
   WORD_BATCH_MAX,
 } from '../unit/validators'
 
+// v5：新增词库导入记录（wordBankMemberships），「我的单词」DTO 带 wordBanks。
 // v4：单词新增 cocaRank（词频徽标要用）；v3 起练习带 newWords / tokenUsage。
 // 旧库判为无效并重建，保证本地能看到新 UI
-const DB_VERSION = 4
+const DB_VERSION = 5
 const DEFAULT_LATENCY = 300
 const MAX_PAGE_SIZE = 100
 const DEFAULT_PAGE_SIZE = 10
@@ -73,8 +81,9 @@ const USER_API_KEY_MAX = 128
 const USER_API_KEY_PATTERN = /^sk-[A-Za-z0-9_-]{16,120}$/
 const USER_API_KEY_MASK_PREFIX = 'sk-****'
 const USER_API_KEY_PROVIDERS = ['deepseek']
-// 添加单词优化（md/44）：上限、批量条数与文本长度都与后端 schema 同口径
-const WORD_LIBRARY_LIMIT = 5000
+// 添加单词优化（md/44）：上限、批量条数与文本长度都与后端 schema 同口径。
+// 词库总览的 remainingSlots 也用这个数：后端已把上限提到 8,000（md/22 §11.2）
+const WORD_LIBRARY_LIMIT = 8000
 const WORD_BATCH_TEXT_MAX = 32768
 
 /** 写 targetWords 词至少要认识多少词；与后端 capacity-table.js 的 minKnownFor 同构 */
@@ -227,6 +236,7 @@ function isValidDb(db) {
     Array.isArray(db.words) &&
     db.words.every(isValidWord) &&
     Array.isArray(db.readings) &&
+    Array.isArray(db.wordBankMemberships) &&
     Number.isInteger(db.wordSeq) &&
     Number.isInteger(db.readingSeq),
   )
@@ -325,7 +335,18 @@ function deriveStudyState(item, now = new Date()) {
   return created.toDateString() === now.toDateString() ? 'new' : 'reviewing'
 }
 
-function toWordDto(item, now = new Date()) {
+/**
+ * 这个词从哪些词库导入（md/22 §11.1）
+ *
+ * 只看导入记录：用户原本就在词库里的词（如 analysis）即使出现在目录里，
+ * 也不会带词库标签，重置时更不会被误删。
+ */
+function wordBanksOf(db, word) {
+  const memberships = db?.wordBankMemberships || []
+  return memberships.filter((item) => item.word === word).map((item) => item.bank)
+}
+
+function toWordDto(item, now = new Date(), db = null) {
   return {
     id: item.id,
     word: item.word,
@@ -345,6 +366,8 @@ function toWordDto(item, now = new Date()) {
     nextReviewAt: item.nextReviewAt ?? null,
     lapseCount: item.lapseCount ?? 0,
     lastReviewedAt: item.lastReviewedAt ?? null,
+    // 非导入词恒为 []；老数据没有记录也按 [] 处理（md/22 §11.1）
+    wordBanks: wordBanksOf(db, item.word),
   }
 }
 
@@ -2175,7 +2198,7 @@ export const mockWords = {
     const paged = paginate(filtered, page, pageSize)
 
     return {
-      items: paged.items.map((item) => toWordDto(item, now)),
+      items: paged.items.map((item) => toWordDto(item, now, db)),
       total: filtered.length,
       page: paged.page,
       pageSize: paged.pageSize,
@@ -2272,7 +2295,13 @@ export const mockWords = {
       action = 'created'
     }
 
-    return withWordMutationMeta(toWordDto(item), action, duplicate, db, payload.includeCounts)
+    return withWordMutationMeta(
+      toWordDto(item, new Date(), db),
+      action,
+      duplicate,
+      db,
+      payload.includeCounts,
+    )
   },
 
   /**
@@ -2580,7 +2609,7 @@ export const mockWords = {
       skipped,
       failed: errors.length,
       total: entries.length,
-      items: items.map((item) => toWordDto(item)),
+      items: items.map((item) => toWordDto(item, new Date(), db)),
       skippedItems,
       errors,
     }
@@ -2760,7 +2789,7 @@ export const mockWords = {
     db.words[index] = updated
     writeDb(db)
 
-    return toWordDto(updated)
+    return toWordDto(updated, new Date(), db)
   },
 
   async remove(id) {
@@ -2774,6 +2803,8 @@ export const mockWords = {
     }
 
     const [removed] = db.words.splice(index, 1)
+    // 与后端一致：手动删词时同时删导入记录，词库概要的 imported 才不会长期偏大
+    db.wordBankMemberships = db.wordBankMemberships.filter((item) => item.word !== removed.word)
     writeDb(db)
 
     // 阅读中的词汇快照是独立数组，删除单词不会影响历史记录
@@ -2827,7 +2858,7 @@ export const mockWords = {
         remaining: due.length,
         today: Math.min(due.length, DAILY_REVIEW_LIMIT),
         doneToday,
-        words: due.slice(0, DAILY_REVIEW_LIMIT).map((item) => toWordDto(item, now)),
+        words: due.slice(0, DAILY_REVIEW_LIMIT).map((item) => toWordDto(item, now, db)),
       },
     }
   },
@@ -2861,7 +2892,7 @@ export const mockWords = {
     writeDb(db)
     bumpMockStudyDay({ reviewed: 1, mastered, at: now })
 
-    return toWordDto(item, now)
+    return toWordDto(item, now, db)
   },
 
   /**
@@ -2915,7 +2946,7 @@ export const mockWords = {
 
       mastered += applyMockReview(item, result, now)
       updated += 1
-      words.push(toWordDto(item, now))
+      words.push(toWordDto(item, now, db))
     }
 
     writeDb(db)
@@ -2994,7 +3025,7 @@ export const mockWords = {
 
       Object.assign(item, decision.update)
       updated += 1
-      words.push(toWordDto(item, now))
+      words.push(toWordDto(item, now, db))
       plan.push({ id, word: item.word, toStudyState: deriveStudyState(item, now) })
     }
 
@@ -3068,6 +3099,449 @@ export const mockWords = {
       mastery: { count: masteredWords.length, avgStage },
       pendingReview: collectMockDueWords(db, now).length,
       heatmap,
+    }
+  },
+}
+
+/* ------------------------------------------------------------------ */
+/* 可选词库（md/22 §11、md/55 §6）                                    */
+/* ------------------------------------------------------------------ */
+
+const MOCK_BANK_KEYS = new Set(Object.keys(MOCK_WORD_BANK_BANDS))
+// 单次导入上限与后端 addWordsToBankSchema 一致
+const BANK_IMPORT_MAX = 500
+const BANK_STATUS_MAX = 200
+const BANK_STATUS_TARGETS = ['new', 'learning', 'mastered', 'removed', 'restore']
+
+/** 404：词库 key 不在 high / mid 里 */
+function assertMockBank(bank) {
+  if (!MOCK_BANK_KEYS.has(bank)) {
+    throw new MockApiError('WORD_BANK_NOT_FOUND', '词库不存在', 404)
+  }
+  return bank
+}
+
+function mockBankCatalogOf(bank) {
+  return getMockWordBankCatalog(findEntry)[bank] || []
+}
+
+/** 个人词库里的有效词数：与 list / 导入名额口径一致，不含基础词墓碑 */
+function mockLibraryCount(db) {
+  return db.words.filter((item) => item.source !== 'basic-removed').length
+}
+
+function mockBankMembershipsOf(db, bank) {
+  return (db.wordBankMemberships || []).filter((item) => item.bank === bank)
+}
+
+function mockImportedSetOf(db, bank) {
+  return new Set(mockBankMembershipsOf(db, bank).map((item) => item.word))
+}
+
+/** 目录项 + 个人状态，字段与后端 listWordBankWords 完全对齐 */
+function toBankWordDto(item, doc, now, importedSet) {
+  return {
+    word: item.word,
+    rank: item.rank,
+    phonetic: {
+      uk: item.entry.phonetic?.uk ?? null,
+      us: item.entry.phonetic?.us ?? null,
+    },
+    senses: (item.entry.senses || []).map((sense) => ({
+      pos: sense.pos ?? '',
+      meaning: sense.meaning,
+    })),
+    summary: buildSummary(item.entry.senses),
+    dictionaryId: item.entry.id ?? null,
+    // inLibrary 看的是个人词库有没有这个词；imported 只看导入记录
+    inLibrary: Boolean(doc),
+    wordId: doc?.id ?? null,
+    personalStatus: doc?.status ?? null,
+    personalStudyState: doc ? deriveStudyState(doc, now) : null,
+    imported: importedSet.has(item.word),
+  }
+}
+
+function mockPositiveInt(value, fallback, { field, min, max } = {}) {
+  if (value === undefined || value === null || value === '') return fallback
+
+  const parsed = Number(value)
+  if (
+    !Number.isInteger(parsed) ||
+    (min !== undefined && parsed < min) ||
+    (max !== undefined && parsed > max)
+  ) {
+    throw new MockApiError('INVALID_REQUEST', `${field} 取值不合法`, 400, field)
+  }
+
+  return parsed
+}
+
+/**
+ * 可选词库接口
+ *
+ * 与后端五个路由同口径，供 mock 模式下把「总览 → 挑选 → 导入 → 批量改状态 → 重置」
+ * 整条链路走通。mock 只有一份演示数据，不做多用户隔离，导入记录直接挂在 db 上。
+ */
+export const mockWordBanks = {
+  /** GET /api/word-banks */
+  async list() {
+    await wait(latency)
+
+    const db = readDb()
+    const currentCount = mockLibraryCount(db)
+    const remainingSlots = Math.max(0, WORD_LIBRARY_LIMIT - currentCount)
+    const libraryWords = new Set(db.words.map((item) => item.word))
+
+    return {
+      banks: Object.entries(MOCK_WORD_BANK_BANDS).map(([key, band]) => {
+        const catalog = mockBankCatalogOf(key)
+        const memberships = mockBankMembershipsOf(db, key)
+
+        return {
+          key,
+          label: band.label,
+          rankMin: band.min,
+          rankMax: band.max,
+          total: catalog.length,
+          importedInLibrary: memberships.filter((item) => libraryWords.has(item.word)).length,
+          imported: memberships.length,
+          remainingSlots,
+        }
+      }),
+    }
+  },
+
+  /** GET /api/word-banks/:bank/words */
+  async words(bank, params = {}) {
+    await wait(latency)
+
+    assertMockBank(bank)
+    const db = readDb()
+    const catalog = mockBankCatalogOf(bank)
+    const pageSize = mockPositiveInt(params.pageSize, 50, {
+      field: 'pageSize',
+      min: 1,
+      max: 100,
+    })
+    const filter = params.filter ?? 'all'
+    if (!['all', 'imported', 'not_imported'].includes(filter)) {
+      throw new MockApiError(
+        'INVALID_REQUEST',
+        'filter 只能是 all / imported / not_imported',
+        400,
+        'filter',
+      )
+    }
+
+    const keyword = String(params.q ?? '')
+      .trim()
+      .toLowerCase()
+    if (keyword.length > 50) {
+      throw new MockApiError('INVALID_REQUEST', '搜索词最长 50 个字符', 400, 'q')
+    }
+
+    let rows = keyword
+      ? catalog.filter(
+          (item) =>
+            item.word.includes(keyword) ||
+            (item.entry.senses || []).some((sense) =>
+              String(sense.meaning ?? '')
+                .toLowerCase()
+                .includes(keyword),
+            ),
+        )
+      : catalog
+
+    const importedSet = mockImportedSetOf(db, bank)
+    if (filter !== 'all') {
+      rows =
+        filter === 'imported'
+          ? rows.filter((item) => importedSet.has(item.word))
+          : rows.filter((item) => !importedSet.has(item.word))
+    }
+
+    const total = rows.length
+    const lastPage = Math.max(1, Math.ceil(total / pageSize))
+    const page = Math.min(mockPositiveInt(params.page, 1, { field: 'page', min: 1 }), lastPage)
+    const pageRows = rows.slice((page - 1) * pageSize, page * pageSize)
+    const now = new Date()
+
+    return {
+      bank: { key: bank, label: MOCK_WORD_BANK_BANDS[bank].label, total: catalog.length },
+      items: pageRows.map((item) => {
+        const doc = db.words.find((word) => word.word === item.word) || null
+        return toBankWordDto(item, doc, now, importedSet)
+      }),
+      page,
+      pageSize,
+      total,
+    }
+  },
+
+  /** POST /api/word-banks/:bank/add */
+  async add(bank, body = {}) {
+    await wait(latency)
+
+    assertMockBank(bank)
+    const db = readDb()
+    const catalog = mockBankCatalogOf(bank)
+    const all = body.all === true
+    const status = body.status ?? 'learning'
+    if (!['new', 'learning'].includes(status)) {
+      throw new MockApiError('INVALID_REQUEST', 'status 只能是 new / learning', 400, 'status')
+    }
+
+    const limit = mockPositiveInt(body.limit, BANK_IMPORT_MAX, {
+      field: 'limit',
+      min: 1,
+      max: BANK_IMPORT_MAX,
+    })
+    const cursor = mockPositiveInt(body.cursor, 0, { field: 'cursor', min: 0 })
+    const rawWords = body.words ?? []
+    if (!Array.isArray(rawWords)) {
+      throw new MockApiError('INVALID_REQUEST', 'words 必须是数组', 400, 'words')
+    }
+    if (!all && rawWords.length === 0) {
+      throw new MockApiError('INVALID_REQUEST', 'words 不能为空', 400, 'words')
+    }
+    if (rawWords.length > BANK_IMPORT_MAX) {
+      throw new MockApiError('INVALID_REQUEST', `一次最多 ${BANK_IMPORT_MAX} 个词`, 400, 'words')
+    }
+
+    // 1. 选出本轮候选，并记录显式选词为什么没进目录
+    let candidates
+    let nextCursor = cursor
+    let done = true
+    const skipped = []
+
+    if (all) {
+      const end = Math.min(cursor + limit, catalog.length)
+      candidates = catalog.slice(cursor, end)
+      done = end >= catalog.length
+    } else {
+      const requested = []
+      const seen = new Set()
+
+      for (const raw of rawWords) {
+        const word = normalizeWord(raw)
+
+        if (!isMockBankWord(word)) {
+          skipped.push({ word, reason: 'INVALID_WORD' })
+          continue
+        }
+        if (!seen.has(word)) {
+          seen.add(word)
+          requested.push(word)
+        }
+      }
+
+      const inCatalog = new Set(catalog.map((item) => item.word))
+      candidates = catalog.filter((item) => seen.has(item.word))
+
+      for (const word of requested) {
+        if (inCatalog.has(word)) continue
+        skipped.push({
+          word,
+          reason: MOCK_BASIC_WORDS.has(word) ? 'BASIC_WORD_EXCLUDED' : 'NOT_IN_BANK',
+        })
+      }
+
+      done = true
+    }
+
+    // 2. 已有个人记录 / 已有导入记录
+    const candidateWords = new Set(candidates.map((item) => item.word))
+    const docByWord = new Map(
+      db.words.filter((item) => candidateWords.has(item.word)).map((item) => [item.word, item]),
+    )
+    const importedSet = mockImportedSetOf(db, bank)
+
+    // 3. 名额：与后端一样两个词库共用个人词库上限
+    let remainingSlots = Math.max(0, WORD_LIBRARY_LIMIT - mockLibraryCount(db))
+
+    // 4. 分类
+    const creates = []
+    const existing = []
+    const alreadyImported = []
+    let exhausted = false
+    let processed = 0
+
+    for (const item of candidates) {
+      const doc = docByWord.get(item.word)
+
+      if (doc) {
+        // 用户原本就有的词绝不补导入记录，否则重置会误删
+        if (importedSet.has(item.word)) alreadyImported.push(item)
+        else existing.push(item)
+        processed += 1
+        continue
+      }
+
+      if (remainingSlots <= 0) {
+        exhausted = true
+        break
+      }
+
+      creates.push(item)
+      remainingSlots -= 1
+      processed += 1
+    }
+
+    if (all) nextCursor = cursor + processed
+
+    // 5. 先写导入记录，再建词：与后端的 intent → effect 顺序保持一致
+    creates.forEach((item) => {
+      db.wordBankMemberships.push({
+        word: item.word,
+        bank,
+        importedAt: new Date().toISOString(),
+        addedBy: all ? 'bulk' : 'manual',
+      })
+    })
+
+    creates.forEach((item) => {
+      db.wordSeq += 1
+      db.words.push(
+        makeWordRecord(db, {
+          word: item.word,
+          status,
+          source: 'dictionary',
+          dictionaryId: item.entry.id,
+          phonetic: item.entry.phonetic,
+          senses: item.entry.senses,
+          cocaRank: item.rank,
+        }),
+      )
+    })
+
+    writeDb(db)
+
+    const libraryCount = mockLibraryCount(db)
+    return {
+      bank,
+      requested: candidates.length,
+      created: creates.length,
+      existing: existing.length,
+      alreadyImported: alreadyImported.length,
+      failed: 0,
+      skipped,
+      nextCursor,
+      done: done && !exhausted,
+      limitReached: exhausted,
+      remainingSlots: Math.max(0, WORD_LIBRARY_LIMIT - libraryCount),
+      counts: {
+        library: libraryCount,
+        imported: mockBankMembershipsOf(db, bank).length,
+      },
+    }
+  },
+
+  /** POST /api/word-banks/:bank/status/batch */
+  async batchStatus(bank, body = {}) {
+    await wait(latency)
+
+    assertMockBank(bank)
+    const db = readDb()
+    const rawWords = body.words
+    const target = body.target
+
+    if (!Array.isArray(rawWords) || rawWords.length === 0) {
+      throw new MockApiError('INVALID_REQUEST', '至少选择 1 个词', 400, 'words')
+    }
+    if (rawWords.length > BANK_STATUS_MAX) {
+      throw new MockApiError('INVALID_REQUEST', `一次最多 ${BANK_STATUS_MAX} 个词`, 400, 'words')
+    }
+    if (!BANK_STATUS_TARGETS.includes(target)) {
+      throw new MockApiError(
+        'INVALID_REQUEST',
+        'target 只能是 new / learning / mastered / removed / restore',
+        400,
+        'target',
+      )
+    }
+    if (body.dryRun !== undefined && typeof body.dryRun !== 'boolean') {
+      throw new MockApiError('INVALID_REQUEST', 'dryRun 必须是布尔值', 400, 'dryRun')
+    }
+
+    const normalized = [...new Set(rawWords.map((word) => normalizeWord(word)))]
+    const memberSet = new Set(
+      mockBankMembershipsOf(db, bank)
+        .map((item) => item.word)
+        .filter((word) => normalized.includes(word)),
+    )
+    const notInBank = normalized.filter((word) => !memberSet.has(word))
+
+    if (!memberSet.size) {
+      return {
+        target,
+        dryRun: body.dryRun === true,
+        requested: 0,
+        updated: 0,
+        unchanged: 0,
+        skipped: [],
+        ...(body.dryRun === true
+          ? { plan: [] }
+          : { words: [], studyCounts: countWordsByStudyState(db.words) }),
+        bank,
+        notInBank,
+      }
+    }
+
+    const ids = db.words.filter((item) => memberSet.has(item.word)).map((item) => item.id)
+
+    // 真正的状态迁移与单词页共用同一份实现，避免两套规则
+    const result = ids.length
+      ? await mockWords.batchUpdateStatus({ ids, target, dryRun: body.dryRun === true })
+      : {
+          target,
+          dryRun: body.dryRun === true,
+          requested: 0,
+          updated: 0,
+          unchanged: 0,
+          skipped: [],
+          ...(body.dryRun === true
+            ? { plan: [] }
+            : { words: [], studyCounts: countWordsByStudyState(db.words) }),
+        }
+
+    return { ...result, bank, notInBank }
+  },
+
+  /** POST /api/word-banks/:bank/reset */
+  async reset(bank, body = {}) {
+    await wait(latency)
+
+    assertMockBank(bank)
+    if (body.confirm !== true) {
+      throw new MockApiError('INVALID_REQUEST', '请确认重置该词库', 400, 'confirm')
+    }
+
+    const db = readDb()
+    const memberships = mockBankMembershipsOf(db, bank)
+    const words = new Set(memberships.map((item) => item.word))
+    const protectedWords = new Set(
+      (db.wordBankMemberships || [])
+        .filter((item) => item.bank !== bank && words.has(item.word))
+        .map((item) => item.word),
+    )
+    const docs = db.words.filter((item) => words.has(item.word))
+    const deletable = new Set(
+      docs.filter((item) => !protectedWords.has(item.word)).map((item) => item.word),
+    )
+
+    if (deletable.size) {
+      db.words = db.words.filter((item) => !deletable.has(item.word))
+    }
+
+    db.wordBankMemberships = (db.wordBankMemberships || []).filter((item) => item.bank !== bank)
+    writeDb(db)
+
+    return {
+      bank,
+      removedWords: deletable.size,
+      keptWords: docs.length - deletable.size,
+      removedMemberships: memberships.length,
     }
   },
 }

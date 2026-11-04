@@ -5,11 +5,11 @@
  * 接口语义在 api/words.js 与 mock adapter 里，视图不做业务判断。
  */
 
-/** 普通标签页可改到的目标；「不认识」页只能恢复 */
+/** 普通标签页可改到的目标；「已排除」页只能恢复 */
 const DEFAULT_TARGETS = Object.freeze([
   { value: 'learning', label: '复习中' },
   { value: 'mastered', label: '已掌握' },
-  { value: 'removed', label: '不认识' },
+  { value: 'removed', label: '已排除' },
 ])
 
 const REMOVED_TARGETS = Object.freeze([{ value: 'restore', label: '恢复' }])
@@ -18,7 +18,7 @@ const TARGET_LABELS = Object.freeze({
   new: '新词',
   learning: '复习中',
   mastered: '已掌握',
-  removed: '不认识',
+  removed: '已排除',
   restore: '恢复',
 })
 

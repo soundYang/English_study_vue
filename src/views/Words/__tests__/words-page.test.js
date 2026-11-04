@@ -1,6 +1,6 @@
 /**
  * 我的单词页面测试
- * 覆盖首屏列表与统计、搜索/无结果/清除搜索、添加与删除的完整交互；
+ * 覆盖书页渲染、搜索 / 空态、详情与写词纸页、删除与批量改状态；
  * 使用真实 mock adapter（延迟 0），不依赖 300ms 等待。
  */
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -23,7 +23,6 @@ beforeEach(() => {
   setMockLatency(0)
 })
 
-// 详情浮层要靠 isConnected 判断锚点还在不在，所以页面必须挂到真实文档上
 afterEach(() => {
   if (wrapper) wrapper.unmount()
   wrapper = null
@@ -43,6 +42,7 @@ async function mountPage() {
     routes: [
       { path: '/words', name: 'words', component: { template: '<div />' } },
       { path: '/words/review', name: 'words-review', component: { template: '<div />' } },
+      { path: '/words/banks', name: 'words-banks', component: { template: '<div />' } },
     ],
   })
   await router.push('/words')
@@ -59,24 +59,37 @@ async function mountPage() {
   return wrapper
 }
 
-describe('Words page', () => {
-  it('should render the first page and the accumulated total', async () => {
-    const wrapper = await mountPage()
+function entries() {
+  return wrapper.findAll('.word-entry')
+}
 
-    expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(10)
+async function openWritePage() {
+  await wrapper.get('button.add-button').trigger('click')
+  await flushPromises()
+}
+
+describe('Words page', () => {
+  it('should render a two-page book with 12 entries and the accumulated total', async () => {
+    await mountPage()
+
+    expect(wrapper.findAll('.book-page')).toHaveLength(2)
+    expect(entries()).toHaveLength(12)
     expect(wrapper.text()).toContain('24')
     expect(wrapper.text()).toContain('共 24 条')
+    // 一摊两页，每页 6 条
+    expect(wrapper.get('.book-page--left').findAll('.word-entry')).toHaveLength(6)
+    expect(wrapper.get('.book-page--right').findAll('.word-entry')).toHaveLength(6)
   })
 
   it('should search, show the no-result state and clear the keyword', async () => {
-    const wrapper = await mountPage()
+    await mountPage()
     const input = wrapper.get('input[type="search"]')
 
     await input.setValue('appl')
     await input.trigger('keydown', { key: 'Enter' })
     await flushPromises()
 
-    expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(1)
+    expect(entries()).toHaveLength(1)
     expect(wrapper.text()).toContain('apple')
     expect(wrapper.text()).toContain('找到 1 个单词')
 
@@ -91,51 +104,49 @@ describe('Words page', () => {
     await flushPromises()
 
     expect(input.element.value).toBe('')
-    expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(10)
+    expect(entries()).toHaveLength(12)
   })
 
   // 已掌握 / 复习中都要覆盖：两个标签走的是同一条 fetchList，
-  // 但列表长度不同（11 / 13），曾经在点标签时整表换成骨架屏而闪一下。
-  // 标签页按 studyState 分档（md/22 第 96 行）：全部 / 新词 / 复习中 / 已掌握 / 不认识
+  // 但列表长度不同，曾经在点标签时整块换成骨架屏而闪一下。
   it.each([
     ['复习中', 2, 'reviewing'],
     ['已掌握', 3, 'mastered'],
-  ])('should keep the current rows while switching to %s', async (_, tabIndex, study) => {
-    const wrapper = await mountPage()
+  ])('should keep the current entries while switching to %s', async (_, tabIndex, study) => {
+    await mountPage()
     const store = useWordsStore()
-    const rows = wrapper.findAll('tbody tr.word-row')
+    const rows = entries()
 
-    expect(rows).toHaveLength(10)
+    expect(rows).toHaveLength(12)
     const firstRow = rows[0].element
 
-    // 真实网络下切换状态需要时间：这段时间继续显示旧行，
-    // 不能整表换成骨架屏，否则每点一次标签都会闪一下。
+    // 真实网络下切换状态需要时间：这段时间继续显示旧词条，
+    // 不能整块换成骨架屏，否则每点一次标签都会闪一下。
     setMockLatency(60)
-    await wrapper.findAll('[role="radio"]')[tabIndex].trigger('click')
+    await wrapper.findAll('.status-chip')[tabIndex].trigger('click')
 
     expect(store.study).toBe(study)
-    expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
-    // 旧行还是同一批 DOM 节点，没有被重建
-    expect(wrapper.findAll('tbody tr.word-row')[0].element).toBe(firstRow)
-    // 底部分页也不能在加载中被抽走，否则页面高度会抖一下
+    expect(wrapper.findAll('.skeleton-line')).toHaveLength(0)
+    // 旧词条还是同一批 DOM 节点，没有被重建
+    expect(entries()[0].element).toBe(firstRow)
+    // 底部也不能在加载中被抽走，否则页面高度会抖一下
     expect(wrapper.find('.list-footer').exists()).toBe(true)
 
     await new Promise((resolve) => setTimeout(resolve, 80))
     await flushPromises()
 
     expect(store.items.every((item) => item.studyState === study)).toBe(true)
-    expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(store.items.length)
-    expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
+    expect(entries()).toHaveLength(store.items.length)
+    expect(wrapper.findAll('.skeleton-line')).toHaveLength(0)
   })
 
   // 用户反馈的场景：两个标签都为空，点标签时页面仍会闪一下。
-  // 原因是旧列表为空时页面挂上了列表骨架，回来后又变回空态。
-  // 种子数据里「新词」「不认识」天然都是空的（没有今天的词、没有墓碑），不用造数据
+  // 种子数据里「新词」「已排除」天然都是空的（没有今天的词、没有墓碑）
   it('should keep the empty state when switching between two empty tabs', async () => {
-    const wrapper = await mountPage()
+    await mountPage()
     const store = useWordsStore()
 
-    await wrapper.findAll('[role="radio"]')[1].trigger('click')
+    await wrapper.findAll('.status-chip')[1].trigger('click')
     await flushPromises()
 
     expect(store.hasItems).toBe(false)
@@ -143,54 +154,54 @@ describe('Words page', () => {
     const emptyElement = wrapper.get('.words-empty').element
 
     setMockLatency(60)
-    await wrapper.findAll('[role="radio"]')[4].trigger('click')
+    await wrapper.get('.status-excluded').trigger('click')
 
     expect(store.study).toBe('removed')
-    // 「不认识」是排除标记：切过去时常驻一行说明，别让用户以为是学习阶段
-    expect(wrapper.get('.status-hint').text()).toContain('排除标记')
-    // 空态切空态：不能挂上列表骨架，原来的空态节点保持不动
-    expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
-    expect(wrapper.find('.word-table-wrap').exists()).toBe(false)
+    // 「已排除」是排除标记：切过去时常驻一行说明，别让用户以为是学习阶段
+    expect(wrapper.get('.status-hint').text()).toContain('不会用于生成文章')
+    // 空态切空态：不能挂上骨架，原来的空态节点保持不动
+    expect(wrapper.findAll('.skeleton-line')).toHaveLength(0)
+    expect(wrapper.find('.word-book').exists()).toBe(false)
     expect(wrapper.get('.words-empty').element).toBe(emptyElement)
 
     await new Promise((resolve) => setTimeout(resolve, 80))
     await flushPromises()
 
     expect(store.hasItems).toBe(false)
-    expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
+    expect(wrapper.findAll('.skeleton-line')).toHaveLength(0)
     expect(wrapper.get('.words-empty').element).toBe(emptyElement)
-    expect(wrapper.text()).toContain('还没有标记「不认识」的词')
+    expect(wrapper.text()).toContain('还没有已排除的词')
   })
 
-  it('should keep the empty state until rows arrive when switching to a non-empty tab', async () => {
-    const wrapper = await mountPage()
+  it('should keep the empty state until entries arrive when switching to a non-empty tab', async () => {
+    await mountPage()
     const store = useWordsStore()
 
-    await wrapper.findAll('[role="radio"]')[1].trigger('click')
+    await wrapper.findAll('.status-chip')[1].trigger('click')
     await flushPromises()
 
     expect(store.hasItems).toBe(false)
     const emptyElement = wrapper.get('.words-empty').element
 
     setMockLatency(60)
-    await wrapper.findAll('[role="radio"]')[2].trigger('click')
+    await wrapper.findAll('.status-chip')[2].trigger('click')
 
-    // 空态 → 有数据：加载中仍显示空态，不闪骨架，也不留下半张空表格
+    // 空态 → 有数据：加载中仍显示空态，不闪骨架
     expect(store.study).toBe('reviewing')
-    expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
+    expect(wrapper.findAll('.skeleton-line')).toHaveLength(0)
     expect(wrapper.get('.words-empty').element).toBe(emptyElement)
 
     await new Promise((resolve) => setTimeout(resolve, 80))
     await flushPromises()
 
     expect(store.items.length).toBeGreaterThan(0)
-    expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(store.items.length)
-    expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
+    expect(entries()).toHaveLength(store.items.length)
+    expect(wrapper.findAll('.skeleton-line')).toHaveLength(0)
     expect(wrapper.find('.words-empty').exists()).toBe(false)
   })
 
   it('should keep the empty copy while reloading after a search is cleared', async () => {
-    const wrapper = await mountPage()
+    await mountPage()
     const input = wrapper.get('input[type="search"]')
 
     await input.setValue('zzzz')
@@ -204,54 +215,60 @@ describe('Words page', () => {
     await clearButton.trigger('click')
 
     // 加载期间继续显示点击前看到的空态文案，不会先变成「还没有单词」再换列表
-    expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
+    expect(wrapper.findAll('.skeleton-line')).toHaveLength(0)
     expect(wrapper.text()).toContain('没有找到匹配的单词')
     expect(wrapper.text()).not.toContain('还没有单词')
 
     await new Promise((resolve) => setTimeout(resolve, 80))
     await flushPromises()
 
-    expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(10)
+    expect(entries()).toHaveLength(12)
     expect(wrapper.find('.words-empty').exists()).toBe(false)
   })
 
   it('should still show the skeleton on the first load', async () => {
     setMockLatency(60)
-    const wrapper = await mountPage()
+    await mountPage()
 
     // 还没有任何成功结果，首次进入照常出骨架
-    expect(wrapper.findAll('tbody tr.skeleton-row').length).toBeGreaterThan(0)
+    expect(wrapper.findAll('.skeleton-line').length).toBeGreaterThan(0)
 
     await new Promise((resolve) => setTimeout(resolve, 80))
     await flushPromises()
 
-    expect(wrapper.findAll('tbody tr.skeleton-row')).toHaveLength(0)
-    expect(wrapper.findAll('tbody tr.word-row')).toHaveLength(10)
+    expect(wrapper.findAll('.skeleton-line')).toHaveLength(0)
+    expect(entries()).toHaveLength(12)
   })
 
-  it('should show the word detail when the word itself is clicked', async () => {
-    const wrapper = await mountPage()
-    const trigger = wrapper.findAll('tbody .word-text')[0]
+  it('should open the detail page when a word is clicked and return to the book', async () => {
+    await mountPage()
+    const trigger = entries()[0].get('.entry-word')
     const word = trigger.text()
 
     await trigger.trigger('click')
     await flushPromises()
 
-    const panel = wrapper.get('.detail-popover')
-    expect(panel.get('.detail-word').text()).toBe(word)
-    expect(panel.text()).toContain('来源')
-    expect(panel.text()).toContain('收录')
-    expect(trigger.attributes('aria-expanded')).toBe('true')
+    const page = wrapper.get('.word-detail-page')
+    expect(page.get('.detail-word').text()).toBe(word)
+    expect(page.text()).toContain('词义')
+    expect(page.text()).toContain('词库来源')
+    expect(page.text()).toContain('收录日期')
+    // 列表被整页替换
+    expect(wrapper.find('.book-spread').exists()).toBe(false)
 
-    await trigger.trigger('click')
+    await page.get('.back-link').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('.detail-popover').exists()).toBe(false)
+    expect(wrapper.find('.word-detail-page').exists()).toBe(false)
+    expect(wrapper.find('.book-spread').exists()).toBe(true)
   })
 
-  it('should add a word from the side form and highlight it', async () => {
-    const wrapper = await mountPage()
+  it('should add a word from the write page and return to the book', async () => {
+    await mountPage()
     const toasts = useToastStore()
+
+    await openWritePage()
+    expect(wrapper.find('.word-write-page').isVisible()).toBe(true)
 
     await wrapper.get('input[name="word"]').setValue('zebra')
     await wrapper.get('input[name="meaning"]').setValue('斑马')
@@ -260,14 +277,19 @@ describe('Words page', () => {
 
     const store = useWordsStore()
     expect(store.total).toBe(25)
-    expect(wrapper.findAll('tbody tr.word-row')[0].text()).toContain('zebra')
     expect(toasts.items.map((item) => item.message)).toContain('已添加 zebra')
+
+    await wrapper.get('.back-link').trigger('click')
+    await flushPromises()
+
+    expect(entries()[0].text()).toContain('zebra')
   })
 
   it('should say the word was updated when adding a duplicate', async () => {
-    const wrapper = await mountPage()
+    await mountPage()
     const toasts = useToastStore()
 
+    await openWritePage()
     await wrapper.get('input[name="word"]').setValue('APPLE')
     await wrapper.get('form.word-form').trigger('submit')
     await flushPromises()
@@ -278,7 +300,7 @@ describe('Words page', () => {
   })
 
   it('should paste a list, preview it and import it', async () => {
-    const wrapper = await mountPage()
+    await mountPage()
     const store = useWordsStore()
     const toasts = useToastStore()
 
@@ -307,7 +329,7 @@ describe('Words page', () => {
   })
 
   it('should upload a text file, preview it and import it', async () => {
-    const wrapper = await mountPage()
+    await mountPage()
     const store = useWordsStore()
     const toasts = useToastStore()
 
@@ -338,18 +360,17 @@ describe('Words page', () => {
     expect(toasts.items.map((item) => item.message)).toContain('批量导入完成：新增 2 个')
   })
 
-  it('should confirm before deleting a word', async () => {
-    const wrapper = await mountPage()
+  it('should confirm before deleting a word from the entry menu', async () => {
+    await mountPage()
     const store = useWordsStore()
     const toasts = useToastStore()
 
-    // .cell-word 里现在还有来源/词频徽标，只取词形本身
-    const firstWord = wrapper.findAll('tbody tr.word-row')[0].find('.word-text').text()
-    const deleteButton = wrapper
-      .findAll('button')
-      .find((button) => button.attributes('aria-label') === `删除 ${firstWord}`)
-
-    await deleteButton.trigger('click')
+    const firstWord = entries()[0].get('.entry-word').text()
+    await entries()[0].get('.menu-trigger').trigger('click')
+    const deleteItem = entries()[0]
+      .findAll('.menu-item')
+      .find((item) => item.text() === '删除')
+    await deleteItem.trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('历史阅读中的词汇快照不会受影响。')
@@ -362,10 +383,10 @@ describe('Words page', () => {
     expect(toasts.items.map((item) => item.message)).toContain(`已删除 ${firstWord}`)
   })
 
-  it('should select rows, show the batch bar and clear selection on tab change', async () => {
-    const wrapper = await mountPage()
-    const checks = wrapper.findAll('tbody tr.word-row input[type="checkbox"]')
-    expect(checks).toHaveLength(10)
+  it('should select entries, show the batch bar and clear selection on tab change', async () => {
+    await mountPage()
+    const checks = wrapper.findAll('.word-entry input[type="checkbox"]')
+    expect(checks).toHaveLength(12)
 
     await checks[0].setValue(true)
 
@@ -375,25 +396,24 @@ describe('Words page', () => {
         .get('select.batch-target')
         .findAll('option')
         .map((option) => option.text()),
-    ).toEqual(['复习中', '已掌握', '不认识'])
+    ).toEqual(['复习中', '已掌握', '已排除'])
 
-    // 表头只全选当前页：10 行，不再是全部 24 条
-    await wrapper.get('thead input[type="checkbox"]').setValue(true)
-    expect(wrapper.get('.batch-bar').text()).toContain('已选 10 个')
+    // 全选只作用于当前这一摊：12 条，不再是全部 24 条
+    await wrapper.get('.page-select input[type="checkbox"]').setValue(true)
+    expect(wrapper.get('.batch-bar').text()).toContain('已选 12 个')
 
-    await wrapper.findAll('[role="radio"]')[2].trigger('click')
+    await wrapper.findAll('.status-chip')[2].trigger('click')
     await flushPromises()
 
     expect(wrapper.find('.batch-bar').exists()).toBe(false)
   })
 
-  it('should confirm before marking words mastered and report unchanged rows', async () => {
-    const wrapper = await mountPage()
+  it('should confirm before marking words mastered and report unchanged entries', async () => {
+    await mountPage()
     const toasts = useToastStore()
     const store = useWordsStore()
-    // 第一页里的 w21 / w20 已经是 mastered，批量再标一次只会是「未变化」
-    const masteredRows = wrapper
-      .findAll('tbody tr.word-row')
+    // 第一页里已经 mastered 的词，批量再标一次只会是「未变化」
+    const masteredRows = entries()
       .filter((row) => row.text().includes('已掌握'))
       .slice(0, 2)
     expect(store.items.filter((item) => item.studyState === 'mastered').length).toBeGreaterThan(1)
@@ -421,12 +441,12 @@ describe('Words page', () => {
     expect(wrapper.find('.batch-bar').exists()).toBe(false)
   })
 
-  it('should confirm removal and drop the rows from the all tab', async () => {
-    const wrapper = await mountPage()
+  it('should confirm exclusion and drop the entries from the all tab', async () => {
+    await mountPage()
     const store = useWordsStore()
     const toasts = useToastStore()
-    const firstRow = wrapper.findAll('tbody tr.word-row')[0]
-    const word = firstRow.find('.word-text').text()
+    const firstRow = entries()[0]
+    const word = firstRow.get('.entry-word').text()
 
     await firstRow.get('input[type="checkbox"]').setValue(true)
     await wrapper.get('select.batch-target').setValue('removed')
@@ -436,15 +456,29 @@ describe('Words page', () => {
       .trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('把选中的 1 个词标为「不认识」？')
+    expect(wrapper.text()).toContain('把选中的 1 个词标为「已排除」？')
     await wrapper
       .findAll('button')
-      .find((button) => button.text() === '标为不认识')
+      .find((button) => button.text() === '标为已排除')
       .trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).not.toContain(word)
     expect(store.studyCounts.removed).toBe(1)
     expect(toasts.items.map((item) => item.message)).toContain('已更新 1 个词')
+  })
+
+  it('should switch to collage mode and keep the same entries', async () => {
+    await mountPage()
+    const collageButton = wrapper
+      .findAll('.view-option')
+      .find((button) => button.text() === '拼贴模式')
+
+    await collageButton.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.book-spread').exists()).toBe(false)
+    expect(wrapper.findAll('.collage .word-entry')).toHaveLength(12)
+    expect(localStore.get(storageKeys.wordsViewMode)).toBe('collage')
   })
 })

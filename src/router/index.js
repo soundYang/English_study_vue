@@ -24,6 +24,20 @@ const routes = [
     meta: { title: '我的单词', module: 'words', guestMode: 'browse' },
   },
   {
+    path: '/words/banks',
+    name: 'words-banks',
+    component: () => import('../views/WordsBanks/index.vue'),
+    // 词库概要 / 导入记录都是账号数据（后端 requireAuth），未登录由守卫送去登录页
+    meta: { title: '词库', module: 'words' },
+  },
+  {
+    path: '/words/banks/:bank',
+    name: 'words-bank-detail',
+    component: () => import('../views/WordsBanks/Detail.vue'),
+    // bank 由后端校验（high / mid），未知值统一落到页面错误卡
+    meta: { title: '词库详情', module: 'words' },
+  },
+  {
     path: '/words/review',
     name: 'words-review',
     component: () => import('../views/WordsReview/index.vue'),

@@ -1061,10 +1061,12 @@ function clone(value) {
 export function createSeedDatabase() {
   return {
     // 与 adapter.js 的 DB_VERSION 保持一致；v2 起单词带 source / phonetic / senses，
-    // v3 起练习带 newWords / tokenUsage，v4 起单词带 cocaRank
-    version: 4,
+    // v3 起练习带 newWords / tokenUsage，v4 起单词带 cocaRank，
+    // v5 起记录词库导入（只记「从目录导入的词」，用户原有词永远没有记录）
+    version: 5,
     words: clone(WORDS),
     readings: clone(READINGS),
+    wordBankMemberships: [],
     wordSeq: 25,
     readingSeq: 6,
   }

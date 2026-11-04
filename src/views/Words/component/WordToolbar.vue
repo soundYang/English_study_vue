@@ -116,7 +116,7 @@ onBeforeUnmount(cancelTimer)
       </BaseButton>
       <BaseButton class="add-button" @click="emit('add')">
         <Plus :size="16" :stroke-width="2" aria-hidden="true" />
-        添加单词
+        写入新词
       </BaseButton>
     </div>
   </div>

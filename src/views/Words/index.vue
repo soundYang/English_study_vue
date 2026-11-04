@@ -1,61 +1,69 @@
 <script setup>
 /**
  * 我的单词视图
- * 组合搜索、状态筛选、分页与增删改；右侧为常驻添加表单，小于 1200px 时改用弹层。
- * 所有请求状态由 words store 维护，本页只负责交互、Toast 与行高亮。
+ *
+ * 用途：把词汇列表做成一本可以翻的词书——双页列表、详情纸页、写词纸页与拼贴模式；
+ *       搜索、状态筛选、分页、增删改与批量改状态都在本页编排，请求状态由 words store 维护。
+ * 用法：路由 /words
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { BookOpen, LayoutGrid } from 'lucide-vue-next'
 import BaseButton from '../../component/BaseButton.vue'
-import BaseModal from '../../component/BaseModal.vue'
 import ConfirmDialog from '../../component/ConfirmDialog.vue'
 import EmptyState from '../../component/EmptyState.vue'
 import GuestMask from '../../component/GuestMask.vue'
 import GuestNotice from '../../component/GuestNotice.vue'
-import PaginationBar from '../../component/PaginationBar.vue'
-import StatusPill from '../../component/StatusPill.vue'
-import WordDetailPopover from '../../component/WordDetailPopover.vue'
 import ReviewBanner from './component/ReviewBanner.vue'
 import WordBatchBar from './component/WordBatchBar.vue'
 import WordBatchImport from './component/WordBatchImport.vue'
+import WordBook from './component/WordBook.vue'
+import WordDetailPage from './component/WordDetailPage.vue'
 import WordEditModal from './component/WordEditModal.vue'
-import WordFormPanel from './component/WordFormPanel.vue'
 import WordStatusTabs from './component/WordStatusTabs.vue'
-import WordTable from './component/WordTable.vue'
 import WordToolbar from './component/WordToolbar.vue'
+import WordWritePage from './component/WordWritePage.vue'
+import WordsSubnav from './component/WordsSubnav.vue'
 import wordsBook from '../../assets/images/words-book.png'
 import { useAuthGate } from '../../composables/useAuthGate'
-import { useMediaQuery } from '../../composables/useMediaQuery'
 import { useToast } from '../../composables/useToast'
 import { useAuthStore } from '../../stores/model/auth'
 import { useWordsStore } from '../../stores/model/words'
 import { batchResultMessage, batchResultType, batchTargetLabel } from '../../unit/word-batch'
-import { myWordDetail } from '../../unit/word-detail'
+import { localStore, storageKeys } from '../../unit/storage'
 
 const TOAST_HIGHLIGHT_DURATION = 800
 const EDIT_HIGHLIGHT_DURATION = 600
+
+const VIEW_BOOK = 'book'
+const VIEW_COLLAGE = 'collage'
 
 const toast = useToast()
 const store = useWordsStore()
 const router = useRouter()
 const auth = useAuthStore()
 const { goLogin } = useAuthGate()
-const isWide = useMediaQuery('(min-width: 1200px)')
 // 游客可浏览页面结构，但私人词条不请求、不渲染（md/45 §5.2）
 const isGuest = computed(() => !auth.isAuthenticated)
 
-const addModalOpen = ref(false)
-const batchOpen = ref(false)
+// 纸页：'' 列表 / 'write' 写词 / 'detail' 详情
+const panel = ref('')
+const detailItem = ref(null)
+const writePage = ref(null)
+// 从详情返回时把焦点还给原词条
+let lastFocusId = ''
+
+const viewMode = ref(
+  localStore.get(storageKeys.wordsViewMode, VIEW_BOOK) === VIEW_COLLAGE ? VIEW_COLLAGE : VIEW_BOOK,
+)
+
 const editOpen = ref(false)
 const editingWord = ref(null)
+const batchOpen = ref(false)
 const deleteOpen = ref(false)
 const deleteTarget = ref(null)
 const deleting = ref(false)
 const highlightId = ref('')
-const desktopPanel = ref(null)
-const modalPanel = ref(null)
-// 详情浮层：{ item, anchor }，为空即关闭；数据来自列表快照，不额外请求
-const detailTarget = ref(null)
 
 // 批量选择只属于当前页面：不进 store，切标签 / 搜索 / 翻页立即清空（md/22 #115）
 const selectedIds = ref(new Set())
@@ -65,19 +73,16 @@ const batchConfirmOpen = ref(false)
 const batchConfirmTarget = ref('')
 
 const selectedIdList = computed(() => [...selectedIds.value])
-const detailData = computed(() =>
-  detailTarget.value ? myWordDetail(detailTarget.value.item) : null,
-)
 
 const batchConfirmTitle = computed(() => {
   const count = selectedIds.value.size
-  if (batchConfirmTarget.value === 'removed') return `把选中的 ${count} 个词标为「不认识」？`
+  if (batchConfirmTarget.value === 'removed') return `把选中的 ${count} 个词标为「已排除」？`
   return `把选中的 ${count} 个词标为「已掌握」？`
 })
 
 const batchConfirmDescription = computed(() =>
   batchConfirmTarget.value === 'removed'
-    ? '标为不认识后，这些词不会用于生成文章；可在「不认识」标签里恢复。'
+    ? '标为已排除后，这些词不会用于生成文章；可在「已排除」书签里恢复。'
     : '已掌握的词会退出复习队列，不再出现在今日复习里。',
 )
 
@@ -103,7 +108,6 @@ const allWordsLabel = computed(() => {
   return store.loading ? '—' : store.total
 })
 
-const listTitle = computed(() => (store.query ? '搜索结果' : '词汇列表'))
 // 已经有成功结果、但当前没有单词时展示空态。
 // 加载中也保持显示：从空态切到别的筛选时，旧的空态先留在原位，
 // 新结果到达后直接换成列表 / 新的空态，避免「空态 → 骨架 → 空态」闪一下。
@@ -121,12 +125,12 @@ const emptyMeta = computed(() => {
     }
   }
 
-  // 「不认识」不是学习状态，空态也要说清楚它是排除标记，而不是「没学过」
+  // 「已排除」不是学习状态，空态也要说清楚它是排除标记，而不是「没学过」
   if (store.study === 'removed') {
     return {
       action: 'status',
-      title: '还没有标记「不认识」的词',
-      description: '在基础词表里标「不认识」的词会出现在这里，生成文章时不再使用。',
+      title: '还没有已排除的词',
+      description: '标为「不认识」的基础词会出现在这里，生成文章时不再使用。',
       actionText: '查看全部',
       image: '',
     }
@@ -145,8 +149,8 @@ const emptyMeta = computed(() => {
   return {
     action: 'add',
     title: '还没有单词',
-    description: '先添加第一个单词，开始你的阅读训练。',
-    actionText: '添加单词',
+    description: '先写入第一个单词，开始你的阅读训练。',
+    actionText: '写入新词',
     image: wordsBook,
   }
 })
@@ -170,13 +174,39 @@ const deleteTitle = computed(() =>
   deleteTarget.value ? `删除 “${deleteTarget.value.word}”？` : '删除这个单词？',
 )
 
-// 换筛选 / 翻页后原来的锚点可能已经不在列表里，浮层跟着关掉；选择也只在当前页内有效
+watch(viewMode, (value) => {
+  localStore.set(storageKeys.wordsViewMode, value)
+})
+
+// 换筛选 / 翻页后原来的选择失效；详情纸页在筛选变化时收起
 watch(
-  () => [store.query, store.study, store.page],
+  () => [store.query, store.study],
   () => {
-    detailTarget.value = null
+    closeDetail()
     clearSelection()
     batchTarget.value = ''
+  },
+)
+
+watch(
+  () => store.page,
+  () => {
+    clearSelection()
+    batchTarget.value = ''
+  },
+)
+
+// 编辑后列表快照会替换，详情纸页跟着换成新数据；词离开当前筛选时退回列表
+watch(
+  () => store.items,
+  (items) => {
+    if (panel.value !== 'detail' || !detailItem.value) return
+    const next = items.find((item) => item.id === detailItem.value.id)
+    if (!next) {
+      closeDetail()
+      return
+    }
+    detailItem.value = next
   },
 )
 
@@ -189,7 +219,7 @@ onMounted(() => {
 
 // 登录态变化：掉线清掉私人列表、立刻切遮罩；登录成功原地补拉
 watch(isGuest, (guest) => {
-  detailTarget.value = null
+  closeDetail()
   clearSelection()
   if (guest) {
     store.reset()
@@ -198,11 +228,6 @@ watch(isGuest, (guest) => {
   store.fetchList()
   store.loadDailyPlan()
 })
-
-// useMediaQuery 在挂载后才有值，这里只在用户打开添加面板时读取最新结果
-function shouldUseModal() {
-  return !isWide.value
-}
 
 onBeforeUnmount(() => {
   if (highlightTimer) clearTimeout(highlightTimer)
@@ -227,19 +252,6 @@ function handleSearch(value) {
   store.search(value)
 }
 
-function handleDetail({ item, anchor }) {
-  if (detailTarget.value?.item.id === item.id) {
-    detailTarget.value = null
-    return
-  }
-
-  detailTarget.value = { item, anchor }
-}
-
-function handleDetailOpen(value) {
-  if (!value) detailTarget.value = null
-}
-
 function clearSelection() {
   selectedIds.value = new Set()
 }
@@ -251,7 +263,7 @@ function handleSelect({ id, selected }) {
   selectedIds.value = next
 }
 
-/** 表头全选只作用于当前页；其他页已选中的 id 原样保留 */
+/** 全选只作用于当前这一摊；其他页已选中的 id 原样保留 */
 function handleSelectAll(selected) {
   const next = new Set(selectedIds.value)
   store.items.forEach((item) => {
@@ -260,6 +272,47 @@ function handleSelectAll(selected) {
   })
   selectedIds.value = next
 }
+
+/* ---------------- 纸页切换 ---------------- */
+
+async function openWritePanel() {
+  if (isGuest.value) {
+    goLogin('/words')
+    return
+  }
+  closeDetail()
+  panel.value = 'write'
+  await nextTick()
+  writePage.value?.focusWord()
+}
+
+function openDetail(item) {
+  if (isGuest.value) {
+    goLogin('/words')
+    return
+  }
+  lastFocusId = item.id
+  detailItem.value = item
+  panel.value = 'detail'
+}
+
+function closePanel() {
+  panel.value = ''
+  detailItem.value = null
+}
+
+async function closeDetail() {
+  if (panel.value !== 'detail') return
+  panel.value = ''
+  detailItem.value = null
+
+  await nextTick()
+  if (!lastFocusId) return
+  document.querySelector(`[data-entry-id="${lastFocusId}"] .entry-word`)?.focus()
+  lastFocusId = ''
+}
+
+/* ---------------- 批量 ---------------- */
 
 /** 会退出复习队列 / 影响生成用词的目标先二次确认，普通改状态直接提交 */
 function requestBatch(target) {
@@ -290,7 +343,7 @@ async function submitBatch(target) {
   }
 
   toast[batchResultType(result)](batchResultMessage(result))
-  detailTarget.value = null
+  if (panel.value === 'detail') closeDetail()
   clearSelection()
 }
 
@@ -300,21 +353,12 @@ function confirmBatch() {
   if (target) submitBatch(target)
 }
 
-async function openAddPanel() {
-  if (isGuest.value) {
-    goLogin('/words')
-    return
-  }
-
-  if (!shouldUseModal()) {
-    desktopPanel.value?.focusWord()
-    return
-  }
-
-  addModalOpen.value = true
-  await nextTick()
-  modalPanel.value?.focusWord()
+function backToAll() {
+  rememberEmptyView()
+  store.filterByStudy('all')
 }
+
+/* ---------------- 其他入口 ---------------- */
 
 function openBatchPanel() {
   if (isGuest.value) {
@@ -338,11 +382,10 @@ function handleEmptyAction() {
     return
   }
   if (action === 'status') {
-    rememberEmptyView()
-    store.filterByStudy('all')
+    backToAll()
     return
   }
-  openAddPanel()
+  openWritePanel()
 }
 
 // 添加与合并共用同一个接口，用 action 告诉用户这次到底发生了什么：
@@ -363,7 +406,6 @@ async function handleAdd(payload) {
     return result
   }
 
-  detailTarget.value = null
   const word = result.item.word
   const [level, message] = (ADD_MESSAGES[result.action] || ADD_MESSAGES.created)(word)
   toast[level](message)
@@ -379,8 +421,6 @@ function handleApiKeyNeeded() {
 }
 
 function handleBatchImported(result) {
-  detailTarget.value = null
-
   const parts = []
   if (result.created) parts.push(`新增 ${result.created} 个`)
   if (result.updated) parts.push(`更新 ${result.updated} 个`)
@@ -400,7 +440,7 @@ async function handleUpdate(id, patch) {
     return result
   }
 
-  detailTarget.value = null
+  if (panel.value === 'detail') detailItem.value = result.item
   toast.success(`已更新 ${result.item.word}`)
   flashRow(result.item.id, EDIT_HIGHLIGHT_DURATION)
   return { ok: true }
@@ -424,10 +464,10 @@ async function confirmDelete() {
   const result = await store.removeWord(target.id)
   deleting.value = false
   deleteOpen.value = false
-  detailTarget.value = null
 
   if (result.ok) {
     toast.success(`已删除 ${result.item.word || target.word}`)
+    closePanel()
   } else {
     toast.error(result.message)
   }
@@ -438,21 +478,34 @@ async function confirmDelete() {
 function reload() {
   store.fetchList()
 }
+
+function goPrev() {
+  if (store.page <= 1) return
+  store.goToPage(store.page - 1)
+}
+
+function goNext() {
+  if (store.page * store.pageSize >= store.total) return
+  store.goToPage(store.page + 1)
+}
 </script>
 
 <template>
   <section class="words-page">
     <header class="page-head">
-      <p class="page-eyebrow">Vocabulary</p>
-      <h1 class="page-title">我的单词</h1>
-      <p class="page-desc">
-        你已累计
-        <strong class="count-accent">
-          <GuestMask v-if="isGuest" mode="number" />
-          <template v-else>{{ allWordsLabel }}</template>
-        </strong>
-        个单词
-      </p>
+      <div class="head-text">
+        <p class="page-eyebrow">Vocabulary</p>
+        <h1 class="page-title">我的单词</h1>
+        <p class="page-desc">
+          你已累计
+          <strong class="count-accent">
+            <GuestMask v-if="isGuest" mode="number" />
+            <template v-else>{{ allWordsLabel }}</template>
+          </strong>
+          个单词
+        </p>
+      </div>
+      <WordsSubnav />
     </header>
 
     <!-- 游客不请求 daily-plan，入口条保持隐藏 -->
@@ -463,19 +516,60 @@ function reload() {
       :done="store.dailyPlan?.review?.doneToday ?? 0"
     />
 
-    <div class="words-layout">
-      <div class="words-main" :aria-busy="store.loading ? 'true' : 'false'">
-        <span v-if="store.loading" class="sr-only" role="status">正在加载生词本</span>
+    <div class="book-frame" :aria-busy="store.loading ? 'true' : 'false'">
+      <span v-if="store.loading" class="sr-only" role="status">正在加载生词本</span>
 
+      <!-- 列表：工具行 + 索引 + 书页 -->
+      <template v-if="panel === ''">
         <WordToolbar
           :value="store.query"
           :search-disabled="isGuest"
           @search="handleSearch"
-          @add="openAddPanel"
+          @add="openWritePanel"
           @batch="openBatchPanel"
         />
 
-        <WordStatusTabs v-model="statusModel" :counts="store.studyCounts" :disabled="isGuest" />
+        <div class="book-index">
+          <WordStatusTabs v-model="statusModel" :counts="store.studyCounts" :disabled="isGuest" />
+
+          <div class="view-switch" role="group" aria-label="列表形态">
+            <button
+              type="button"
+              class="view-option"
+              :class="{ 'is-active': viewMode === VIEW_BOOK }"
+              :aria-pressed="viewMode === VIEW_BOOK"
+              @click="viewMode = VIEW_BOOK"
+            >
+              <BookOpen :size="14" :stroke-width="1.8" aria-hidden="true" />
+              翻书模式
+            </button>
+            <button
+              type="button"
+              class="view-option"
+              :class="{ 'is-active': viewMode === VIEW_COLLAGE }"
+              :aria-pressed="viewMode === VIEW_COLLAGE"
+              @click="viewMode = VIEW_COLLAGE"
+            >
+              <LayoutGrid :size="14" :stroke-width="1.8" aria-hidden="true" />
+              拼贴模式
+            </button>
+          </div>
+        </div>
+
+        <p v-if="store.query && !isGuest" class="search-count">找到 {{ store.total }} 个单词</p>
+
+        <!-- 「已排除」不是学习阶段，而是排除标记：解释清楚它影响的是生成用词 -->
+        <p v-if="store.study === 'removed'" class="status-hint">
+          已排除的词不会用于生成文章，恢复后重新可用。
+          <button type="button" class="hint-link" @click="backToAll">返回全部</button>
+        </p>
+
+        <GuestNotice
+          v-if="isGuest"
+          class="guest-notice"
+          title="登录后查看你的单词"
+          @login="goLogin('/words')"
+        />
 
         <WordBatchBar
           v-if="!isGuest"
@@ -487,41 +581,28 @@ function reload() {
           @clear="clearSelection"
         />
 
-        <!-- 「不认识」不是学习阶段，而是排除标记：解释清楚它影响的是生成用词 -->
-        <p v-if="store.study === 'removed'" class="status-hint">
-          「不认识」是排除标记：标了不认识的基础词不会用于生成文章，恢复后重新可用。
-        </p>
-
-        <GuestNotice
-          v-if="isGuest"
-          class="guest-notice"
-          title="登录后查看你的单词"
-          @login="goLogin('/words')"
-        />
-
-        <div v-if="!store.error" class="list-head">
-          <h2 class="list-title">{{ listTitle }}</h2>
-          <!-- 切换筛选 / 搜索时列表继续显示旧数据，计数也先留在原位，等新结果一起换 -->
-          <span v-if="store.query && !isGuest" class="list-count">
-            找到 {{ store.total }} 个单词
-          </span>
-        </div>
-
-        <!-- 首次加载（还没有成功结果）才挂列表骨架；有数据时挂着等新结果；
-             列表为空且已加载过时交给下面的空态，加载中也不换成骨架 -->
-        <WordTable
+        <!-- 首次加载（还没有成功结果）才挂书页骨架；有数据时挂着等新结果；
+             列表为空且已加载过时交给下面的空态 -->
+        <WordBook
           v-if="isGuest || store.error || store.hasItems || !store.hasLoaded"
           :items="isGuest ? [] : store.items"
+          :total="isGuest ? 0 : store.total"
+          :page="store.page"
+          :page-size="store.pageSize"
+          :mode="viewMode"
+          :loading="store.loading"
           :error="store.error"
-          :highlight-id="highlightId"
-          :expanded-word="detailTarget?.item.word || ''"
           :masked="isGuest"
           :selectable="!isGuest && store.items.length > 0 && !store.error"
           :selected-ids="selectedIdList"
+          :highlight-id="highlightId"
+          :active-word="''"
+          @prev="goPrev"
+          @next="goNext"
+          @retry="reload"
+          @open="openDetail"
           @edit="openEdit"
           @remove="askDelete"
-          @retry="reload"
-          @detail="handleDetail"
           @login="goLogin('/words')"
           @select="handleSelect"
           @select-all="handleSelectAll"
@@ -541,33 +622,29 @@ function reload() {
           </template>
         </EmptyState>
 
-        <!-- 加载中保留底栏：否则每切一次状态，底部分页都会消失再出现，页面高度抖一下 -->
+        <!-- 加载中保留底栏：否则每切一次状态，页面高度都会抖一下 -->
         <div v-if="!isGuest && !store.error && store.total > 0" class="list-footer">
           <p class="total-text">共 {{ store.total }} 条</p>
-          <PaginationBar
-            :page="store.page"
-            :total="store.total"
-            :page-size="store.pageSize"
-            @update:page="store.goToPage"
-          />
+          <p class="page-hint">用左右方向键也可以翻页</p>
         </div>
-      </div>
+      </template>
 
-      <aside class="words-aside">
-        <WordFormPanel v-if="!isGuest" ref="desktopPanel" :submit-word="handleAdd" />
-        <GuestNotice
-          v-else
-          compact
-          title="登录后添加你的单词"
-          description="登录后可以手动添加，或从文件批量导入。"
-          @login="goLogin('/words')"
-        />
-      </aside>
+      <!-- 写词纸页：常驻 DOM，切回列表再回来时输入不丢 -->
+      <WordWritePage
+        v-show="panel === 'write'"
+        ref="writePage"
+        :submit-word="handleAdd"
+        @back="closePanel"
+      />
+
+      <WordDetailPage
+        v-if="panel === 'detail' && detailItem"
+        :item="detailItem"
+        @back="closeDetail"
+        @edit="openEdit"
+        @remove="askDelete"
+      />
     </div>
-
-    <BaseModal v-model:open="addModalOpen" title="添加单词" :max-width="520" sheet-on-mobile>
-      <WordFormPanel v-if="addModalOpen" ref="modalPanel" compact :submit-word="handleAdd" />
-    </BaseModal>
 
     <WordBatchImport
       v-model:open="batchOpen"
@@ -599,31 +676,22 @@ function reload() {
       :loading="batching"
       @confirm="confirmBatch"
     />
-
-    <WordDetailPopover
-      :open="Boolean(detailTarget)"
-      :anchor="detailTarget?.anchor || null"
-      :word="detailData?.word || ''"
-      :phonetic="detailData?.phonetic || null"
-      :senses="detailData?.senses || []"
-      :facts="detailData?.facts || []"
-      @update:open="handleDetailOpen"
-    >
-      <template #badges>
-        <StatusPill
-          v-if="detailTarget"
-          kind="status"
-          :value="detailTarget.item.studyState"
-          :stage="detailTarget.item.reviewStage || 0"
-        />
-      </template>
-    </WordDetailPopover>
   </section>
 </template>
 
 <style scoped>
 .page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
   animation: words-rise var(--dur-page) var(--ease-out) both;
+}
+
+.head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .count-accent {
@@ -632,59 +700,86 @@ function reload() {
   font-weight: 500;
 }
 
-.words-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  align-items: start;
-  gap: 28px;
-  margin-top: var(--space-6);
-}
-
-.words-main {
+.book-frame {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  min-width: 0;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
   animation: words-rise var(--dur-page) var(--ease-out) 60ms both;
 }
 
-.words-aside {
-  position: sticky;
-  top: var(--space-6);
-  animation: words-rise var(--dur-page) var(--ease-out) 120ms both;
+.book-index {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  padding-top: var(--space-2);
+  border-bottom: 1px solid var(--color-line);
+}
+
+.view-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.view-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: calc(var(--radius-sm) - 1px);
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.view-option:hover {
+  color: var(--color-ink);
+}
+
+.view-option.is-active {
+  background: var(--color-bg-deep);
+  color: var(--color-ink);
+}
+
+.view-option:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.search-count {
+  color: var(--color-muted);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
 }
 
 /* 游客提示条与工具栏 / 列表之间的呼吸间距 */
 .guest-notice {
-  margin-top: var(--space-5);
+  margin-top: var(--space-2);
 }
 
 .status-hint {
-  margin: var(--space-3) 0 0;
+  margin: 0;
   color: var(--color-muted);
   font-size: var(--text-caption);
   line-height: var(--leading-caption);
 }
 
-.list-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-top: var(--space-1);
-}
-
-.list-title {
-  font-family: var(--font-display);
-  font-size: var(--text-section);
-  line-height: var(--leading-section);
-  letter-spacing: 0.02em;
-}
-
-.list-count {
-  color: var(--color-muted);
-  font-size: var(--text-small);
-  line-height: var(--leading-small);
+.hint-link {
+  padding: 0;
+  color: var(--color-accent);
+  font-size: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .words-empty {
@@ -701,7 +796,8 @@ function reload() {
   margin-top: var(--space-1);
 }
 
-.total-text {
+.total-text,
+.page-hint {
   color: var(--color-muted);
   font-size: var(--text-small);
   line-height: var(--leading-small);
@@ -719,43 +815,37 @@ function reload() {
   }
 }
 
-@media (max-width: 1279px) {
-  .words-layout {
-    grid-template-columns: minmax(0, 1fr) 280px;
-    gap: var(--space-5);
-  }
-}
-
-@media (max-width: 1199px) {
-  .words-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .words-aside {
-    display: none;
-  }
-}
-
 @media (max-width: 767px) {
-  .words-layout {
+  .page-head {
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .book-frame {
+    gap: var(--space-3);
     margin-top: var(--space-5);
   }
 
-  .words-main {
-    gap: var(--space-3);
+  .book-index {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+
+  .view-switch {
+    align-self: flex-end;
   }
 
   .list-footer {
     align-items: flex-start;
     flex-direction: column;
-    gap: var(--space-2);
+    gap: var(--space-1);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .page-head,
-  .words-main,
-  .words-aside {
+  .book-frame {
     animation-delay: 0ms !important;
   }
 }

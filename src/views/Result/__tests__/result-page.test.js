@@ -8,19 +8,14 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { flushPromises, mount } from '@vue/test-utils'
 import ResultPage from '../index.vue'
+import {
+  clearGenerationHandoff,
+  takeGenerationHandoff,
+} from '../../../composables/useGenerationHandoff'
 import { registerGuards } from '../../../router/guards'
 import { resetMockDb, setMockLatency } from '../../../mock/adapter'
 import { useReadingStore } from '../../../stores/model/reading'
 import { localStore, storageKeys } from '../../../unit/storage'
-
-const { startMock } = vi.hoisted(() => ({ startMock: vi.fn() }))
-
-vi.mock('../../../composables/useGenerateReading', async () => {
-  const { ref } = await import('vue')
-  return {
-    useGenerateReading: () => ({ isGenerating: ref(false), start: startMock }),
-  }
-})
 
 const ReadingStub = defineComponent({
   name: 'ReadingStub',
@@ -35,6 +30,11 @@ const HistoryStub = defineComponent({
 const HomeStub = defineComponent({
   name: 'HomeStub',
   template: '<div class="home-stub">home</div>',
+})
+
+const GeneratingStub = defineComponent({
+  name: 'GeneratingStub',
+  template: '<div class="generating-stub">generating</div>',
 })
 
 // mock 种子 r2 的整篇中文；文章只有一段，逐段翻译就是这一条
@@ -56,6 +56,7 @@ function createTestRouter() {
         meta: { guestMode: 'gate' },
       },
       { path: '/history', name: 'history', component: HistoryStub },
+      { path: '/generating', name: 'generating', component: GeneratingStub },
     ],
   })
 
@@ -87,7 +88,7 @@ beforeEach(() => {
   localStore.set(storageKeys.accessToken, 'sess_result_test')
   resetMockDb()
   setMockLatency(0)
-  startMock.mockReset()
+  clearGenerationHandoff()
 
   // 成绩环直接显示终值，避免测试等待 900ms 动画
   window.matchMedia = vi.fn().mockImplementation((query) => ({
@@ -215,20 +216,18 @@ describe('Result page', () => {
     expect(router.currentRoute.value.name).toBe('history')
   })
 
-  it('should regenerate with the same parameters and open the new reading', async () => {
-    startMock.mockResolvedValue({ id: 'r6' })
-
+  it('should hand the same parameters to the generating page without calling the API', async () => {
     const { wrapper, router } = await mountResult('/readings/r2/result')
     const retry = wrapper.findAll('button').find((button) => button.text().includes('再练一次'))
 
     await retry.trigger('click')
     await flushPromises()
 
-    expect(startMock).toHaveBeenCalledWith({
-      level: 'easy',
-      targetWords: 100,
-      questionCount: 5,
+    // 请求由 /generating 发起：结果页只交参数，动画与等待都在生成页完成（md/55 §5.1）
+    expect(router.currentRoute.value.path).toBe('/generating')
+    expect(takeGenerationHandoff()).toMatchObject({
+      payload: { level: 'easy', targetWords: 100, questionCount: 5 },
+      from: '/readings/r2/result',
     })
-    expect(router.currentRoute.value.path).toBe('/readings/r6')
   })
 })

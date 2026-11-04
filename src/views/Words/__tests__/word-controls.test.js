@@ -4,9 +4,10 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import WordBook from '../component/WordBook.vue'
 import WordEditModal from '../component/WordEditModal.vue'
+import WordEntry from '../component/WordEntry.vue'
 import WordFormPanel from '../component/WordFormPanel.vue'
-import WordTable from '../component/WordTable.vue'
 import WordToolbar from '../component/WordToolbar.vue'
 
 describe('WordToolbar', () => {
@@ -54,91 +55,175 @@ describe('WordToolbar', () => {
   })
 })
 
-describe('WordTable', () => {
+describe('WordEntry', () => {
   const TOMATO = {
     id: 'w1',
     word: 'tomato',
     status: 'learning',
+    studyState: 'reviewing',
+    reviewStage: 0,
     createdAt: '2026-09-01T08:00:00.000Z',
     source: 'dictionary',
     cocaRank: 4321,
     dictionaryId: 'dict_tomato',
     phonetic: { uk: '/təˈmɑː.təʊ/', us: '/təˈmeɪ.toʊ/' },
     senses: [{ pos: 'n.', meaning: '西红柿' }],
+    wordBanks: [],
   }
 
-  // 桌面表格与移动卡片同时在 DOM 里，断言要限定在 .word-table 内
   it('should render both phonetics when they differ', () => {
-    const wrapper = mount(WordTable, { props: { items: [TOMATO] } })
-    const phonetic = wrapper.get('.cell-phonetic')
+    const wrapper = mount(WordEntry, { props: { item: TOMATO } })
+    const phonetic = wrapper.get('.entry-phonetic')
 
     expect(phonetic.text()).toContain('英 /təˈmɑː.təʊ/')
     expect(phonetic.text()).toContain('美 /təˈmeɪ.toʊ/')
     expect(phonetic.findAll('.phonetic-part')).toHaveLength(2)
-    // 卡片用同一个函数，所以两处都是两份
-    expect(wrapper.get('.card-phonetic').findAll('.phonetic-part')).toHaveLength(2)
   })
 
   it('should render one phonetic when both accents are the same', () => {
-    const wrapper = mount(WordTable, {
-      props: { items: [{ ...TOMATO, phonetic: { uk: '/ˈæp.əl/', us: '/ˈæp.əl/' } }] },
+    const wrapper = mount(WordEntry, {
+      props: { item: { ...TOMATO, phonetic: { uk: '/ˈæp.əl/', us: '/ˈæp.əl/' } } },
     })
 
-    expect(wrapper.get('.cell-phonetic').findAll('.phonetic-part')).toHaveLength(1)
-    expect(wrapper.get('.cell-phonetic').text()).toBe('英 /ˈæp.əl/')
+    expect(wrapper.get('.entry-phonetic').findAll('.phonetic-part')).toHaveLength(1)
+    expect(wrapper.get('.entry-phonetic').text()).toBe('英 /ˈæp.əl/')
   })
 
-  it('should mark the source and the frequency tier of every word', () => {
-    const wrapper = mount(WordTable, { props: { items: [TOMATO] } })
+  it('should mark the bank source, the status and the date of every word', () => {
+    const wrapper = mount(WordEntry, { props: { item: { ...TOMATO, wordBanks: ['high'] } } })
 
-    expect(wrapper.get('.word-table .word-source').text()).toBe('词库')
-    // 4321 落在 3001–8000，是中频
-    expect(wrapper.get('.word-table .word-freq').text()).toBe('中频')
-    expect(wrapper.get('.cell-created').text()).toBe('2026-09-01')
+    // 从词库导入的词优先显示「词库·高频」，而不是笼统的「词库」
+    expect(wrapper.get('.entry-source').text()).toBe('词库·高频')
+    expect(wrapper.get('.entry-date').text()).toBe('收录 2026-09-01')
+    expect(wrapper.get('.status-pill').text()).toContain('复习中')
   })
 
-  it('should mark manual words and hide the frequency badge when rank is missing', () => {
-    const wrapper = mount(WordTable, {
+  it('should mark manual words without phonetics or bank labels', () => {
+    const wrapper = mount(WordEntry, {
       props: {
-        items: [
-          {
-            ...TOMATO,
-            word: 'story',
-            source: 'manual',
-            cocaRank: null,
-            dictionaryId: null,
-            phonetic: null,
-            senses: [{ pos: '', meaning: '故事' }],
-          },
-        ],
+        item: {
+          ...TOMATO,
+          word: 'story',
+          source: 'manual',
+          cocaRank: null,
+          dictionaryId: null,
+          phonetic: null,
+          senses: [{ pos: '', meaning: '故事' }],
+        },
       },
     })
 
-    expect(wrapper.get('.word-table .word-source').text()).toBe('手填')
-    // null 不是「第 0 名」，不能兜底成高频
-    expect(wrapper.find('.word-freq').exists()).toBe(false)
-    expect(wrapper.get('.cell-phonetic').text()).toBe('—')
-    // 手填词也没有音标，卡片上同样是占位符
-    expect(wrapper.get('.card-phonetic').text()).toBe('—')
+    expect(wrapper.get('.entry-source').text()).toBe('手填')
+    expect(wrapper.get('.entry-phonetic').text()).toBe('—')
   })
 
-  it('should emit detail with the clicked word as the anchor', async () => {
-    const wrapper = mount(WordTable, { props: { items: [TOMATO] } })
-    const trigger = wrapper.get('.word-text')
+  it('should emit open when the word is clicked', async () => {
+    const wrapper = mount(WordEntry, { props: { item: TOMATO } })
 
-    await trigger.trigger('click')
+    await wrapper.get('.entry-word').trigger('click')
 
-    const [[payload]] = wrapper.emitted('detail')
-    expect(payload.item).toEqual(TOMATO)
-    expect(payload.anchor).toBe(trigger.element)
+    expect(wrapper.emitted('open')).toEqual([[TOMATO]])
   })
 
-  it('should sync aria-expanded on both the table and the mobile card', () => {
-    const wrapper = mount(WordTable, { props: { items: [TOMATO], expandedWord: 'tomato' } })
+  it('should emit select with the checkbox state', async () => {
+    const wrapper = mount(WordEntry, { props: { item: TOMATO, selectable: true } })
 
-    expect(wrapper.get('.word-text').attributes('aria-expanded')).toBe('true')
-    expect(wrapper.get('.card-word').attributes('aria-expanded')).toBe('true')
-    expect(wrapper.get('.word-text').attributes('aria-haspopup')).toBe('dialog')
+    await wrapper.get('input[type="checkbox"]').setValue(true)
+
+    expect(wrapper.emitted('select')).toEqual([[{ id: 'w1', selected: true }]])
+  })
+
+  it('should expose edit and delete from the entry menu', async () => {
+    const wrapper = mount(WordEntry, { props: { item: TOMATO } })
+
+    await wrapper.get('.menu-trigger').trigger('click')
+    const items = wrapper.findAll('.menu-item')
+    expect(items.map((item) => item.text())).toEqual(['编辑', '删除'])
+
+    await items[0].trigger('click')
+    expect(wrapper.emitted('edit')).toEqual([[TOMATO]])
+
+    await wrapper.get('.menu-trigger').trigger('click')
+    await wrapper.findAll('.menu-item')[1].trigger('click')
+    expect(wrapper.emitted('remove')).toEqual([[TOMATO]])
+  })
+})
+
+describe('WordBook', () => {
+  function makeItems(count) {
+    return Array.from({ length: count }, (_, index) => ({
+      id: `w${index + 1}`,
+      word: `word${index + 1}`,
+      studyState: 'reviewing',
+      reviewStage: 0,
+      createdAt: '2026-09-01T08:00:00.000Z',
+      source: 'manual',
+      phonetic: null,
+      senses: [{ pos: '', meaning: '释义' }],
+      wordBanks: [],
+    }))
+  }
+
+  it('should split one spread into two pages of six entries', () => {
+    const wrapper = mount(WordBook, {
+      props: { items: makeItems(12), total: 24, page: 1, pageSize: 12 },
+    })
+
+    expect(wrapper.get('.book-page--left').findAll('.word-entry')).toHaveLength(6)
+    expect(wrapper.get('.book-page--right').findAll('.word-entry')).toHaveLength(6)
+    expect(wrapper.get('.book-page--left').text()).toContain('第 1 页')
+    expect(wrapper.get('.book-page--right').text()).toContain('第 2 页')
+    expect(wrapper.get('.book-page--left').text()).toContain('1 / 4')
+  })
+
+  it('should emit prev and next from the page corners', async () => {
+    const wrapper = mount(WordBook, {
+      props: { items: makeItems(12), total: 24, page: 2, pageSize: 12 },
+    })
+
+    await wrapper.get('.book-page--left .page-corner').trigger('click')
+    await wrapper.get('.book-page--right .page-corner').trigger('click')
+
+    expect(wrapper.emitted('prev')).toHaveLength(1)
+    expect(wrapper.emitted('next')).toBeUndefined()
+
+    await wrapper.setProps({ total: 36 })
+    await wrapper.get('.book-page--right .page-corner').trigger('click')
+    expect(wrapper.emitted('next')).toHaveLength(1)
+  })
+
+  it('should turn pages with the arrow keys while focus is not in a field', async () => {
+    const wrapper = mount(WordBook, {
+      props: { items: makeItems(12), total: 24, page: 2, pageSize: 12 },
+    })
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('prev')).toHaveLength(1)
+    expect(wrapper.emitted('next')).toBeUndefined()
+
+    wrapper.unmount()
+  })
+
+  it('should show a blank page when the spread has fewer than twelve entries', () => {
+    const wrapper = mount(WordBook, {
+      props: { items: makeItems(5), total: 5, page: 1, pageSize: 12 },
+    })
+
+    expect(wrapper.get('.book-page--left').findAll('.word-entry')).toHaveLength(5)
+    expect(wrapper.get('.book-page--right').findAll('.word-entry')).toHaveLength(0)
+    expect(wrapper.get('.page-blank').text()).toBe('这一页还空着')
+  })
+
+  it('should render the collage grid as a flat list', () => {
+    const wrapper = mount(WordBook, {
+      props: { items: makeItems(12), total: 12, page: 1, pageSize: 12, mode: 'collage' },
+    })
+
+    expect(wrapper.find('.book-spread').exists()).toBe(false)
+    expect(wrapper.findAll('.collage .word-entry')).toHaveLength(12)
   })
 })
 

@@ -21,7 +21,8 @@ import {
 import { normalizeApiError } from '../../errors'
 import { WORD_BATCH_MAX } from '../../unit/validators'
 
-export const DEFAULT_PAGE_SIZE = 10
+// 一摊两页、每页 6 条：翻书模式一次翻 12 个词
+export const DEFAULT_PAGE_SIZE = 12
 
 export const useWordsStore = defineStore('words', () => {
   const items = ref([])
