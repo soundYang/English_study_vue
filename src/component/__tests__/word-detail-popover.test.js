@@ -168,6 +168,104 @@ describe('WordDetailPopover · 关闭', () => {
   })
 })
 
+describe('WordDetailPopover · 定位', () => {
+  const originalHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
+  const originalScrollHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'scrollHeight',
+  )
+  const originalViewport = window.innerHeight
+
+  function mockViewport({ anchorTop, panelHeight = 400, panelScrollHeight = 0 }) {
+    Object.defineProperty(window, 'innerHeight', { value: 700, configurable: true })
+    // jsdom 不做布局：浮层按指定高度计算，其它元素维持 0
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get() {
+        return this.classList?.contains('detail-popover') ? panelHeight : 0
+      },
+    })
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+      configurable: true,
+      get() {
+        return this.classList?.contains('detail-popover') ? panelScrollHeight : 0
+      },
+    })
+    anchor.getBoundingClientRect = () => ({
+      top: anchorTop,
+      bottom: anchorTop + 30,
+      left: 100,
+      right: 200,
+      width: 100,
+      height: 30,
+      x: 100,
+      y: anchorTop,
+      toJSON: () => ({}),
+    })
+  }
+
+  afterEach(() => {
+    if (originalHeight) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', originalHeight)
+    if (originalScrollHeight)
+      Object.defineProperty(HTMLElement.prototype, 'scrollHeight', originalScrollHeight)
+    Object.defineProperty(window, 'innerHeight', { value: originalViewport, configurable: true })
+  })
+
+  it('should open upward for anchors in the lower half and keep the facts inside the viewport', async () => {
+    mockViewport({ anchorTop: 650 })
+
+    const component = mountPopover({ senses: [], facts: [], loading: true })
+    await flushPromises()
+
+    await component.setProps({ loading: false, senses: SENSES })
+    await flushPromises()
+
+    const panel = component.get('.detail-popover').element
+    // 锚点下方只有 20px，改向上展开：底边钉在锚点上方，内容变高只会往上长
+    expect(panel.style.top).toBe('auto')
+    expect(panel.style.bottom).toBe('60px')
+    expect(panel.style.maxHeight).toBe('628px')
+  })
+
+  it('should open downward for anchors in the upper half', async () => {
+    mockViewport({ anchorTop: 100 })
+
+    const component = mountPopover()
+    await flushPromises()
+
+    const panel = component.get('.detail-popover').element
+    expect(panel.style.top).toBe('100px')
+    expect(panel.style.bottom).toBe('auto')
+    // top(100) + max-height(588) + 底部留白(12) = 视口底边
+    expect(panel.style.maxHeight).toBe('588px')
+  })
+
+  it('should lift the panel so taller content fits above the viewport bottom', async () => {
+    // 可见高度被 max-height 截成 388，但内容真实高度是 500
+    mockViewport({ anchorTop: 300, panelHeight: 388, panelScrollHeight: 500 })
+
+    const component = mountPopover()
+    await flushPromises()
+
+    const panel = component.get('.detail-popover').element
+    // 内容真实高度 500 + 上下边框 2，把 top 从 300 抬到 700 - 502 - 12，底边仍留在视口内
+    expect(panel.style.top).toBe('186px')
+    expect(panel.style.maxHeight).toBe('502px')
+  })
+
+  it('should cap the height by the final top even before the panel height is measurable', async () => {
+    mockViewport({ anchorTop: 300, panelHeight: 0 })
+
+    const component = mountPopover()
+    await flushPromises()
+
+    const panel = component.get('.detail-popover').element
+    // 量不到高度时也按 top=300 封顶，异步内容不会把底边顶出视口
+    expect(panel.style.top).toBe('300px')
+    expect(panel.style.maxHeight).toBe('388px')
+  })
+})
+
 describe('WordDetailPopover · 窄屏', () => {
   it('should switch to a bottom sheet under 640px', async () => {
     const original = window.innerWidth

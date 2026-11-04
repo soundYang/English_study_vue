@@ -65,6 +65,7 @@ const isSheet = ref(false)
 const parts = computed(() => phoneticParts(props.phonetic))
 
 let frame = 0
+let resizeObserver = null
 
 function cancelFrame() {
   if (!frame) return
@@ -93,6 +94,9 @@ function place() {
   const panel = panelRef.value
   const width = panel?.offsetWidth || PANEL_WIDTH
   const height = panel?.offsetHeight || 0
+  // max-height 截断后 offsetHeight 只是可见高度；scrollHeight 才是内容真实高度
+  // （+2 补上下边框），用它判断放不放得下，避免只靠内部滚动才能看到事实行
+  const contentHeight = panel ? Math.max(height, panel.scrollHeight + 2) : height
   const roomRight = window.innerWidth - rect.right - GAP - MARGIN
   const roomLeft = rect.left - GAP - MARGIN
 
@@ -105,10 +109,47 @@ function place() {
 
   left = Math.min(Math.max(MARGIN, left), Math.max(MARGIN, window.innerWidth - width - MARGIN))
 
-  let top = rect.top
-  top = Math.min(Math.max(MARGIN, top), Math.max(MARGIN, window.innerHeight - height - MARGIN))
+  const spaceAbove = rect.top - GAP - MARGIN
+  const spaceBelow = window.innerHeight - rect.bottom - GAP - MARGIN
 
-  placement.value = { top: `${Math.round(top)}px`, left: `${Math.round(left)}px` }
+  /**
+   * 锚点在视口下半区，或下方明显不够时，改为向上展开。
+   *
+   * 向上展开的坐标只由锚点决定，不依赖浮层当前高度：
+   * 释义是异步回来的，浮层会从 loading 的小高度长到大高度，如果按「下方展开 + 事后下移」，
+   * 只要有一次没量准（旧版触发过），底部的事实行就会掉出视口。
+   * 向上展开后，内容再变高也只会往上延伸，视口底部始终安全。
+   */
+  const openUpward =
+    rect.top >= window.innerHeight / 2 ||
+    (contentHeight > 0 && contentHeight > spaceBelow && spaceAbove > spaceBelow)
+
+  if (openUpward) {
+    placement.value = {
+      top: 'auto',
+      bottom: `${Math.round(Math.max(MARGIN, window.innerHeight - rect.top + GAP))}px`,
+      left: `${Math.round(left)}px`,
+      // 面板底边离锚点上方 GAP，可用高度就是锚点以上的空间
+      maxHeight: `${Math.max(0, Math.round(spaceAbove))}px`,
+    }
+    return
+  }
+
+  let top = rect.top
+  top = Math.min(
+    Math.max(MARGIN, top),
+    Math.max(MARGIN, window.innerHeight - contentHeight - MARGIN),
+  )
+  top = Math.round(top)
+
+  placement.value = {
+    top: `${top}px`,
+    bottom: 'auto',
+    left: `${Math.round(left)}px`,
+    // 高度按最终 top 封顶：即便量到的还是加载态的小高度，
+    // 后面的内容也只会在浮层内部滚动，底边永远不会越过视口
+    maxHeight: `${Math.max(0, window.innerHeight - top - MARGIN)}px`,
+  }
 }
 
 function schedulePlace() {
@@ -152,14 +193,36 @@ async function openPanel() {
   window.addEventListener('scroll', schedulePlace, true)
 
   await nextTick()
+  observePanel()
   place()
   panelRef.value?.focus({ preventScroll: true })
   // 首帧量到的可能是字体 / 换行前的尺寸，内容稳定后再校一次
   await nextTick()
   place()
+  // 字体晚到会改变换行和高度；加载完成后补一次定位
+  document.fonts?.ready.then(() => {
+    if (props.open) schedulePlace()
+  })
+}
+
+/**
+ * 直接盯浮层自身的盒模型。
+ *
+ * 只监听 props 不够：释义异步返回、字体晚到、状态胶囊换行都会改变高度，
+ * 而贴底打开的浮层一旦变高就会向下超出视口。尺寸一变就重新贴边，
+ * 不依赖调用方在正确的时机更新某个字段。
+ */
+function observePanel() {
+  if (!panelRef.value || typeof ResizeObserver === 'undefined') return
+
+  resizeObserver?.disconnect()
+  resizeObserver = new ResizeObserver(schedulePlace)
+  resizeObserver.observe(panelRef.value)
 }
 
 function teardown() {
+  resizeObserver?.disconnect()
+  resizeObserver = null
   cancelFrame()
   document.removeEventListener('pointerdown', handlePointerDown)
   document.removeEventListener('keydown', handleKeydown)
@@ -184,6 +247,21 @@ watch(
     await nextTick()
     place()
   },
+)
+
+/**
+ * 释义是异步返回的：打开瞬间量到的是 loading 态的小高度，
+ * 内容回来后浮层会变高。不重新定位的话，贴底打开的浮层会向下超出视口，
+ * 用户只能看到标题和「释义」两个字（结果页「本文用到的词」最容易触发）。
+ */
+watch(
+  () => [props.loading, props.senses, props.facts, props.error, props.emptyText],
+  async () => {
+    if (!props.open) return
+    await nextTick()
+    place()
+  },
+  { deep: true },
 )
 
 onBeforeUnmount(teardown)
